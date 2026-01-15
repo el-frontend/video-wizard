@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  remotion-server:
+    build:
+      context: ../..
+      dockerfile: apps/remotion-server/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - RENDERS_DIR=./renders
+    volumes:
+      # Mount source code for hot reload in development
+      - ../../packages/remotion-compositions:/app/packages/remotion-compositions
+      - ./server:/app/apps/remotion-server/server
+      - ./renders:/app/apps/remotion-server/renders
+    restart: unless-stopped
+    command: pnpm dev

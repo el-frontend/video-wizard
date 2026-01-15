@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
+import { Badge } from '@workspace/ui/components/badge';
+import { Card } from '@workspace/ui/components/card';
 import type { ViralClip } from '@/server/types/content-analysis';
 
 interface ViralClipCardProps {

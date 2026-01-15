@@ -1,6 +1,6 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
+import { Card } from '@workspace/ui/components/card';
 import type { ProcessingStep, StepStatus } from '../types';
 
 interface ProcessingProgressProps {

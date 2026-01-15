@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Button } from '@workspace/ui/components/button';
+import { Card } from '@workspace/ui/components/card';
 import type { ProcessingStep } from '../types';
 
 interface VideoUploaderProps {
@@ -76,8 +76,7 @@ export function VideoUploader({
           <Button
             onClick={onProcess}
             disabled={!canProcess}
-            className="flex-1"
-            size="lg"
+            className='w-full'
           >
             {currentStep === 'idle' ? '🚀 Process Video' : 'Processing...'}
           </Button>

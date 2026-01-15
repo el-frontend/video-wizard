@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  remotion-server:
+    build:
+      context: ../..
+      dockerfile: apps/remotion-server/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - RENDERS_DIR=./renders
+    volumes:
+      # Mount renders directory for persistence
+      - ./renders:/app/apps/remotion-server/renders
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

@@ -1,6 +1,6 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
+import { Card } from '@workspace/ui/components/card';
 
 /**
  * Video How It Works Component
@@ -9,9 +9,9 @@ import { Card } from '@/components/ui/card';
  */
 export function VideoHowItWorks() {
   return (
-    <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50">
+    <Card className="p-6">
       <h3 className="text-lg font-semibold mb-3">How does it work?</h3>
-      <div className="space-y-3 text-sm text-gray-700">
+      <div className="space-y-3 text-sm">
         <div className="flex gap-3">
           <span className="text-2xl">📤</span>
           <div>

@@ -1,0 +1,25 @@
+{
+  "name": "remotion-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "remotion:studio": "remotion studio",
+    "remotion:render": "remotion render"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.405",
+    "@remotion/renderer": "^4.0.405",
+    "express": "^4.21.2",
+    "remotion-compositions": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.17.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@workspace/remotion-compositions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./Root": "./src/Root.tsx"
+  },
+  "scripts": {
+    "studio": "remotion studio"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "remotion": "^4.0.405",
+    "zod": "^3.22.3",
+    "@remotion/zod-types": "^4.0.405"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.3"
+  }
+}

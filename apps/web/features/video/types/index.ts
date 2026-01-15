@@ -40,3 +40,29 @@ export interface VideoProcessingState {
   error: string;
   progress: string;
 }
+
+/**
+ * Subtitle segment for video clips
+ */
+export interface SubtitleSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Generated video clip with loading state
+ */
+export interface GeneratedClip {
+  index: number;
+  summary: string;
+  viralScore: number;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  videoUrl?: string;
+  clipPath?: string;
+  subtitles?: SubtitleSegment[];
+  isLoading: boolean;
+  error?: string;
+}

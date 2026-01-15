@@ -1,159 +1,96 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import Link from 'next/link';
+import { Video, Sparkles, Film, ArrowRight } from 'lucide-react';
 
-export default function Page() {
+/**
+ * Dashboard Home Page
+ * Welcome screen with quick access to main features
+ */
+export default function HomePage() {
   return (
-    <div className="container mx-auto py-12 px-4 max-w-6xl">
+    <div className="space-y-8">
       {/* Hero Section */}
-      <div className="text-center mb-16">
-        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-          Video Wizard
+      <div className="space-y-4">
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">
+          Welcome to Video Wizard
         </h1>
-        <p className="text-xl text-gray-600 mb-6">
-          Transforma tus videos largos en clips virales con IA
+        <p className="text-lg text-muted-foreground max-w-2xl">
+          Transform your videos into viral content with AI-powered analysis and editing tools.
         </p>
-        <div className="flex gap-3 justify-center flex-wrap">
-          <Badge variant="outline" className="text-sm">GPT-4o</Badge>
-          <Badge variant="outline" className="text-sm">Whisper AI</Badge>
-          <Badge variant="outline" className="text-sm">Transcripción Automática</Badge>
-          <Badge variant="outline" className="text-sm">Análisis Viral</Badge>
-        </div>
       </div>
 
-      {/* Main Features Grid */}
-      <div className="grid md:grid-cols-2 gap-8 mb-12">
-        {/* Video Wizard - Full Pipeline */}
-        <Card className="p-8 hover:shadow-2xl transition-all duration-300 border-2 border-blue-200">
-          <div className="mb-4">
-            <div className="text-5xl mb-4">🎬</div>
-            <h2 className="text-2xl font-bold mb-2">Video Wizard</h2>
-            <Badge className="mb-4">Recomendado</Badge>
-          </div>
-          
-          <p className="text-gray-600 mb-6">
-            Flujo completo automatizado: sube tu video, extrae audio, genera subtítulos 
-            y descubre clips virales con IA.
-          </p>
-
-          <div className="space-y-3 mb-6">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-green-500">✓</span>
-              <span>Upload de video directo</span>
+      {/* Feature Cards */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {/* Video Wizard Card */}
+        <Link href="/video-wizard" className="group">
+          <div className="rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Video className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground">Video Wizard</h2>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-green-500">✓</span>
-              <span>Transcripción automática con timestamps</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-green-500">✓</span>
-              <span>Análisis de IA para clips virales</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-green-500">✓</span>
-              <span>Todo en un solo flujo</span>
+            <p className="text-sm text-muted-foreground mb-4">
+              Upload videos, extract subtitles, and generate viral clips with AI analysis.
+            </p>
+            <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
+              <span>Get started</span>
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </div>
           </div>
+        </Link>
 
-          <Link href="/video-wizard">
-            <Button className="w-full" size="lg">
-              Comenzar 🚀
-            </Button>
-          </Link>
-        </Card>
-
-        {/* Content Intelligence - Manual Analysis */}
-        <Card className="p-8 hover:shadow-2xl transition-all duration-300">
-          <div className="mb-4">
-            <div className="text-5xl mb-4">🤖</div>
-            <h2 className="text-2xl font-bold mb-2">Content Intelligence</h2>
-            <Badge variant="outline" className="mb-4">Solo Análisis</Badge>
-          </div>
-          
-          <p className="text-gray-600 mb-6">
-            ¿Ya tienes una transcripción? Analízala directamente con GPT-4o 
-            para encontrar los mejores clips virales.
-          </p>
-
-          <div className="space-y-3 mb-6">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-blue-500">✓</span>
-              <span>Análisis de transcripciones existentes</span>
+        {/* Content Intelligence Card */}
+        <Link href="/content-intelligence" className="group">
+          <div className="rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Sparkles className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground">Content Intelligence</h2>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-blue-500">✓</span>
-              <span>Puntuación viral (0-100)</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-blue-500">✓</span>
-              <span>Identificación de hooks y conclusiones</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-blue-500">✓</span>
-              <span>Transcripción de ejemplo incluida</span>
+            <p className="text-sm text-muted-foreground mb-4">
+              AI-powered content analysis, viral score prediction, and engagement insights.
+            </p>
+            <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
+              <span>Explore</span>
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </div>
           </div>
+        </Link>
 
-          <Link href="/content-intelligence">
-            <Button variant="outline" className="w-full" size="lg">
-              Analizar Transcripción
-            </Button>
-          </Link>
-        </Card>
+        {/* Remotion Studio Card */}
+        <Link href="/remotion" className="group">
+          <div className="rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Film className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground">Remotion Studio</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Advanced video composition engine for programmatic video generation.
+            </p>
+            <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
+              <span>Launch studio</span>
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+        </Link>
       </div>
 
-      {/* How It Works */}
-      <Card className="p-8 bg-gradient-to-br from-gray-50 to-blue-50">
-        <h2 className="text-2xl font-bold mb-6 text-center">¿Cómo Funciona?</h2>
-        
-        <div className="grid md:grid-cols-4 gap-6">
-          <div className="text-center">
-            <div className="text-4xl mb-3">📤</div>
-            <h3 className="font-semibold mb-2">1. Sube</h3>
-            <p className="text-sm text-gray-600">
-              Sube tu video (MP4, MOV, etc.) o pega una transcripción
-            </p>
-          </div>
-
-          <div className="text-center">
-            <div className="text-4xl mb-3">🎙️</div>
-            <h3 className="font-semibold mb-2">2. Transcribe</h3>
-            <p className="text-sm text-gray-600">
-              Whisper AI extrae audio y genera subtítulos con timestamps
-            </p>
-          </div>
-
-          <div className="text-center">
-            <div className="text-4xl mb-3">🤖</div>
-            <h3 className="font-semibold mb-2">3. Analiza</h3>
-            <p className="text-sm text-gray-600">
-              GPT-4o identifica clips virales basados en hooks y engagement
-            </p>
-          </div>
-
-          <div className="text-center">
-            <div className="text-4xl mb-3">🎬</div>
-            <h3 className="font-semibold mb-2">4. Exporta</h3>
-            <p className="text-sm text-gray-600">
-              Obtén timestamps y scores para editar tus clips
-            </p>
-          </div>
+      {/* Quick Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="text-2xl font-bold text-foreground">0</div>
+          <div className="text-sm text-muted-foreground">Videos Processed</div>
         </div>
-      </Card>
-
-      {/* Tech Stack */}
-      <div className="mt-12 text-center">
-        <p className="text-sm text-gray-500 mb-3">Construido con</p>
-        <div className="flex gap-4 justify-center flex-wrap">
-          <Badge variant="outline">Next.js 16</Badge>
-          <Badge variant="outline">React 19</Badge>
-          <Badge variant="outline">TypeScript</Badge>
-          <Badge variant="outline">Python FastAPI</Badge>
-          <Badge variant="outline">OpenAI GPT-4o</Badge>
-          <Badge variant="outline">Whisper AI</Badge>
-          <Badge variant="outline">Vercel AI SDK</Badge>
-          <Badge variant="outline">Tailwind CSS</Badge>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="text-2xl font-bold text-foreground">0</div>
+          <div className="text-sm text-muted-foreground">Clips Generated</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="text-2xl font-bold text-foreground">0</div>
+          <div className="text-sm text-muted-foreground">Hours Saved</div>
         </div>
       </div>
     </div>

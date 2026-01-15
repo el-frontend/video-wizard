@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@workspace/ui/components/button';
 import type { CaptionTemplate } from '@/remotion/types';
 import { SubtitleSegment } from '@/server/types/video-render';
 import { useState } from 'react';

@@ -1,6 +1,0 @@
-{
-  "name": "@video-wizard/tsconfig",
-  "version": "0.1.0",
-  "private": true,
-  "files": ["nextjs.json", "react-library.json"]
-}

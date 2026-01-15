@@ -9,7 +9,9 @@ This Turborepo includes the following packages and apps:
 ### Apps and Packages
 
 - `apps/web`: The main Next.js web application
+- `apps/remotion-server`: **🎬 Remotion render server** (Video rendering with subtitles)
 - `apps/processing-engine`: **Python-based video processing service** (Smart Crop & AI Analysis)
+- `packages/remotion-compositions`: **📦 Shared Remotion compositions** (Video templates & subtitles)
 - `packages/ui`: Shared UI components (placeholder for future shared components)
 - `packages/tsconfig`: Shared TypeScript configuration files
 
@@ -37,6 +39,12 @@ video-wizard/
 │   │   │   └── lib/              # Server utilities
 │   │   ├── components/           # Shared UI components
 │   │   └── lib/                  # Client utilities
+│   ├── remotion-server/          # 🎬 Remotion Render Server (NEW)
+│   │   ├── server/               # Express.js server
+│   │   │   ├── index.ts          # API endpoints
+│   │   │   └── render-queue.ts   # Job queue
+│   │   ├── renders/              # Output videos
+│   │   └── QUICKSTART.md         # Usage guide
 │   └── processing-engine/        # 🐍 Python Video Processing Service
 │       ├── main.py               # FastAPI application
 │       ├── analyzer.py           # AI-powered video analysis
@@ -44,6 +52,11 @@ video-wizard/
 │       ├── audio_service.py      # Audio extraction & transcription
 │       └── requirements.txt      # Python dependencies
 ├── packages/
+│   ├── remotion-compositions/   # 📦 Remotion Compositions (NEW)
+│   │   └── src/
+│   │       ├── compositions/    # Video compositions
+│   │       ├── templates/       # Caption templates
+│   │       └── hooks/           # React hooks
 │   ├── ui/                      # Shared UI components
 │   └── tsconfig/                # Shared TypeScript configs
 ├── .copilot/                    # 🆕 GitHub Copilot documentation
@@ -127,6 +140,48 @@ pnpm --filter processing-engine dev
 - 📝 Timestamped subtitles generation
 - ⚡ FastAPI REST endpoints
 - 🎥 FFmpeg video rendering
+
+### 🎬 Remotion Render Server (NEW)
+
+The Remotion render server handles video rendering with professional subtitle templates:
+
+```bash
+# Navigate to the server
+cd apps/remotion-server
+
+# Install dependencies (from root)
+pnpm install
+
+# Start development server
+pnpm dev
+
+# Or from root
+pnpm --filter remotion-server dev
+```
+
+**Server runs on:** http://localhost:3001  
+**Complete Guide:** [apps/remotion-server/QUICKSTART.md](apps/remotion-server/QUICKSTART.md)  
+**Infrastructure Overview:** [REMOTION_INFRASTRUCTURE.md](REMOTION_INFRASTRUCTURE.md)
+
+**Features:**
+- 📹 Video rendering with synchronized subtitles
+- 🎨 4 professional caption templates (default, viral, minimal, modern)
+- 📊 Job queue with progress tracking
+- ❌ Cancel running render jobs
+- 🐳 Docker support
+- 🔄 REST API for render management
+
+**Quick Test:**
+```bash
+cd apps/remotion-server
+node example-usage.js
+```
+
+**Preview Compositions:**
+```bash
+cd packages/remotion-compositions
+pnpm studio
+```
 
 ## 🆕 Web Application Features
 
