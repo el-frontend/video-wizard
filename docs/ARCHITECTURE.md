@@ -178,6 +178,7 @@ apps/web/
 ## Separation of Concerns
 
 ### API Route (HTTP Layer)
+
 ```typescript
 // app/api/analyze-content/route.ts
 export async function POST(request: NextRequest) {
@@ -186,11 +187,13 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ success: true, data });
 }
 ```
+
 ✅ **Only** handles HTTP (request/response)
 ✅ Delegates to services
 ❌ No business logic
 
 ### Service (Business Logic Layer)
+
 ```typescript
 // server/services/content-analysis-service.ts
 export class ContentAnalysisService {
@@ -202,12 +205,14 @@ export class ContentAnalysisService {
   }
 }
 ```
+
 ✅ Contains business logic
 ✅ Reusable across routes
 ✅ Testable independently
 ❌ No HTTP concerns
 
 ### Feature Module (UI Layer)
+
 ```typescript
 // features/video/hooks/use-video-processing.ts
 export function useVideoProcessing() {
@@ -217,6 +222,7 @@ export function useVideoProcessing() {
   // Returns: state + actions
 }
 ```
+
 ✅ Manages UI state
 ✅ Orchestrates API calls
 ✅ Provides callbacks
@@ -225,6 +231,7 @@ export function useVideoProcessing() {
 ## Benefits of This Architecture
 
 ### 1. Discoverability (Screaming Architecture)
+
 ```
 features/
 ├── video/          # "I handle video processing!"
@@ -235,21 +242,25 @@ features/
 The folder structure "screams" what the application does.
 
 ### 2. Maintainability
+
 - All video-related code in `features/video/`
 - Easy to find and modify
 - Changes isolated to feature
 
 ### 3. Reusability
+
 - Components are atomic and reusable
 - Services can be called from multiple routes
 - Features can be extracted into libraries
 
 ### 4. Testability
+
 - Services tested independently
 - Components tested with props
 - Features tested end-to-end
 
 ### 5. Scalability
+
 - Add new features without conflicts
 - Team members can own features
 - Clear boundaries prevent coupling
@@ -257,6 +268,7 @@ The folder structure "screams" what the application does.
 ## Future Enhancements
 
 ### Planned Features
+
 ```
 features/
 ├── video/                    # ✅ Complete
@@ -267,6 +279,7 @@ features/
 ```
 
 ### Possible Improvements
+
 1. Add container components (server-side data fetching)
 2. Extract shared feature utilities
 3. Create feature-specific tests

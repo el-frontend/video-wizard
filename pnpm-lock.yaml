@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      prettier:
+        specifier: ^3.8.0
+        version: 3.8.0
     devDependencies:
       '@commitlint/cli':
         specifier: ^20.3.1
@@ -129,6 +133,9 @@ importers:
       eslint-config-next:
         specifier: 16.1.1
         version: 16.1.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+      prettier:
+        specifier: ^3.2.0
+        version: 3.7.4
       tailwindcss:
         specifier: ^4
         version: 4.1.18
@@ -4577,6 +4584,11 @@ packages:
 
   prettier@3.7.4:
     resolution: {integrity: sha512-v6UNi1+3hSlVvv8fSaoUbggEM5VErKmmpGA7Pl3HF8V6uKY7rvClBOJlH6yNwQtfTueNkGVpOv/mtWL9L4bgRA==}
+    engines: {node: '>=14'}
+    hasBin: true
+
+  prettier@3.8.0:
+    resolution: {integrity: sha512-yEPsovQfpxYfgWNhCfECjG5AQaO+K3dp6XERmOepyPDVqcJm+bjyCVO3pmU+nAPe0N5dDvekfGezt/EIiRe1TA==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -10019,6 +10031,8 @@ snapshots:
   prelude-ls@1.2.1: {}
 
   prettier@3.7.4: {}
+
+  prettier@3.8.0: {}
 
   pretty-ms@9.3.0:
     dependencies:
