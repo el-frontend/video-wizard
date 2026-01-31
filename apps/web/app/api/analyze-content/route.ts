@@ -18,7 +18,7 @@ export async function POST(
   try {
     // Parse and validate request body
     const body = (await request.json()) as AnalyzeContentRequest;
-    const { transcript } = body;
+    const { transcript, language = 'en' } = body;
 
     // Validate transcript
     try {
@@ -36,8 +36,8 @@ export async function POST(
       );
     }
 
-    // Execute analysis
-    const data = await contentAnalysisService.analyzeTranscript(transcript);
+    // Execute analysis with detected language
+    const data = await contentAnalysisService.analyzeTranscript(transcript, language);
 
     return NextResponse.json({
       success: true,

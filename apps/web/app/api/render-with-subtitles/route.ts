@@ -17,7 +17,8 @@ interface InputSubtitle {
  * Request body:
  * - clipPath: string - Path to the clip video file
  * - subtitles: Array<{start: number, end: number, text: string}> - Edited subtitles
- * - template?: string - Template to use (default, viral, minimal, modern)
+ * - template?: string - Template to use (default, viral, minimal, modern, mrbeastemoji, etc.)
+ * - language?: string - Language code for emoji template (e.g., 'en', 'es')
  * 
  * Response:
  * - success: boolean
@@ -27,7 +28,7 @@ interface InputSubtitle {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { clipPath, subtitles, template = 'viral' } = body;
+    const { clipPath, subtitles, template = 'viral', language = 'en' } = body;
 
     if (!clipPath) {
       return NextResponse.json(
@@ -45,6 +46,11 @@ export async function POST(request: NextRequest) {
 
     // Get Remotion Render Server URL from environment
     const REMOTION_SERVER_URL = process.env.REMOTION_SERVER_URL || 'http://localhost:3001';
+    const PYTHON_ENGINE_URL = process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL || 'http://localhost:8000';
+    
+    // For Docker: Use container name when Remotion needs to access the processing engine
+    // The Remotion server runs in a container and needs to access videos from the processing engine
+    const PYTHON_ENGINE_INTERNAL_URL = process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://processing-engine:8000';
 
     // Transform subtitles to the expected format
     const formattedSubtitles = (subtitles as InputSubtitle[]).map((sub, index) => ({
@@ -54,10 +60,23 @@ export async function POST(request: NextRequest) {
       text: sub.text,
     }));
 
+    // Calculate duration from clip length
+    // Subtitles are already adjusted to clip time (start from 0)
+    const lastSubtitle = formattedSubtitles[formattedSubtitles.length - 1];
+    const clipDurationMs = lastSubtitle ? lastSubtitle.end : 10000; // Default 10 seconds
+    const fps = 30;
+    const durationInFrames = Math.ceil((clipDurationMs / 1000) * fps);
+
+    // Use internal URL for container-to-container communication
+    const videoUrl = `${PYTHON_ENGINE_INTERNAL_URL}/${clipPath}`;
+
     console.log('Creating render job on Remotion server:', {
-      videoUrl: clipPath,
+      videoUrl,
       subtitleCount: formattedSubtitles.length,
       template,
+      language,
+      durationInFrames,
+      clipDurationSeconds: clipDurationMs / 1000,
     });
 
     // Create render job on Remotion server
@@ -69,10 +88,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         compositionId: 'VideoWithSubtitles',
         inputProps: {
-          videoUrl: clipPath,
+          videoUrl,
           subtitles: formattedSubtitles,
           template,
+          language,
           backgroundColor: '#000000',
+          durationInFrames,
         },
       }),
     });
@@ -88,10 +109,11 @@ export async function POST(request: NextRequest) {
 
     // Poll for job completion
     let attempts = 0;
-    const maxAttempts = 60; // 2 minutes max (2 seconds per attempt)
+    const pollIntervalMs = 2000;
+    const maxAttempts = Math.ceil((30 * 60 * 1000) / pollIntervalMs); // 30 minutes max at 2s per attempt
 
     while (attempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 
       const statusResponse = await fetch(`${REMOTION_SERVER_URL}/renders/${jobId}`);
 

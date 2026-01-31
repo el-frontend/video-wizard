@@ -35,16 +35,41 @@ Focus on quality over quantity. Prefer fewer, longer, more complete clips over m
 Provide clear reasoning for each clip selection.`;
 
 /**
- * Generates the user prompt for content analysis
+ * Language names for prompts
  */
-export function buildAnalysisPrompt(transcript: string): string {
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  it: 'Italian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  zh: 'Chinese',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+};
+
+/**
+ * Generates the user prompt for content analysis
+ * @param transcript - The video transcript to analyze
+ * @param language - The detected language code (e.g., "en", "es")
+ */
+export function buildAnalysisPrompt(transcript: string, language: string = 'en'): string {
+  const languageName = LANGUAGE_NAMES[language] || 'the same language as the transcript';
+
   return `Analyze the following video transcript and identify the best segments for viral short-form content.
+
+**IMPORTANT: The transcript is in ${languageName}. You MUST write ALL your responses (summary, hook, conclusion, analysis_summary) in ${languageName}.**
 
 The transcript includes timestamps in [MM:SS] format. Use these ACTUAL timestamps for your clip recommendations.
 
 ${transcript}
 
 IMPORTANT INSTRUCTIONS:
+- **RESPOND IN ${languageName.toUpperCase()}** - All text fields must be in ${languageName}
 - Use the ACTUAL timestamps from the transcript (format: [MM:SS])
 - Clips should be between 45-120 seconds in length (PREFER LONGER CLIPS)
 - Convert timestamps to seconds (e.g., [01:30] = 90 seconds, [02:00] = 120 seconds)
@@ -73,6 +98,8 @@ Invalid clip examples:
 - Duration less than 15 seconds ✗
 - Duration more than 120 seconds ✗
 - Timestamps not found in transcript ✗
-- Too many short fragments instead of fewer long clips ✗`;
+- Too many short fragments instead of fewer long clips ✗
+
+Remember: Write your analysis in ${languageName}!`;
 }
 

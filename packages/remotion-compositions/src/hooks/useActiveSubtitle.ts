@@ -27,12 +27,37 @@ export function useActiveSubtitle(
   currentTime: number
 ): ActiveSubtitleResult {
   return useMemo(() => {
-    // Find the segment that should be displayed at current time
+    // Subtitle timing offset (delay in seconds)
+    // Positive value delays subtitles (appears later)
+    // Negative value advances subtitles (appears earlier)
+    const SUBTITLE_OFFSET = 0.2; // 200ms delay to improve sync
+
+    // Adjust current time with offset
+    const adjustedTime = currentTime - SUBTITLE_OFFSET;
+
+    // Debug: Log on first frame
+    if (currentTime === 0 && subtitles.length > 0) {
+      console.log('[useActiveSubtitle] Initial state:', {
+        subtitleCount: subtitles.length,
+        firstSubtitle: subtitles[0],
+        lastSubtitle: subtitles[subtitles.length - 1],
+        offset: SUBTITLE_OFFSET,
+      });
+    }
+
+    // Find the segment that should be displayed at adjusted time
     const currentSegment = subtitles.find(
-      (segment) => currentTime >= segment.start && currentTime < segment.end
+      (segment) => adjustedTime >= segment.start && adjustedTime < segment.end
     );
 
     if (!currentSegment) {
+      // Debug: Log when no segment is found at specific times
+      if (adjustedTime > 0 && adjustedTime < 5) {
+        console.log('[useActiveSubtitle] No active segment at time:', {
+          currentTime,
+          adjustedTime,
+        });
+      }
       return {
         currentWord: '',
         currentSegment: null,
@@ -41,10 +66,21 @@ export function useActiveSubtitle(
       };
     }
 
+    // Debug: Log when segment becomes active
+    console.log('[useActiveSubtitle] Active segment:', {
+      currentTime,
+      adjustedTime,
+      segment: {
+        start: currentSegment.start,
+        end: currentSegment.end,
+        text: currentSegment.text,
+      },
+    });
+
     // If segment has word-level timing, find the active word
     if (currentSegment.words && currentSegment.words.length > 0) {
       const activeWordIndex = currentSegment.words.findIndex(
-        (word) => currentTime >= word.start && currentTime < word.end
+        (word) => adjustedTime >= word.start && adjustedTime < word.end
       );
 
       if (activeWordIndex !== -1) {

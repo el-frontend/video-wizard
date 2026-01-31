@@ -48,8 +48,8 @@ export function ViralTemplate({
   const chunkStartFrame = currentChunkIndex * durationPerChunk;
   const frameInChunk = frameInSegment - chunkStartFrame;
   
-  // Smooth entry animation for each chunk (first 8 frames)
-  const entryDuration = 8;
+  // Smooth entry animation for each chunk (first 12 frames)
+  const entryDuration = 12;
   const opacity = interpolate(
     frameInChunk,
     [0, entryDuration],
@@ -70,8 +70,8 @@ export function ViralTemplate({
     }
   );
   
-  // Smooth exit animation (last 6 frames of chunk)
-  const exitDuration = 6;
+  // Smooth exit animation (last 10 frames of chunk)
+  const exitDuration = 10;
   const exitOpacity = interpolate(
     frameInChunk,
     [durationPerChunk - exitDuration, durationPerChunk],
@@ -89,7 +89,7 @@ export function ViralTemplate({
       style={{
         justifyContent: 'flex-end',
         alignItems: 'center',
-        padding: '0 20px 180px 20px',
+        padding: '0 20px 400px 20px',
       }}
     >
       <div

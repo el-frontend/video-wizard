@@ -92,6 +92,7 @@ class TranscribeResponse(BaseModel):
     segments: list
     full_text: str
     segment_count: int
+    language: str  # Detected language code (e.g., "en", "es")
 
 
 class RenderClipRequest(BaseModel):

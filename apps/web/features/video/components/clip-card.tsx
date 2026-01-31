@@ -3,35 +3,43 @@
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@workspace/ui/components/card';
-import { Edit, Play, Sparkles } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@workspace/ui/components/select';
+import { Edit, Film, Loader2, Play, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-
-interface SubtitleSegment {
-  start: number;
-  end: number;
-  text: string;
-}
+import type { SubtitleSegment, SubtitleTemplate } from '../types';
+import { RemotionPreview } from './remotion-preview';
 
 interface ClipCardProps {
   index: number;
   summary: string;
   viralScore: number;
   duration: number;
-  videoUrl?: string;
+  videoUrl?: string; // Cropped video (without subtitles)
+  renderedVideoUrl?: string; // Final rendered video from Remotion server
   subtitles?: SubtitleSegment[];
+  template?: SubtitleTemplate;
+  language?: string; // Language code for emoji template
   isLoading: boolean;
+  isRendering?: boolean;
   onEdit: () => void;
-  onPlay: () => void;
+  onTemplateChange: (template: SubtitleTemplate) => void;
+  onRenderFinal: () => void;
 }
 
 /**
  * ClipCard Component
- * 
+ *
  * Displays a viral clip with:
- * - Skeleton placeholder during loading
- * - Video preview when ready
- * - Viral score and clip info
- * - Play and Edit actions
+ * - Remotion Player preview (instant client-side preview)
+ * - Template selector to change subtitle style
+ * - Edit button to modify subtitles
+ * - Render button to create final video with Remotion server
  */
 export function ClipCard({
   index,
@@ -39,12 +47,16 @@ export function ClipCard({
   viralScore,
   duration,
   videoUrl,
+  renderedVideoUrl,
   subtitles,
+  template = 'viral',
+  language = 'en',
   isLoading,
+  isRendering,
   onEdit,
-  onPlay,
+  onTemplateChange,
+  onRenderFinal,
 }: ClipCardProps) {
-  const [imageError, setImageError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Calculate viral score color
@@ -61,6 +73,8 @@ export function ClipCard({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const hasSubtitles = subtitles && subtitles.length > 0;
+
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow">
       <CardHeader className="pb-3">
@@ -72,8 +86,13 @@ export function ClipCard({
             <Badge variant="secondary" className="text-xs">
               {formatDuration(duration)}
             </Badge>
+            {renderedVideoUrl && (
+              <Badge variant="default" className="text-xs bg-green-600">
+                Rendered
+              </Badge>
+            )}
           </div>
-          
+
           <div className="flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-yellow-500" />
             <Badge className={`${getScoreColor(viralScore)} text-white border-0`}>
@@ -84,7 +103,7 @@ export function ClipCard({
       </CardHeader>
 
       <CardContent className="pb-3">
-        {/* Video Preview or Skeleton */}
+        {/* Video Preview */}
         <div className="aspect-9/16 max-w-70 mx-auto mb-4 rounded-lg overflow-hidden bg-muted">
           {isLoading ? (
             <div className="w-full h-full flex flex-col items-center justify-center bg-linear-to-br from-muted to-muted-foreground/10 animate-pulse">
@@ -93,16 +112,25 @@ export function ClipCard({
                 Generating clip...
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                This may take a few moments
+                Cropping video with face tracking
               </p>
             </div>
-          ) : videoUrl && !imageError ? (
+          ) : videoUrl && hasSubtitles ? (
+            /* Show Remotion Player for real-time preview */
+            <RemotionPreview
+              videoUrl={videoUrl}
+              subtitles={subtitles}
+              template={template}
+              language={language}
+              className="w-full h-full"
+            />
+          ) : videoUrl ? (
+            /* Fallback to regular video if no subtitles */
             <video
               src={videoUrl}
               className="w-full h-full object-contain bg-black"
               controls
               playsInline
-              onError={() => setImageError(true)}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
             >
@@ -116,38 +144,110 @@ export function ClipCard({
         </div>
 
         {/* Clip Summary */}
-        <p className="text-sm text-foreground line-clamp-3 leading-relaxed">
+        <p className="text-sm text-foreground line-clamp-3 leading-relaxed mb-3">
           {summary}
         </p>
 
+        {/* Template Selector */}
+        {hasSubtitles && videoUrl && !isLoading && (
+          <div className="mb-3">
+            <label className="text-xs text-muted-foreground mb-1.5 block">
+              Subtitle Style
+            </label>
+            <Select value={template} onValueChange={onTemplateChange}>
+              <SelectTrigger className="w-full h-9">
+                <SelectValue placeholder="Select template" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viral">
+                  🔥 Viral - Bold & Energetic
+                </SelectItem>
+                <SelectItem value="hormozi">
+                  💪 Hormozi - High Energy
+                </SelectItem>
+                <SelectItem value="mrbeast">
+                  🎮 MrBeast - Comic Style
+                </SelectItem>
+                <SelectItem value="mrbeastemoji">
+                  😎 MrBeast + Emoji
+                </SelectItem>
+                <SelectItem value="highlight">
+                  💜 Highlight - Word Sweep
+                </SelectItem>
+                <SelectItem value="colorshift">
+                  🌈 Color Shift - Yellow to Green
+                </SelectItem>
+                <SelectItem value="modern">
+                  🎨 Modern - Contemporary
+                </SelectItem>
+                <SelectItem value="minimal">
+                  ✨ Minimal - Clean & Simple
+                </SelectItem>
+                <SelectItem value="default">
+                  📝 Default - Standard
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* Subtitle Count */}
-        {subtitles && subtitles.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-2">
+        {hasSubtitles && (
+          <p className="text-xs text-muted-foreground">
             {subtitles.length} subtitle segments
           </p>
         )}
       </CardContent>
 
-      <CardFooter className="pt-3 gap-2">
-        <Button
-          onClick={onPlay}
-          disabled={isLoading || !videoUrl}
-          className="flex-1"
-          variant="default"
-        >
-          <Play className="w-4 h-4 mr-2" />
-          {isPlaying ? 'Playing' : 'Play'}
-        </Button>
-        
-        <Button
-          onClick={onEdit}
-          disabled={isLoading || !videoUrl}
-          className="flex-1"
-          variant="outline"
-        >
-          <Edit className="w-4 h-4 mr-2" />
-          Edit
-        </Button>
+      <CardFooter className="pt-3 flex-col gap-2">
+        {/* Top Row: Edit + Render Final */}
+        <div className="flex gap-2 w-full">
+          <Button
+            onClick={onEdit}
+            disabled={isLoading || !videoUrl || isRendering}
+            className="flex-1"
+            variant="outline"
+          >
+            <Edit className="w-4 h-4 mr-2" />
+            Edit
+          </Button>
+
+          <Button
+            onClick={onRenderFinal}
+            disabled={isLoading || !videoUrl || !hasSubtitles || isRendering}
+            className="flex-1"
+            variant="default"
+          >
+            {isRendering ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Rendering...
+              </>
+            ) : renderedVideoUrl ? (
+              <>
+                <Film className="w-4 h-4 mr-2" />
+                Re-render
+              </>
+            ) : (
+              <>
+                <Film className="w-4 h-4 mr-2" />
+                Render Final
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Download Button (if rendered) */}
+        {renderedVideoUrl && !isRendering && (
+          <Button
+            onClick={() => window.open(renderedVideoUrl, '_blank')}
+            className="w-full"
+            variant="secondary"
+          >
+            <Play className="w-4 h-4 mr-2" />
+            Download Final Video
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

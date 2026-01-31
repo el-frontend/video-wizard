@@ -12,27 +12,29 @@ import {
 
 /**
  * Service for video content analysis
- * 
+ *
  * Provides functionality to analyze video transcriptions
  * and identify segments with viral potential using AI.
  */
 export class ContentAnalysisService {
   /**
    * Analyzes a video transcription to identify viral clips
-   * 
+   *
    * @param transcript - The video transcription to analyze
+   * @param language - The detected language code (e.g., "en", "es")
    * @returns Structured analysis with identified clips and their scores
    * @throws Error if AI configuration is invalid or analysis fails
    */
-  async analyzeTranscript(transcript: string): Promise<ContentAnalysis> {
+  async analyzeTranscript(transcript: string, language: string = 'en'): Promise<ContentAnalysis> {
     // Validate configuration before proceeding
     validateAIConfig();
-    
+
     // Validate input
     this.validateTranscript(transcript);
 
     logger.info('Starting content analysis', {
       transcriptLength: transcript.length,
+      language,
     });
 
     return safeAsync(async () => {
@@ -42,11 +44,12 @@ export class ContentAnalysisService {
           schema: ContentAnalysisSchema,
         }),
         system: VIRAL_EDITOR_SYSTEM_PROMPT,
-        prompt: buildAnalysisPrompt(transcript),
+        prompt: buildAnalysisPrompt(transcript, language),
       });
 
       logger.info('Content analysis completed', {
         clipsFound: output.clips.length,
+        language,
       });
 
       return output;

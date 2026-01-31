@@ -42,6 +42,9 @@ Thumbs.db
 *.tmp
 temp_videos/
 uploads/
+temp/
+temp_crop_data/
+output/
 
 # env files
 .env

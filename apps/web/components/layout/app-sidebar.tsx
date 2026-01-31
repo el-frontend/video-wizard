@@ -6,6 +6,7 @@ import {
     LayoutDashboard,
     Settings,
     Sparkles,
+    Subtitles,
     Video
 } from 'lucide-react';
 import Link from 'next/link';
@@ -27,6 +28,11 @@ const navItems: NavItem[] = [
     title: 'Video Wizard',
     href: '/video-wizard',
     icon: Video,
+  },
+  {
+    title: 'Subtitle Generator',
+    href: '/subtitle-generator',
+    icon: Subtitles,
   },
   {
     title: 'Content Intelligence',

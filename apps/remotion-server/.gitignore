@@ -23,6 +23,7 @@ logs/
 temp/
 tmp/
 *.tmp
+renders/
 
 # IDE
 .vscode/

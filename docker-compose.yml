@@ -1,0 +1,56 @@
+version: '3.8'
+
+networks:
+  video-wizard-network:
+    driver: bridge
+
+services:
+  # Python Processing Engine
+  processing-engine:
+    build:
+      context: ./apps/processing-engine
+      dockerfile: Dockerfile
+    container_name: processing-engine
+    networks:
+      - video-wizard-network
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/processing-engine/uploads:/app/uploads
+      - ./apps/processing-engine/output:/app/output
+      - ./apps/processing-engine:/app
+    env_file:
+      - ./apps/processing-engine/.env
+    environment:
+      - LOG_LEVEL=DEBUG
+    command: sh -c "pip install -r requirements.txt && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+    restart: unless-stopped
+
+  # Remotion Render Server
+  remotion-server:
+    build:
+      context: .
+      dockerfile: apps/remotion-server/Dockerfile
+    container_name: remotion-server
+    networks:
+      - video-wizard-network
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./apps/remotion-server/.env
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - RENDERS_DIR=./renders
+      # Access processing engine via container name on shared network
+      - PYTHON_ENGINE_URL=http://processing-engine:8000
+    volumes:
+      - ./packages/remotion-compositions:/app/packages/remotion-compositions
+      - ./apps/remotion-server/server:/app/apps/remotion-server/server
+      - ./apps/remotion-server/renders:/app/apps/remotion-server/renders
+      # Share the output directory with processing engine
+      - ./apps/processing-engine/output:/app/processing-engine/output
+    depends_on:
+      - processing-engine
+    restart: unless-stopped
+    command: pnpm dev

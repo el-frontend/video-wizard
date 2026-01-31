@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Video, Sparkles, Film, ArrowRight } from 'lucide-react';
+import { Video, Sparkles, Film, ArrowRight, Subtitles } from 'lucide-react';
 
 /**
  * Dashboard Home Page
@@ -19,7 +19,7 @@ export default function HomePage() {
       </div>
 
       {/* Feature Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {/* Video Wizard Card */}
         <Link href="/video-wizard" className="group">
           <div className="rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg">
@@ -53,6 +53,25 @@ export default function HomePage() {
             </p>
             <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
               <span>Explore</span>
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+        </Link>
+
+        {/* Subtitle Generator Card */}
+        <Link href="/subtitle-generator" className="group">
+          <div className="rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Subtitles className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground">Subtitle Generator</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Generate and render beautiful subtitles with AI transcription and customizable templates.
+            </p>
+            <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
+              <span>Create subtitles</span>
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </div>
           </div>

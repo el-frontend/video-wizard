@@ -40,6 +40,7 @@ export type ContentAnalysis = z.infer<typeof ContentAnalysisSchema>;
  */
 export interface AnalyzeContentRequest {
   transcript: string;
+  language?: string; // Detected language code (e.g., "en", "es")
 }
 
 /**

@@ -142,27 +142,20 @@ class AudioService:
         audio_path: str,
         language: Optional[str] = None,
         task: str = "transcribe"
-    ) -> List[Dict]:
+    ) -> tuple[List[Dict], str]:
         """
         Transcribe audio file using OpenAI Whisper (local or API)
-        
+
         Args:
             audio_path: Path to audio file
             language: Language code (e.g., "en", "es"). None for auto-detect
             task: "transcribe" or "translate" (translate to English)
-        
+
         Returns:
-            List of transcript segments with timestamps:
-            [
-                {
-                    "id": 0,
-                    "start": 0.0,
-                    "end": 4.5,
-                    "text": "Welcome to this tutorial about NextJS."
-                },
-                ...
-            ]
-        
+            Tuple of (segments, detected_language):
+            - segments: List of transcript segments with timestamps
+            - detected_language: Language code detected by Whisper
+
         Raises:
             FileNotFoundError: If audio file doesn't exist
             RuntimeError: If transcription fails
@@ -170,43 +163,47 @@ class AudioService:
         # Validate input
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
-        
+
         logger.info(f"Transcribing audio: {audio_path} (method={'API' if self.use_openai_api else 'local'})")
-        
+
         try:
             if self.use_openai_api:
                 return self._transcribe_with_api(audio_path, language)
             else:
                 return self._transcribe_local(audio_path, language, task)
-        
+
         except Exception as e:
             error_msg = f"Error during transcription: {str(e)}"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
     
-    def _transcribe_with_api(self, audio_path: str, language: Optional[str]) -> List[Dict]:
+    def _transcribe_with_api(self, audio_path: str, language: Optional[str]) -> tuple[List[Dict], str]:
         """
         Transcribe using OpenAI API
-        
+
         Args:
             audio_path: Path to audio file
-            language: Language code (defaults to "es" for Spanish)
-        
+            language: Language code (defaults to None for auto-detect)
+
         Returns:
-            List of transcript segments with timestamps
+            Tuple of (segments list, detected language code)
         """
         logger.info("Using OpenAI API for transcription")
-        
+
         with open(audio_path, "rb") as audio_file:
             # API call with timestamp granularity
+            # If language not specified, let Whisper auto-detect
             transcript = self.openai_client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file,
-                language=language or "es",  # Default to Spanish for video content
+                language=language,  # None for auto-detect
                 response_format="verbose_json",
                 timestamp_granularities=["segment"]
             )
-        
+
+        # Get detected language from response
+        detected_language = transcript.language or language or "en"
+
         # Format API response to match local format
         segments = []
         for idx, segment in enumerate(transcript.segments):
@@ -216,29 +213,29 @@ class AudioService:
                 "end": round(segment.end, 2),
                 "text": segment.text.strip()
             })
-        
-        logger.info(f"API transcription complete. Generated {len(segments)} segments")
-        return segments
+
+        logger.info(f"API transcription complete. Generated {len(segments)} segments. Language: {detected_language}")
+        return segments, detected_language
     
     def _transcribe_local(
-        self, 
-        audio_path: str, 
+        self,
+        audio_path: str,
         language: Optional[str],
         task: str
-    ) -> List[Dict]:
+    ) -> tuple[List[Dict], str]:
         """
         Transcribe using local Whisper model
-        
+
         Args:
             audio_path: Path to audio file
             language: Language code
             task: "transcribe" or "translate"
-        
+
         Returns:
-            List of transcript segments with timestamps
+            Tuple of (segments list, detected language code)
         """
         logger.info("Using local Whisper model for transcription")
-        
+
         # Transcribe using Whisper
         result = self.whisper_model.transcribe(
             audio_path,
@@ -246,7 +243,10 @@ class AudioService:
             task=task,
             verbose=False
         )
-        
+
+        # Get detected language
+        detected_language = result.get("language", language or "en")
+
         # Format output as structured JSON
         segments = []
         for idx, segment in enumerate(result["segments"]):
@@ -256,9 +256,9 @@ class AudioService:
                 "end": round(segment["end"], 2),
                 "text": segment["text"].strip()
             })
-        
-        logger.info(f"Local transcription complete. Generated {len(segments)} segments")
-        return segments
+
+        logger.info(f"Local transcription complete. Generated {len(segments)} segments. Language: {detected_language}")
+        return segments, detected_language
     
     def transcribe_video(
         self,
@@ -268,50 +268,53 @@ class AudioService:
     ) -> Dict:
         """
         Complete pipeline: Extract audio from video and transcribe
-        
+
         Args:
             video_path: Path to video file
             language: Language code for transcription. None for auto-detect
             cleanup: Whether to delete temporary audio file after transcription
-        
+
         Returns:
             Dictionary containing:
             {
                 "video_path": str,
                 "audio_path": str,
                 "segments": List[Dict],
-                "full_text": str
+                "full_text": str,
+                "segment_count": int,
+                "language": str  # Detected language code
             }
         """
         logger.info(f"Starting video transcription pipeline: {video_path}")
-        
+
         try:
             # Step 1: Extract audio
             audio_path = self.extract_audio(video_path)
-            
-            # Step 2: Transcribe audio
-            segments = self.transcribe_audio(audio_path, language=language)
-            
+
+            # Step 2: Transcribe audio (returns segments and detected language)
+            segments, detected_language = self.transcribe_audio(audio_path, language=language)
+
             # Generate full text
             full_text = " ".join(segment["text"] for segment in segments)
-            
+
             # Step 3: Cleanup (optional)
             if cleanup and os.path.exists(audio_path):
                 os.remove(audio_path)
                 logger.info(f"Cleaned up temporary audio file: {audio_path}")
-            
+
             result = {
                 "video_path": video_path,
                 "audio_path": audio_path if not cleanup else None,
                 "segments": segments,
                 "full_text": full_text,
-                "segment_count": len(segments)
+                "segment_count": len(segments),
+                "language": detected_language
             }
-            
-            logger.info(f"Video transcription complete: {len(segments)} segments")
-            
+
+            logger.info(f"Video transcription complete: {len(segments)} segments. Language: {detected_language}")
+
             return result
-        
+
         except Exception as e:
             logger.error(f"Video transcription pipeline failed: {str(e)}")
             raise

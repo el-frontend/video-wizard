@@ -5,7 +5,7 @@ import { requireEnv } from '../lib/utils';
  * AI models configuration
  */
 export const AI_MODELS = {
-  contentAnalysis: openai('gpt-4o'),
+  contentAnalysis: openai('gpt-5-mini'),
 } as const;
 
 /**

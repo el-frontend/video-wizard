@@ -9,14 +9,17 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@workspace/ui/components/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@workspace/ui/components/select';
 import { Loader2, Save } from "lucide-react";
 import { useState } from "react";
-
-interface SubtitleSegment {
-  start: number;
-  end: number;
-  text: string;
-}
+import type { SubtitleSegment, SubtitleTemplate } from '../types';
+import { RemotionPreview } from './remotion-preview';
 
 interface ClipEditModalProps {
   open: boolean;
@@ -25,16 +28,18 @@ interface ClipEditModalProps {
   clipSummary: string;
   videoUrl: string;
   subtitles: SubtitleSegment[];
-  onSave: (editedSubtitles: SubtitleSegment[]) => Promise<void>;
+  template: SubtitleTemplate;
+  onSave: (editedSubtitles: SubtitleSegment[], template: SubtitleTemplate) => Promise<void>;
 }
 
 /**
  * ClipEditModal Component
  *
- * Modal for editing clip subtitles inline:
- * - Shows video preview on the left
+ * Modal for editing clip subtitles and template:
+ * - Shows Remotion Player preview on the left (updates in real-time)
  * - Editable subtitle list on the right
- * - Save triggers Remotion re-render with new subtitles
+ * - Template selector at the top
+ * - Save triggers preview update (no server render yet)
  */
 export function ClipEditModal({
   open,
@@ -43,11 +48,18 @@ export function ClipEditModal({
   clipSummary,
   videoUrl,
   subtitles,
+  template: initialTemplate,
   onSave,
 }: ClipEditModalProps) {
-  const [editedSubtitles, setEditedSubtitles] =
-    useState<SubtitleSegment[]>(subtitles);
+  const [editedSubtitles, setEditedSubtitles] = useState<SubtitleSegment[]>(subtitles);
+  const [selectedTemplate, setSelectedTemplate] = useState<SubtitleTemplate>(initialTemplate);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Reset state when modal opens with new data
+  if (open && (editedSubtitles !== subtitles || selectedTemplate !== initialTemplate)) {
+    setEditedSubtitles(subtitles);
+    setSelectedTemplate(initialTemplate);
+  }
 
   // Format timestamp for display
   const formatTime = (seconds: number) => {
@@ -67,7 +79,7 @@ export function ClipEditModal({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSave(editedSubtitles);
+      await onSave(editedSubtitles, selectedTemplate);
       onClose();
     } catch (error) {
       console.error("Failed to save subtitles:", error);
@@ -78,23 +90,60 @@ export function ClipEditModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Edit Clip {clipIndex + 1}</DialogTitle>
           <DialogDescription>{clipSummary}</DialogDescription>
         </DialogHeader>
 
+        {/* Template Selector */}
+        <div className="mb-4">
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">
+            Subtitle Style
+          </label>
+          <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select template" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="viral">
+                <div className="flex items-center gap-2">
+                  <span>🔥</span>
+                  <span>Viral - Bold & Energetic</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="minimal">
+                <div className="flex items-center gap-2">
+                  <span>✨</span>
+                  <span>Minimal - Clean & Simple</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="modern">
+                <div className="flex items-center gap-2">
+                  <span>🎨</span>
+                  <span>Modern - Contemporary</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="default">
+                <div className="flex items-center gap-2">
+                  <span>📝</span>
+                  <span>Default - Standard</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="flex gap-6 flex-1 overflow-hidden">
-          {/* Video Preview */}
-          <div className="shrink-0 w-75">
+          {/* Video Preview with Remotion Player */}
+          <div className="shrink-0 w-80">
             <div className="aspect-9/16 rounded-lg overflow-hidden bg-black sticky top-0">
-              <video
-                src={videoUrl}
-                controls
-                className="w-full h-full object-contain"
-              >
-                Your browser does not support the video tag.
-              </video>
+              <RemotionPreview
+                videoUrl={videoUrl}
+                subtitles={editedSubtitles}
+                template={selectedTemplate}
+                className="w-full h-full"
+              />
             </div>
           </div>
 
@@ -106,7 +155,7 @@ export function ClipEditModal({
                   Subtitles ({editedSubtitles.length})
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Edit the text to update subtitles
+                  Edit the text - preview updates in real-time
                 </p>
               </div>
 
@@ -141,12 +190,12 @@ export function ClipEditModal({
             {isSaving ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Regenerating Video...
+                Saving...
               </>
             ) : (
               <>
                 <Save className="w-4 h-4 mr-2" />
-                Save & Regenerate
+                Save Changes
               </>
             )}
           </Button>

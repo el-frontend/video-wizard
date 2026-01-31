@@ -1,6 +1,6 @@
 'use client';
 
-import type { GeneratedClip, SubtitleSegment } from '@/features/video';
+import type { GeneratedClip, SubtitleSegment, SubtitleTemplate } from '@/features/video';
 import {
   ClipCard,
   ClipEditModal,
@@ -12,16 +12,19 @@ import {
   VideoUploader,
 } from '@/features/video';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 /**
  * Video Container Component
- * 
- * Redesigned UX flow:
- * 1. Upload video → Extract subtitles → AI analysis (same)
- * 2. Generate MAX 5 clips inline, one by one
- * 3. Show cards with skeleton loading → video preview when ready
- * 4. User can play or edit each clip
- * 5. Edit mode allows subtitle changes → regenerate with Remotion
+ *
+ * NEW WORKFLOW:
+ * 1. Upload video → Extract subtitles → AI analysis
+ * 2. Generate MAX 5 clips (CROP ONLY, no Remotion render)
+ * 3. Show Remotion Player preview with instant client-side rendering
+ * 4. User can:
+ *    - Change template style (updates preview instantly)
+ *    - Edit subtitles (updates preview instantly)
+ * 5. When ready, click "Render Final" → sends to Remotion server for final render
  */
 export function VideoContainer() {
   const [generatedClips, setGeneratedClips] = useState<GeneratedClip[]>([]);
@@ -34,6 +37,7 @@ export function VideoContainer() {
     currentStep,
     transcription,
     analysis,
+    language,
     error,
     progress,
     uploadedPath,
@@ -41,14 +45,9 @@ export function VideoContainer() {
     processVideo,
     resetState,
   } = useVideoProcessing({
-    onComplete: (data) => {
-      console.log('Analysis completed:', data);
-      console.log('uploadedPath:', uploadedPath);
-      console.log('transcription:', transcription);
-      // Automatically start generating clips
-      setTimeout(() => {
-        handleGenerateClips(data);
-      }, 100);
+    onComplete: (data, _uploadedPath, _transcription) => {
+      console.log('Analysis completed:', data)
+      handleGenerateClips(data, _uploadedPath, _transcription);
     },
     onError: (err) => {
       console.error('Processing error:', err);
@@ -56,28 +55,26 @@ export function VideoContainer() {
   });
 
   /**
-   * Generate clips inline one by one
+   * Generate clips - ONLY CROP, NO REMOTION RENDER
    * Max 5 clips, sorted by viral score
    */
-  const handleGenerateClips = async (analysisData: typeof analysis) => {
+  const handleGenerateClips = async (
+    analysisData: typeof analysis,
+    videoPath: string,
+    transcriptionData: typeof transcription
+  ) => {
     console.log('handleGenerateClips called', {
       analysisData,
-      uploadedPath,
-      transcription,
+      videoPath,
+      transcriptionData,
     });
 
-    if (!analysisData) {
-      console.error('No analysis data');
-      return;
-    }
-
-    if (!uploadedPath) {
-      console.error('No uploaded path');
-      return;
-    }
-
-    if (!transcription) {
-      console.error('No transcription data');
+    if (!analysisData || !videoPath || !transcriptionData) {
+      console.error('Missing required data for clip generation', {
+        hasAnalysis: !!analysisData,
+        hasUploadedPath: !!videoPath,
+        hasTranscription: !!transcriptionData,
+      });
       return;
     }
 
@@ -90,6 +87,9 @@ export function VideoContainer() {
 
     console.log('Top clips to generate:', topClips);
 
+    // Get detected language from transcription
+    const detectedLanguage = transcriptionData.language || 'en';
+
     // Initialize all clips with loading state
     const initialClips: GeneratedClip[] = topClips.map((clip, index) => ({
       index,
@@ -98,14 +98,15 @@ export function VideoContainer() {
       startTime: clip.start_time,
       endTime: clip.end_time,
       duration: clip.end_time - clip.start_time,
+      template: 'viral', // Default template
+      language: detectedLanguage, // Pass detected language
       isLoading: true,
     }));
 
     setGeneratedClips(initialClips);
-
-    // Generate clips one by one
     setClipGenerationProgress({ current: 0, total: topClips.length });
 
+    // Generate clips one by one (crop only)
     for (let i = 0; i < topClips.length; i++) {
       const clip = topClips[i];
 
@@ -113,12 +114,12 @@ export function VideoContainer() {
       setClipGenerationProgress({ current: i + 1, total: topClips.length });
 
       try {
-        // Step 1: Create the vertical clip
+        // Step 1: Create the vertical clip (CROP ONLY)
         const clipResponse = await fetch('/api/create-clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            video_path: uploadedPath,
+            video_path: videoPath,
             start_time: clip.start_time,
             end_time: clip.end_time,
             crop_mode: 'dynamic',
@@ -136,84 +137,35 @@ export function VideoContainer() {
         }
 
         // Step 2: Filter and adjust subtitles from original transcription
-        const clipSubtitles: SubtitleSegment[] = transcription.segments
-          .filter(
-            (segment) =>
-              segment.start >= clip.start_time && segment.end <= clip.end_time
-          )
+        const clipSubtitles: SubtitleSegment[] = transcriptionData.segments
+          .filter((segment) => segment.start >= clip.start_time && segment.end <= clip.end_time)
           .map((segment) => ({
             start: segment.start - clip.start_time,
             end: segment.end - clip.start_time,
             text: segment.text,
           }));
 
-        console.log(`Rendering clip ${i + 1} with Remotion...`);
+        console.log(`Clip ${i + 1} cropped successfully. Subtitles: ${clipSubtitles.length}`);
 
-        // Step 3: Render with Remotion (add subtitles overlay)
-        const remotionResponse = await fetch('/api/render-with-subtitles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clipPath: clipResult.data.output_path,
-            subtitles: clipSubtitles,
-          }),
-        });
-
-        if (!remotionResponse.ok) {
-          console.warn('Remotion rendering failed, using original clip');
-          // Fallback to original clip without Remotion
-          setGeneratedClips((prev) =>
-            prev.map((c, idx) =>
-              idx === i
-                ? {
-                    ...c,
-                    videoUrl: clipResult.data.output_url,
-                    clipPath: clipResult.data.output_path,
-                    subtitles: clipSubtitles,
-                    isLoading: false,
-                  }
-                : c
-            )
-          );
-        } else {
-          const remotionResult = await remotionResponse.json();
-
-          if (remotionResult.success) {
-            console.log(`Clip ${i + 1} rendered with Remotion successfully`);
-            // Update with Remotion-rendered video
-            setGeneratedClips((prev) =>
-              prev.map((c, idx) =>
-                idx === i
-                  ? {
-                      ...c,
-                      videoUrl: remotionResult.data.videoUrl,
-                      clipPath: remotionResult.data.clipPath,
-                      subtitles: clipSubtitles,
-                      isLoading: false,
-                    }
-                  : c
-              )
-            );
-          } else {
-            // Fallback to original clip
-            setGeneratedClips((prev) =>
-              prev.map((c, idx) =>
-                idx === i
-                  ? {
-                      ...c,
-                      videoUrl: clipResult.data.output_url,
-                      clipPath: clipResult.data.output_path,
-                      subtitles: clipSubtitles,
-                      isLoading: false,
-                    }
-                  : c
-              )
-            );
-          }
-        }
+        // Update with cropped video (NO REMOTION RENDER YET)
+        // The Remotion Player will handle preview rendering client-side
+        setGeneratedClips((prev) =>
+          prev.map((c, idx) =>
+            idx === i
+              ? {
+                  ...c,
+                  videoUrl: clipResult.data.output_url, // Cropped video without subtitles
+                  clipPath: clipResult.data.output_path,
+                  subtitles: clipSubtitles,
+                  language: detectedLanguage, // Ensure language is set
+                  isLoading: false,
+                }
+              : c
+          )
+        );
       } catch (err) {
         console.error(`Error generating clip ${i + 1}:`, err);
-        
+
         // Mark this clip as error
         setGeneratedClips((prev) =>
           prev.map((c, idx) =>
@@ -231,15 +183,14 @@ export function VideoContainer() {
 
     setIsGeneratingClips(false);
     setClipGenerationProgress({ current: 0, total: 0 });
-    console.log('All clips generated successfully');
+    console.log('All clips generated successfully (crop only)');
   };
 
   /**
-   * Handle play clip - video plays inline in the card
+   * Handle template change (updates preview instantly)
    */
-  const handlePlayClip = (clip: GeneratedClip) => {
-    // Video now plays inline with controls, no need to open new window
-    console.log('Play clip:', clip.index);
+  const handleTemplateChange = (clipIndex: number, template: SubtitleTemplate) => {
+    setGeneratedClips((prev) => prev.map((c) => (c.index === clipIndex ? { ...c, template } : c)));
   };
 
   /**
@@ -250,53 +201,100 @@ export function VideoContainer() {
   };
 
   /**
-   * Save edited subtitles and regenerate video with Remotion
+   * Save edited subtitles and template (NO RENDER YET, just update state)
    */
-  const handleSaveEditedSubtitles = async (
-    editedSubtitles: SubtitleSegment[]
-  ) => {
-    if (!editingClip || !editingClip.clipPath) return;
+  const handleSaveEdit = async (editedSubtitles: SubtitleSegment[], template: SubtitleTemplate) => {
+    if (!editingClip) return;
+
+    // Update the clip with new subtitles and template
+    // Preview will update instantly via Remotion Player
+    setGeneratedClips((prev) =>
+      prev.map((c) =>
+        c.index === editingClip.index
+          ? {
+              ...c,
+              subtitles: editedSubtitles,
+              template,
+            }
+          : c
+      )
+    );
+
+    console.log('Clip updated (preview only, no server render)');
+  };
+
+  /**
+   * Render final video with Remotion server
+   * This is when we actually call the Remotion server to create the final MP4
+   */
+  const handleRenderFinal = async (clip: GeneratedClip) => {
+    if (!clip.clipPath || !clip.subtitles || clip.subtitles.length === 0) {
+      toast.error('Cannot render: missing clip or subtitles');
+      return;
+    }
+
+    // Mark clip as rendering
+    setGeneratedClips((prev) =>
+      prev.map((c) => (c.index === clip.index ? { ...c, isRendering: true } : c))
+    );
 
     try {
-      // Call Remotion API to regenerate video with edited subtitles
+      console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
+
+      // Convert subtitles to milliseconds format
+      const formattedSubtitles = clip.subtitles.map((sub) => ({
+        start: sub.start * 1000, // Convert to ms
+        end: sub.end * 1000,
+        text: sub.text,
+      }));
+
+      // Call Remotion server to render final video
       const response = await fetch('/api/render-with-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clipPath: editingClip.clipPath,
-          subtitles: editedSubtitles,
+          clipPath: clip.clipPath,
+          subtitles: formattedSubtitles,
+          template: clip.template || 'viral',
+          language: clip.language || 'en',
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to regenerate video');
+        throw new Error('Failed to render video');
       }
 
       const result = await response.json();
 
       if (!result.success) {
-        throw new Error(result.message || 'Video regeneration failed');
+        throw new Error(result.message || 'Video render failed');
       }
 
-      // Update the clip with new video URL
+      console.log(`Clip ${clip.index + 1} rendered successfully!`);
+
+      // Update the clip with rendered video URL
       setGeneratedClips((prev) =>
         prev.map((c) =>
-          c.index === editingClip.index
+          c.index === clip.index
             ? {
                 ...c,
-                videoUrl: result.data.videoUrl,
-                clipPath: result.data.clipPath,
-                subtitles: editedSubtitles,
+                renderedVideoUrl: result.data.videoUrl,
+                isRendering: false,
               }
             : c
         )
       );
 
-      alert('Video regenerated successfully!');
+      toast.success('Video rendered successfully! You can now download it.');
     } catch (err) {
-      console.error('Error regenerating video:', err);
-      alert(err instanceof Error ? err.message : 'Failed to regenerate video');
-      throw err;
+      console.error('Error rendering final video:', err);
+
+      // Mark as not rendering and show error
+      setGeneratedClips((prev) =>
+        prev.map((c) => (c.index === clip.index ? { ...c, isRendering: false } : c))
+      );
+
+      toast.error(err instanceof Error ? err.message : 'Failed to render video');
     }
   };
 
@@ -313,33 +311,24 @@ export function VideoContainer() {
         error={error}
       />
 
-      <ProcessingProgress
-        currentStep={currentStep}
-        progress={progress}
-        error={error}
-      />
+      <ProcessingProgress currentStep={currentStep} progress={progress} error={error} />
 
       {transcription && currentStep !== 'idle' && currentStep !== 'complete' && (
         <TranscriptionResults transcription={transcription} />
       )}
 
-      {/* Show analysis summary and generate button after analysis completes */}
-      {analysis && currentStep === 'complete' && generatedClips.length === 0 && !isGeneratingClips && (
-        <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
-          <h3 className="text-xl font-bold mb-2 text-foreground">
-            🎉 Analysis Complete!
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            Found {analysis.clips.length} viral moments. Click below to generate the top 5 clips.
-          </p>
-          <button
-            onClick={() => handleGenerateClips(analysis)}
-            className="px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition-all shadow-lg"
-          >
-            Generate Viral Clips
-          </button>
-        </div>
-      )}
+      {/* Show analysis summary after analysis completes */}
+      {analysis &&
+        currentStep === 'complete' &&
+        generatedClips.length === 0 &&
+        !isGeneratingClips && (
+          <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
+            <h3 className="text-xl font-bold mb-2 text-foreground">🎉 Analysis Complete!</h3>
+            <p className="text-muted-foreground mb-4">
+              Found {analysis.clips.length} viral moments. Generating top 5 clips...
+            </p>
+          </div>
+        )}
 
       {/* Generated Clips Grid */}
       {generatedClips.length > 0 && (
@@ -350,8 +339,8 @@ export function VideoContainer() {
             </h2>
             <p className="text-muted-foreground">
               {isGeneratingClips
-                ? `Creating and rendering clips with subtitles (${clipGenerationProgress.current}/${clipGenerationProgress.total})...`
-                : 'Videos with subtitles rendered. Click Play to watch or Edit to customize.'}
+                ? `Cropping videos (${clipGenerationProgress.current}/${clipGenerationProgress.total})...`
+                : 'Preview your clips with real-time subtitle rendering. Edit subtitles and change templates, then click "Render Final" when ready.'}
             </p>
           </div>
 
@@ -363,7 +352,10 @@ export function VideoContainer() {
                   Clip {clipGenerationProgress.current} of {clipGenerationProgress.total}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {Math.round((clipGenerationProgress.current / clipGenerationProgress.total) * 100)}%
+                  {Math.round(
+                    (clipGenerationProgress.current / clipGenerationProgress.total) * 100
+                  )}
+                  %
                 </span>
               </div>
               <div className="w-full bg-muted rounded-full h-2">
@@ -386,10 +378,15 @@ export function VideoContainer() {
                 viralScore={clip.viralScore}
                 duration={clip.duration}
                 videoUrl={clip.videoUrl}
+                renderedVideoUrl={clip.renderedVideoUrl}
                 subtitles={clip.subtitles}
+                template={clip.template}
+                language={clip.language}
                 isLoading={clip.isLoading}
+                isRendering={clip.isRendering}
                 onEdit={() => handleEditClip(clip)}
-                onPlay={() => handlePlayClip(clip)}
+                onTemplateChange={(template) => handleTemplateChange(clip.index, template)}
+                onRenderFinal={() => handleRenderFinal(clip)}
               />
             ))}
           </div>
@@ -397,7 +394,7 @@ export function VideoContainer() {
       )}
 
       {/* Edit Modal */}
-      {editingClip && editingClip.videoUrl && editingClip.subtitles && editingClip.clipPath && (
+      {editingClip && editingClip.videoUrl && editingClip.subtitles && (
         <ClipEditModal
           open={!!editingClip}
           onClose={() => setEditingClip(null)}
@@ -405,7 +402,8 @@ export function VideoContainer() {
           clipSummary={editingClip.summary}
           videoUrl={editingClip.videoUrl}
           subtitles={editingClip.subtitles}
-          onSave={handleSaveEditedSubtitles}
+          template={editingClip.template || 'viral'}
+          onSave={handleSaveEdit}
         />
       )}
 

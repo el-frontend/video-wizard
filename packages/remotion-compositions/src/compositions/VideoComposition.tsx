@@ -13,6 +13,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
   videoUrl,
   subtitles,
   template,
+  language = 'en',
   backgroundColor = '#000000',
 }) => {
   const frame = useCurrentFrame();
@@ -43,6 +44,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
           subtitles={subtitles}
           currentTime={currentTime}
           template={template}
+          language={language}
         />
       </Sequence>
     </AbsoluteFill>

@@ -7,6 +7,7 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import { ViralClipsList } from '@/components/viral-clips-list';
 import { useContentAnalysis } from '@/lib/hooks/useContentAnalysis';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 const SAMPLE_TRANSCRIPT = `[00:00 - 00:15] Hey everyone! Did you know that 90% of people who start a YouTube channel quit within the first year? But I'm going to show you the one secret that changed everything for me.
 
@@ -35,7 +36,7 @@ export default function ContentIntelligencePage() {
 
   const handleAnalyze = async () => {
     if (!transcript.trim()) {
-      alert('Please enter a transcript to analyze');
+      toast.warning('Please enter a transcript to analyze');
       return;
     }
     await analyzeContent(transcript);

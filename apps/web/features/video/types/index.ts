@@ -19,6 +19,7 @@ export interface TranscriptionResult {
   segments: TranscriptSegment[];
   full_text: string;
   segment_count: number;
+  language: string; // Detected language code (e.g., "en", "es")
 }
 
 export type ProcessingStep = 
@@ -37,6 +38,7 @@ export interface VideoProcessingState {
   uploadedPath: string;
   transcription: TranscriptionResult | null;
   analysis: ContentAnalysis | null;
+  language: string; // Detected language code
   error: string;
   progress: string;
 }
@@ -51,6 +53,11 @@ export interface SubtitleSegment {
 }
 
 /**
+ * Template style for subtitle rendering
+ */
+export type SubtitleTemplate = 'default' | 'viral' | 'minimal' | 'modern' | 'highlight' | 'colorshift' | 'hormozi' | 'mrbeast' | 'mrbeastemoji';
+
+/**
  * Generated video clip with loading state
  */
 export interface GeneratedClip {
@@ -60,9 +67,13 @@ export interface GeneratedClip {
   startTime: number;
   endTime: number;
   duration: number;
-  videoUrl?: string;
-  clipPath?: string;
+  videoUrl?: string; // Cropped video without subtitles (for preview)
+  clipPath?: string; // Path to cropped video
+  renderedVideoUrl?: string; // Final rendered video with subtitles from Remotion server
   subtitles?: SubtitleSegment[];
+  template?: SubtitleTemplate; // Current template selection
+  language?: string; // Language code for emoji template
   isLoading: boolean;
+  isRendering?: boolean; // True when rendering final video
   error?: string;
 }

@@ -2,24 +2,21 @@
 
 import type { ContentAnalysis } from '@/lib/types/content-intelligence';
 import { useState } from 'react';
-import {
-    formatTranscriptForAI,
-    getPythonEngineUrl,
-    validateVideoFile,
-} from '../lib/utils';
-import type {
-    TranscriptionResult,
-    VideoProcessingState
-} from '../types';
+import { formatTranscriptForAI, getPythonEngineUrl, validateVideoFile } from '../lib/utils';
+import type { TranscriptionResult, VideoProcessingState } from '../types';
 
 interface UseVideoProcessingOptions {
-  onComplete?: (analysis: ContentAnalysis) => void;
+  onComplete?: (
+    analysis: ContentAnalysis,
+    uploadedPath: string,
+    transcription: TranscriptionResult
+  ) => void;
   onError?: (error: string) => void;
 }
 
 /**
  * Hook for managing video processing workflow
- * 
+ *
  * Handles upload, transcription, and AI analysis
  */
 export function useVideoProcessing(options?: UseVideoProcessingOptions) {
@@ -29,6 +26,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
     uploadedPath: '',
     transcription: null,
     analysis: null,
+    language: 'en',
     error: '',
     progress: '',
   });
@@ -61,6 +59,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       uploadedPath: '',
       transcription: null,
       analysis: null,
+      language: 'en',
       error: '',
       progress: '',
     });
@@ -118,9 +117,11 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       }
 
       const transcriptionData: TranscriptionResult = await transcribeResponse.json();
+      const detectedLanguage = transcriptionData.language || 'en';
       updateState({
         transcription: transcriptionData,
-        progress: `Transcription complete: ${transcriptionData.segment_count} segments`,
+        language: detectedLanguage,
+        progress: `Transcription complete: ${transcriptionData.segment_count} segments (${detectedLanguage.toUpperCase()})`,
       });
 
       // Step 3: Analyze with AI
@@ -136,7 +137,10 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ transcript: formattedTranscript }),
+        body: JSON.stringify({
+          transcript: formattedTranscript,
+          language: detectedLanguage,
+        }),
       });
 
       if (!analysisResponse.ok) {
@@ -155,7 +159,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
         progress: 'Process completed! Viral clips found.',
       });
 
-      options?.onComplete?.(analysisData.data);
+      options?.onComplete?.(analysisData.data, uploadData.path, transcriptionData);
     } catch (err) {
       console.error('Processing error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

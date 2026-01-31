@@ -27,7 +27,7 @@ export interface WordTiming {
 /**
  * Available caption template types
  */
-export type CaptionTemplate = 'default' | 'viral' | 'minimal' | 'modern';
+export type CaptionTemplate = 'default' | 'viral' | 'minimal' | 'modern' | 'highlight' | 'colorshift' | 'hormozi' | 'mrbeast' | 'mrbeastemoji';
 
 /**
  * Props for the main video composition
@@ -36,6 +36,7 @@ export interface VideoCompositionProps {
   videoUrl: string;
   subtitles: SubtitleSegment[];
   template: CaptionTemplate;
+  language?: string; // Language code for emoji matching (e.g., 'en', 'es')
   backgroundColor?: string;
   videoStartTime?: number; // Start offset in the source video
 }
@@ -47,4 +48,5 @@ export interface CaptionTemplateProps {
   currentWord: string;
   currentSegment: SubtitleSegment | null;
   isActive: boolean;
+  language?: string; // Language code for emoji matching
 }
