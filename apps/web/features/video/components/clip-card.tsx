@@ -13,6 +13,7 @@ import {
 import { Download, Edit, FileText, Film, Loader2, Play, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
+import type { BrandKit } from '../types/brand-kit';
 import { getAspectClass } from '../lib/aspect-ratios';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
 import { RemotionPreview } from './remotion-preview';
@@ -28,6 +29,7 @@ interface ClipCardProps {
   template?: SubtitleTemplate;
   language?: string; // Language code for emoji template
   aspectRatio?: AspectRatio;
+  brandKit?: BrandKit;
   isLoading: boolean;
   isRendering?: boolean;
   onEdit: () => void;
@@ -55,6 +57,7 @@ export function ClipCard({
   template = 'viral',
   language = 'en',
   aspectRatio = '9:16',
+  brandKit,
   isLoading,
   isRendering,
   onEdit,
@@ -125,6 +128,7 @@ export function ClipCard({
               template={template}
               language={language}
               aspectRatio={aspectRatio}
+              brandKit={brandKit}
               className="w-full h-full"
             />
           ) : videoUrl ? (

@@ -4,6 +4,7 @@ import { Player } from '@remotion/player';
 import { VideoComposition } from '@workspace/remotion-compositions';
 import { useMemo } from 'react';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
+import type { BrandKit } from '../types/brand-kit';
 import { getDimensions } from '../lib/aspect-ratios';
 
 interface RemotionPreviewProps {
@@ -12,6 +13,7 @@ interface RemotionPreviewProps {
   template: SubtitleTemplate;
   language?: string;
   aspectRatio?: AspectRatio;
+  brandKit?: BrandKit;
   className?: string;
 }
 
@@ -28,6 +30,7 @@ export function RemotionPreview({
   template,
   language = 'en',
   aspectRatio = '9:16',
+  brandKit,
   className = '',
 }: RemotionPreviewProps) {
   const { width: compositionWidth, height: compositionHeight } = getDimensions(aspectRatio);
@@ -60,12 +63,16 @@ export function RemotionPreview({
       template,
       language,
       backgroundColor: '#000000',
+      brandKit,
     }),
-    [videoUrl, remotionSubtitles, template, language]
+    [videoUrl, remotionSubtitles, template, language, brandKit]
   );
 
   return (
-    <div className={`remotion-preview-container ${className}`}>
+    <div
+      className={`remotion-preview-container ${className}`}
+      style={{ width: '100%', height: '100%' }}
+    >
       <Player
         component={VideoComposition}
         inputProps={inputProps}
@@ -76,6 +83,7 @@ export function RemotionPreview({
         style={{
           width: '100%',
           height: '100%',
+          objectFit: 'contain',
         }}
         controls
         loop

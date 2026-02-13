@@ -394,6 +394,7 @@ export function MrBeastEmojiTemplate({
   currentSegment,
   isActive,
   language = 'en',
+  brandKit,
 }: MrBeastEmojiTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -439,44 +440,34 @@ export function MrBeastEmojiTemplate({
 
   // Chunk pop-in animation
   const popDuration = 12;
-  const chunkScale = interpolate(
-    frameInChunk,
-    [0, popDuration * 0.4, popDuration],
-    [0.3, 1.1, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkScale = interpolate(frameInChunk, [0, popDuration * 0.4, popDuration], [0.3, 1.1, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-  const chunkOpacity = interpolate(
-    frameInChunk,
-    [0, popDuration * 0.5],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkOpacity = interpolate(frameInChunk, [0, popDuration * 0.5], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Emoji bounce animation (staggered after text appears)
   const emojiAnimations = emojis.map((_, index) => {
-    const delay = popDuration + (index * 3);
+    const delay = popDuration + index * 3;
 
-    const emojiScale = interpolate(
-      frameInChunk,
-      [delay, delay + 4, delay + 8],
-      [0, 1.4, 1],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-    );
+    const emojiScale = interpolate(frameInChunk, [delay, delay + 4, delay + 8], [0, 1.4, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
 
-    const emojiY = interpolate(
-      frameInChunk,
-      [delay, delay + 4, delay + 8],
-      [30, -8, 0],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-    );
+    const emojiY = interpolate(frameInChunk, [delay, delay + 4, delay + 8], [30, -8, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
 
-    const emojiRotate = interpolate(
-      frameInChunk,
-      [delay, delay + 4, delay + 8],
-      [-15, 10, 0],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-    );
+    const emojiRotate = interpolate(frameInChunk, [delay, delay + 4, delay + 8], [-15, 10, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
 
     return { scale: emojiScale, y: emojiY, rotate: emojiRotate };
   });
@@ -500,8 +491,8 @@ export function MrBeastEmojiTemplate({
   const finalOpacity = Math.min(chunkOpacity, exitOpacity);
   const finalScale = Math.min(chunkScale, exitScale);
 
-  // MrBeast green color for highlights
-  const mrBeastGreen = '#00FF00';
+  // MrBeast green color for highlights (brandKit primary overrides)
+  const mrBeastGreen = brandKit?.primaryColor ?? '#00FF00';
 
   return (
     <AbsoluteFill
@@ -554,7 +545,7 @@ export function MrBeastEmojiTemplate({
 
             // Determine if word should be green (highlight keywords)
             const isKeyword = wordIndex % 2 === 1 || word.length > 5;
-            const textColor = isKeyword ? mrBeastGreen : '#FFFFFF';
+            const textColor = isKeyword ? mrBeastGreen : (brandKit?.textColor ?? '#FFFFFF');
 
             return (
               <div
@@ -571,7 +562,8 @@ export function MrBeastEmojiTemplate({
                     textAlign: 'center',
                     margin: 0,
                     lineHeight: 1.1,
-                    fontFamily: 'Impact, Bangers, Comic Sans MS, cursive, sans-serif',
+                    fontFamily:
+                      brandKit?.fontFamily ?? 'Impact, Bangers, Comic Sans MS, cursive, sans-serif',
                     textTransform: 'uppercase',
                     whiteSpace: 'nowrap',
                     letterSpacing: '1px',

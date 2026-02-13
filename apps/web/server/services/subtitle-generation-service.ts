@@ -35,12 +35,24 @@ export interface SubtitleGenerationResult {
   videoDuration: number; // milliseconds
 }
 
+export interface BrandKitInput {
+  logoUrl?: string;
+  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  logoScale?: number;
+  primaryColor?: string;
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+}
+
 export interface RenderSubtitlesInput {
   videoPath: string;
   subtitles: SubtitleSegment[];
   template: CaptionTemplate;
   language: string;
   aspectRatio?: string;
+  brandKit?: BrandKitInput;
 }
 
 export interface RenderSubtitlesResult {
@@ -157,6 +169,7 @@ export class SubtitleGenerationService {
             aspectRatio,
             backgroundColor: '#000000',
             durationInFrames,
+            brandKit: input.brandKit,
           },
         }),
       });

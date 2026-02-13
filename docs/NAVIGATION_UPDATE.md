@@ -9,6 +9,7 @@ Se ha agregado el **Subtitle Generator** a la navegación principal de la aplica
 **Archivo**: `apps/web/app/page.tsx`
 
 **Cambios**:
+
 - ✅ Importado icono `Subtitles` de lucide-react
 - ✅ Actualizada grid de cards de `lg:grid-cols-3` a `lg:grid-cols-4`
 - ✅ Agregada nueva card "Subtitle Generator" con:
@@ -24,11 +25,13 @@ Se ha agregado el **Subtitle Generator** a la navegación principal de la aplica
 **Archivo**: `apps/web/components/layout/app-sidebar.tsx`
 
 **Cambios**:
+
 - ✅ Importado icono `Subtitles` de lucide-react
 - ✅ Agregado item "Subtitle Generator" al array `navItems`
 - ✅ Posicionado entre "Video Wizard" y "Content Intelligence"
 
 **Features**:
+
 - Active state highlighting (cuando estás en `/subtitle-generator`)
 - Icono consistente con el dashboard
 - Hover effects automáticos
@@ -86,13 +89,13 @@ Bottom Navigation
 
 ## Rutas Disponibles
 
-| Ruta | Componente | Descripción |
-|------|-----------|-------------|
-| `/` | Dashboard | Página principal con cards |
-| `/video-wizard` | Video Wizard | Pipeline completo de análisis |
-| `/subtitle-generator` | Subtitle Generator | Generación de subtítulos únicamente |
-| `/content-intelligence` | Content Intelligence | Análisis de transcripción |
-| `/remotion` | Remotion Studio | Estudio de composición |
+| Ruta                    | Componente           | Descripción                         |
+| ----------------------- | -------------------- | ----------------------------------- |
+| `/`                     | Dashboard            | Página principal con cards          |
+| `/video-wizard`         | Video Wizard         | Pipeline completo de análisis       |
+| `/subtitle-generator`   | Subtitle Generator   | Generación de subtítulos únicamente |
+| `/content-intelligence` | Content Intelligence | Análisis de transcripción           |
+| `/remotion`             | Remotion Studio      | Estudio de composición              |
 
 ## Testing
 
@@ -141,6 +144,7 @@ Bottom Navigation
 Todos los elementos mantienen la misma estructura y estilo:
 
 **Card Structure**:
+
 ```tsx
 <Link href="/subtitle-generator">
   <div className="rounded-lg border hover:border-primary/50 hover:shadow-lg">
@@ -160,11 +164,9 @@ Todos los elementos mantienen la misma estructura y estilo:
 ```
 
 **Sidebar Item Structure**:
+
 ```tsx
-<Link
-  href="/subtitle-generator"
-  className={active ? 'bg-primary' : 'hover:bg-accent'}
->
+<Link href="/subtitle-generator" className={active ? 'bg-primary' : 'hover:bg-accent'}>
   <Subtitles className="h-5 w-5" />
   <span>Subtitle Generator</span>
 </Link>

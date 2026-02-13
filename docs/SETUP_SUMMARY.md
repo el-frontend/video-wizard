@@ -36,27 +36,33 @@ chmod +x setup-hooks.sh
 ## Files Created
 
 ### Configuration Files
+
 - `commitlint.config.js` - Commit message rules
 - `.lintstagedrc.js` - Pre-commit check configuration
 - `.prettierrc` - Code formatting rules
 - `.prettierignore` - Files to skip formatting
 
 ### Git Hooks
+
 - `.husky/pre-commit` - Runs linting and formatting
 - `.husky/commit-msg` - Validates commit messages
 
 ### Documentation
+
 - `COMMIT_CONVENTIONS.md` - Complete commit guidelines
 - `HUSKY_SETUP.md` - Setup and troubleshooting guide
 - `SETUP_SUMMARY.md` - This file
 
 ### Scripts
+
 - `setup-hooks.sh` - Automated setup script
 
 ## Updated Files
 
 ### Root package.json
+
 Added scripts:
+
 ```json
 {
   "scripts": {
@@ -74,7 +80,9 @@ Added scripts:
 ```
 
 ### apps/web/package.json
+
 Added scripts:
+
 ```json
 {
   "scripts": {
@@ -86,7 +94,9 @@ Added scripts:
 ```
 
 ### README.md
+
 Added:
+
 - Code Quality section
 - Links to commit conventions
 - Pre-commit checks documentation
@@ -96,6 +106,7 @@ Added:
 ### Making Commits
 
 **Method 1: Interactive (Recommended)**
+
 ```bash
 git add .
 pnpm commit
@@ -103,6 +114,7 @@ pnpm commit
 ```
 
 **Method 2: Manual**
+
 ```bash
 git add .
 git commit -m "feat(video): add new feature"
@@ -119,6 +131,7 @@ git commit -m "feat(video): add new feature"
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation
@@ -131,6 +144,7 @@ git commit -m "feat(video): add new feature"
 - `chore`: Maintenance
 
 **Examples:**
+
 ```bash
 feat(video): add subtitle rendering
 fix(api): handle missing transcript error
@@ -141,14 +155,18 @@ refactor(services): extract video analysis logic
 ## What Happens on Commit
 
 ### 1. Pre-commit Hook
+
 Runs automatically when you commit:
+
 - ✓ ESLint checks and fixes TypeScript/JavaScript
 - ✓ Prettier formats all staged files
 - ✓ Python Black checks formatting (if applicable)
 - ✓ Python Flake8 lints code (if applicable)
 
 ### 2. Commit Message Validation
+
 After writing your message:
+
 - ✓ Validates commit type
 - ✓ Checks subject format
 - ✓ Ensures header length (max 100 chars)
@@ -159,18 +177,21 @@ After writing your message:
 ## Testing the Setup
 
 ### Test 1: Valid Commit
+
 ```bash
 git commit --allow-empty -m "test(hooks): verify setup"
 # Should succeed ✅
 ```
 
 ### Test 2: Invalid Commit
+
 ```bash
 git commit --allow-empty -m "invalid message"
 # Should fail with validation errors ❌
 ```
 
 ### Test 3: Interactive Commit
+
 ```bash
 pnpm commit
 # Should show interactive prompts ✅
@@ -179,6 +200,7 @@ pnpm commit
 ## Quick Reference
 
 ### Commands
+
 ```bash
 pnpm commit          # Interactive commit tool
 pnpm format          # Format all files
@@ -188,14 +210,17 @@ pnpm test           # Run tests
 ```
 
 ### Skip Hooks (Emergency Only)
+
 ```bash
 git commit --no-verify -m "emergency fix"
 ```
+
 ⚠️ **Not recommended** - Use only in critical situations
 
 ## Common Issues
 
 ### Issue: Hooks not running
+
 ```bash
 pnpm prepare
 chmod +x .husky/pre-commit
@@ -203,13 +228,17 @@ chmod +x .husky/commit-msg
 ```
 
 ### Issue: pnpm not found
+
 Install pnpm globally:
+
 ```bash
 npm install -g pnpm
 ```
 
 ### Issue: Python linters failing
+
 Either install Python tools or remove from `.lintstagedrc.js`:
+
 ```bash
 pip install black flake8
 ```
@@ -217,6 +246,7 @@ pip install black flake8
 ## Dependencies Added
 
 ### Root Level
+
 - `husky@^9.0.0`
 - `@commitlint/cli@^19.0.0`
 - `@commitlint/config-conventional@^19.0.0`
@@ -225,6 +255,7 @@ pip install black flake8
 - `lint-staged@^15.0.0`
 
 ### Web App
+
 - `prettier@^3.2.0`
 
 ## Benefits
@@ -266,6 +297,7 @@ Read these guides for more details:
 ## Support
 
 If you encounter issues:
+
 1. Check [HUSKY_SETUP.md](./HUSKY_SETUP.md) troubleshooting section
 2. Review error messages carefully
 3. Verify all dependencies are installed

@@ -11,6 +11,7 @@ pnpm install
 ```
 
 This will automatically:
+
 1. Install all required packages
 2. Initialize Husky with the `prepare` script
 3. Set up Git hooks
@@ -67,6 +68,7 @@ pnpm commit
 ```
 
 Follow the prompts:
+
 1. Select the type of change
 2. Enter the scope (optional)
 3. Write a short description
@@ -140,6 +142,7 @@ git commit -m "feat(web): add new landing page hero section"
 ### Failed Commit Examples
 
 **ESLint failure:**
+
 ```bash
 git commit -m "feat(web): add new feature"
 
@@ -152,6 +155,7 @@ git commit -m "feat(web): add new feature"
 **Solution:** Fix the ESLint error and commit again.
 
 **Invalid commit message:**
+
 ```bash
 git commit -m "Added new feature"
 
@@ -206,6 +210,7 @@ git commit --allow-empty -m "test(hooks): verify commit validation"
 **Cause:** Husky not initialized
 
 **Solution:**
+
 ```bash
 pnpm prepare
 chmod +x .husky/pre-commit
@@ -223,6 +228,7 @@ chmod +x .husky/commit-msg
 **Cause:** Black or Flake8 not installed
 
 **Solution:**
+
 ```bash
 cd apps/processing-engine
 pip install black flake8
@@ -235,6 +241,7 @@ Or remove Python checks from `.lintstagedrc.js` if not using Python.
 **Cause:** lint-staged checking all files
 
 **Solution:** Only stage the files you want to commit:
+
 ```bash
 git add specific-file.ts
 git commit
@@ -282,7 +289,7 @@ Edit `.prettierrc`:
 {
   "semi": true,
   "singleQuote": true,
-  "printWidth": 80  // Change to your preference
+  "printWidth": 80 // Change to your preference
 }
 ```
 

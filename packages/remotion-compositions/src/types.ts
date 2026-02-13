@@ -1,6 +1,6 @@
 /**
  * Remotion Video Composition Types
- * 
+ *
  * Type definitions for video composition props and subtitle data
  */
 
@@ -10,7 +10,7 @@
 export interface SubtitleSegment {
   id: number;
   start: number; // Time in seconds
-  end: number;   // Time in seconds
+  end: number; // Time in seconds
   text: string;
   words?: WordTiming[];
 }
@@ -27,7 +27,30 @@ export interface WordTiming {
 /**
  * Available caption template types
  */
-export type CaptionTemplate = 'default' | 'viral' | 'minimal' | 'modern' | 'highlight' | 'colorshift' | 'hormozi' | 'mrbeast' | 'mrbeastemoji';
+export type CaptionTemplate =
+  | 'default'
+  | 'viral'
+  | 'minimal'
+  | 'modern'
+  | 'highlight'
+  | 'colorshift'
+  | 'hormozi'
+  | 'mrbeast'
+  | 'mrbeastemoji';
+
+/**
+ * Brand Kit for custom styling overrides
+ */
+export interface BrandKit {
+  logoUrl?: string;
+  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  logoScale?: number;
+  primaryColor?: string;
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+}
 
 /**
  * Props for the main video composition
@@ -39,6 +62,7 @@ export interface VideoCompositionProps {
   language?: string; // Language code for emoji matching (e.g., 'en', 'es')
   backgroundColor?: string;
   videoStartTime?: number; // Start offset in the source video
+  brandKit?: BrandKit;
 }
 
 /**
@@ -49,4 +73,5 @@ export interface CaptionTemplateProps {
   currentSegment: SubtitleSegment | null;
   isActive: boolean;
   language?: string; // Language code for emoji matching
+  brandKit?: BrandKit;
 }

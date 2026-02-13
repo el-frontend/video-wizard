@@ -3,6 +3,7 @@
 import type { GeneratedClip, SubtitleSegment, SubtitleTemplate } from '@/features/video';
 import {
   AspectRatioSelector,
+  BrandKitSettings,
   ClipCard,
   ClipEditModal,
   ProcessingProgress,
@@ -12,6 +13,7 @@ import {
   VideoHowItWorks,
   VideoUploader,
 } from '@/features/video';
+import { useBrandKit } from '@/features/video/hooks/use-brand-kit';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -32,6 +34,7 @@ export function VideoContainer() {
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipGenerationProgress, setClipGenerationProgress] = useState({ current: 0, total: 0 });
   const [editingClip, setEditingClip] = useState<GeneratedClip | null>(null);
+  const { brandKit, setBrandKit } = useBrandKit();
 
   const {
     file,
@@ -215,21 +218,30 @@ export function VideoContainer() {
   const handleSaveEdit = async (editedSubtitles: SubtitleSegment[], template: SubtitleTemplate) => {
     if (!editingClip) return;
 
-    // Update the clip with new subtitles and template
-    // Preview will update instantly via Remotion Player
-    setGeneratedClips((prev) =>
-      prev.map((c) =>
-        c.index === editingClip.index
-          ? {
-              ...c,
-              subtitles: editedSubtitles,
-              template,
-            }
-          : c
-      )
-    );
+    try {
+      // Update the clip with new subtitles and template
+      // Preview will update instantly via Remotion Player
+      setGeneratedClips((prev) =>
+        prev.map((c) =>
+          c.index === editingClip.index
+            ? {
+                ...c,
+                subtitles: editedSubtitles,
+                template,
+              }
+            : c
+        )
+      );
 
-    console.log('Clip updated (preview only, no server render)');
+      // Close modal and show success message
+      setEditingClip(null);
+      toast.success('Subtitles updated! Preview will refresh automatically.');
+      console.log('Clip updated (preview only, no server render)');
+    } catch (error) {
+      console.error('Failed to update subtitles:', error);
+      toast.error('Failed to update subtitles');
+      throw error; // Re-throw to let modal handle it
+    }
   };
 
   /**
@@ -267,6 +279,7 @@ export function VideoContainer() {
           template: clip.template || 'viral',
           language: clip.language || 'en',
           aspectRatio: clip.aspectRatio || aspectRatio,
+          brandKit: brandKit ?? undefined,
         }),
       });
 
@@ -325,14 +338,19 @@ export function VideoContainer() {
         error={error}
       />
 
-      {/* Aspect Ratio Selector - visible before processing */}
+      {/* Aspect Ratio Selector & Brand Kit - visible before processing */}
       {(currentStep === 'idle' || currentStep === 'error') && (file || youtubeUrl) && (
-        <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
-          <h3 className="text-lg font-semibold mb-2">Output Format</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Choose the aspect ratio for your clips
-          </p>
-          <AspectRatioSelector selected={aspectRatio} onChange={setAspectRatio} />
+        <div className="space-y-6">
+          <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">Output Format</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Choose the aspect ratio for your clips
+            </p>
+            <AspectRatioSelector selected={aspectRatio} onChange={setAspectRatio} />
+          </div>
+          <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
+            <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+          </div>
         </div>
       )}
 
@@ -408,6 +426,7 @@ export function VideoContainer() {
                 template={clip.template}
                 language={clip.language}
                 aspectRatio={clip.aspectRatio || aspectRatio}
+                brandKit={brandKit ?? undefined}
                 isLoading={clip.isLoading}
                 isRendering={clip.isRendering}
                 onEdit={() => handleEditClip(clip)}
@@ -430,6 +449,7 @@ export function VideoContainer() {
           subtitles={editingClip.subtitles}
           template={editingClip.template || 'viral'}
           aspectRatio={editingClip.aspectRatio || aspectRatio}
+          brandKit={brandKit ?? undefined}
           onSave={handleSaveEdit}
         />
       )}

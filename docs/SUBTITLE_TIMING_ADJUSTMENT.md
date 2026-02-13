@@ -3,6 +3,7 @@
 ## Descripción del Problema
 
 Los subtítulos pueden aparecer ligeramente adelantados o retrasados respecto al audio debido a:
+
 - Latencia de procesamiento de video
 - Precisión de timestamps de Whisper
 - Framerate del video vs renderizado
@@ -78,13 +79,13 @@ npm run dev
 
 ## Valores Recomendados por Escenario
 
-| Escenario | Offset Recomendado | Descripción |
-|-----------|-------------------|-------------|
-| Subtítulos muy adelantados | `0.3` - `0.5` | Retrasa bastante |
-| Subtítulos un poco adelantados | `0.1` - `0.2` | Retraso ligero (actual) |
-| Sincronización perfecta | `0.0` | Sin ajuste |
-| Subtítulos retrasados | `-0.1` - `-0.2` | Adelanta ligeramente |
-| Subtítulos muy retrasados | `-0.3` - `-0.5` | Adelanta bastante |
+| Escenario                      | Offset Recomendado | Descripción             |
+| ------------------------------ | ------------------ | ----------------------- |
+| Subtítulos muy adelantados     | `0.3` - `0.5`      | Retrasa bastante        |
+| Subtítulos un poco adelantados | `0.1` - `0.2`      | Retraso ligero (actual) |
+| Sincronización perfecta        | `0.0`              | Sin ajuste              |
+| Subtítulos retrasados          | `-0.1` - `-0.2`    | Adelanta ligeramente    |
+| Subtítulos muy retrasados      | `-0.3` - `-0.5`    | Adelanta bastante       |
 
 ## Testing Rápido
 
@@ -159,6 +160,7 @@ Los logs te ayudan a diagnosticar problemas de sincronización:
 ```
 
 **Análisis**:
+
 - Si `adjustedTime` está muy por encima de `segment.start`: Aumenta el offset
 - Si `adjustedTime` está muy por debajo de `segment.start`: Disminuye el offset
 - Ideal: `adjustedTime` ligeramente por encima de `segment.start` (0.1-0.2s)
@@ -168,12 +170,14 @@ Los logs te ayudan a diagnosticar problemas de sincronización:
 ### ¿Por qué usar offset en lugar de modificar los timestamps?
 
 **Ventajas del offset**:
+
 1. ✅ No modifica los datos originales de Whisper
 2. ✅ Fácil de ajustar sin regenerar subtítulos
 3. ✅ Se aplica consistentemente a todos los subtítulos
 4. ✅ Reversible (puedes volver a 0.0)
 
 **Desventajas de modificar timestamps**:
+
 1. ❌ Requiere regenerar subtítulos cada vez
 2. ❌ Pierde precisión de Whisper
 3. ❌ Difícil de revertir
@@ -188,14 +192,14 @@ Los logs te ayudan a diagnosticar problemas de sincronización:
 
 ## Valores Probados
 
-| Offset | Resultado |
-|--------|-----------|
-| `0.0` | Subtítulos ligeramente adelantados ❌ |
-| `0.1` | Mejor, pero aún un poco adelantados ⚠️ |
-| `0.2` | Sincronización buena ✅ (ACTUAL) |
-| `0.3` | Sincronización excelente ✅ |
-| `0.4` | Puede estar un poco retrasado ⚠️ |
-| `0.5` | Demasiado retrasado ❌ |
+| Offset | Resultado                              |
+| ------ | -------------------------------------- |
+| `0.0`  | Subtítulos ligeramente adelantados ❌  |
+| `0.1`  | Mejor, pero aún un poco adelantados ⚠️ |
+| `0.2`  | Sincronización buena ✅ (ACTUAL)       |
+| `0.3`  | Sincronización excelente ✅            |
+| `0.4`  | Puede estar un poco retrasado ⚠️       |
+| `0.5`  | Demasiado retrasado ❌                 |
 
 ## Troubleshooting
 
@@ -204,6 +208,7 @@ Los logs te ayudan a diagnosticar problemas de sincronización:
 **Causa**: Cache del bundle de Remotion
 
 **Solución**:
+
 ```bash
 cd apps/remotion-server
 rm -rf node_modules/.cache
@@ -222,6 +227,7 @@ npm run dev
 **Causa**: Deriva de sincronización (drift) - el video y audio se desincronizaon con el tiempo
 
 **Solución**: Este es un problema más profundo del video original. Intenta:
+
 1. Re-procesar el video con FFmpeg para estabilizar el framerate
 2. Usar un offset variable (avanzado)
 

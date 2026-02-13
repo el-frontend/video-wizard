@@ -10,7 +10,9 @@ AI-powered video content analysis, viral clip identification, and subtitle gener
 ## 🎯 Features
 
 ### 1. 🎬 Video Wizard (Full Pipeline)
+
 Complete viral clip identification and generation workflow.
+
 - Upload video → Transcribe → AI analysis → Extract clips (30-90s)
 - Viral scoring (0-100) powered by GPT-4o
 - Subtitle editing & template selection
@@ -18,8 +20,10 @@ Complete viral clip identification and generation workflow.
 
 **Route**: [`/video-wizard`](http://localhost:3000/video-wizard)
 
-### 2. 📝 Subtitle Generator 🆕
+### 2. 📝 Subtitle Generator ✅
+
 Fast subtitle generation without content analysis.
+
 - Upload → Transcribe → Edit → Select template → Render
 - 9 professional templates (viral, minimal, modern, hormozi, mrbeast, etc.)
 - Visual subtitle editor with merge/delete
@@ -28,7 +32,9 @@ Fast subtitle generation without content analysis.
 **Route**: [`/subtitle-generator`](http://localhost:3000/subtitle-generator)
 
 ### 3. 🤖 Content Intelligence
+
 AI-powered transcript analysis without video upload.
+
 - Paste transcript → Analyze for viral moments
 - Content scoring and insights
 - Quick analysis workflow
@@ -36,6 +42,7 @@ AI-powered transcript analysis without video upload.
 **Route**: [`/content-intelligence`](http://localhost:3000/content-intelligence)
 
 ### 4. 🎨 Remotion Studio
+
 Advanced video composition for developers.
 
 **Route**: [`/remotion`](http://localhost:3000/remotion)
@@ -50,25 +57,25 @@ video-wizard/
 │   ├── web/                      # Next.js 16 + TypeScript
 │   │   ├── app/
 │   │   │   ├── api/
-│   │   │   │   ├── generate-subtitles/      # 🆕 Subtitle generation
-│   │   │   │   ├── render-video-subtitles/  # 🆕 Render with templates
+│   │   │   │   ├── generate-subtitles/      # ✅ Subtitle generation
+│   │   │   │   ├── render-video-subtitles/  # ✅ Render with templates
 │   │   │   │   └── analyze-content/         # AI analysis
-│   │   │   ├── subtitle-generator/          # 🆕 Subtitle feature page
+│   │   │   ├── subtitle-generator/          # ✅ Subtitle feature page
 │   │   │   ├── video-wizard/                # Full pipeline
 │   │   │   └── content-intelligence/        # Transcript analysis
 │   │   ├── features/
 │   │   │   └── video/
 │   │   │       ├── components/
-│   │   │       │   ├── subtitle-editor.tsx       # 🆕 Edit UI
-│   │   │       │   └── template-selector.tsx     # 🆕 Template picker
+│   │   │       │   ├── subtitle-editor.tsx       # ✅ Edit UI
+│   │   │       │   └── template-selector.tsx     # ✅ Template picker
 │   │   │       ├── containers/
-│   │   │       │   └── subtitle-generator-container.tsx  # 🆕
+│   │   │       │   └── subtitle-generator-container.tsx  # ✅
 │   │   │       └── hooks/
 │   │   │           ├── use-video-processing.ts
-│   │   │           └── use-subtitle-generation.ts # 🆕
+│   │   │           └── use-subtitle-generation.ts # ✅
 │   │   ├── server/
 │   │   │   └── services/
-│   │   │       └── subtitle-generation-service.ts # 🆕
+│   │   │       └── subtitle-generation-service.ts # ✅
 │   │   └── components/
 │   │       └── layout/
 │   │           └── app-sidebar.tsx           # Navigation
@@ -103,12 +110,12 @@ video-wizard/
 │   │       └── hooks/           # React hooks
 │   ├── ui/                      # Shared UI components
 │   └── tsconfig/                # Shared TypeScript configs
-├── .copilot/                    # 🆕 GitHub Copilot documentation
+├── .copilot/                    # ✅ GitHub Copilot documentation
 │   ├── project-instructions.md  # Project guidelines
 │   ├── code-patterns.md         # Code templates
 │   └── architecture-decisions.md # Technical decisions
-├── ARCHITECTURE.md              # 🆕 Architecture overview
-├── FEATURE_GUIDE.md             # 🆕 Feature development guide
+├── ARCHITECTURE.md              # ✅ Architecture overview
+├── FEATURE_GUIDE.md             # ✅ Feature development guide
 └── turbo.json                   # Turborepo configuration
 ```
 
@@ -152,7 +159,7 @@ pnpm --filter web build
 pnpm --filter web lint
 ```
 
-### 🆕 Video Processing Service
+### ✅ Video Processing Service
 
 The Python-based video processing service runs independently:
 
@@ -177,6 +184,7 @@ pnpm --filter processing-engine dev
 **API Documentation:** http://localhost:8000/docs
 
 **Features:**
+
 - 🎯 Smart crop 16:9 → 9:16 conversion
 - 🤖 AI-powered face detection (MediaPipe)
 - 🎬 Smooth camera tracking
@@ -208,32 +216,35 @@ pnpm --filter remotion-server dev
 **Infrastructure Overview:** [REMOTION_INFRASTRUCTURE.md](REMOTION_INFRASTRUCTURE.md)
 
 **Features:**
+
 - 📹 Video rendering with synchronized subtitles
-- 🎨 **9 professional caption templates** (viral, minimal, modern, hormozi, mrbeast, etc.) 🆕
+- 🎨 **9 professional caption templates** (viral, minimal, modern, hormozi, mrbeast, etc.) ✅
 - 📊 Job queue with progress tracking
 - ❌ Cancel running render jobs
 - 🐳 Docker support
 - 🔄 REST API for render management
-- ⏱️ **Subtitle timing adjustment** (200ms offset for perfect sync) 🆕
+- ⏱️ **Subtitle timing adjustment** (200ms offset for perfect sync) ✅
 
 **Quick Test:**
+
 ```bash
 cd apps/remotion-server
 node example-usage.js
 ```
 
 **Preview Compositions:**
+
 ```bash
 cd packages/remotion-compositions
 pnpm studio
 ```
 
-## 🆕 Web Application Features
+## ✅ Web Application Features
 
 ### 📍 Routes
 
 - **`/`** - Home page with navigation to all features
-- **`/subtitle-generator`** - 🆕 **Standalone subtitle generation**
+- **`/subtitle-generator`** - ✅ **Standalone subtitle generation**
   - Upload video (max 500MB)
   - Automatic transcription (Whisper)
   - Visual subtitle editor (edit, merge, delete)
@@ -274,6 +285,7 @@ pnpm dev
 Visit: http://localhost:3000/content-intelligence
 
 **Features:**
+
 - 🤖 GPT-4o powered analysis
 - 📊 Viral score (0-100)
 - 🎯 Hook & conclusion detection
@@ -282,7 +294,7 @@ Visit: http://localhost:3000/content-intelligence
 
 **Docs:** [apps/web/CONTENT_INTELLIGENCE.md](apps/web/CONTENT_INTELLIGENCE.md)
 
-### 🆕 Subtitle Generator - Standalone Feature
+### ✅ Subtitle Generator - Standalone Feature
 
 Fast and simple subtitle generation without content analysis:
 
@@ -294,6 +306,7 @@ pnpm dev
 Visit: http://localhost:3000/subtitle-generator
 
 **Workflow:**
+
 1. 📤 Upload video file
 2. 🎤 Automatic transcription (Whisper via Processing Engine)
 3. ✏️ Edit subtitles visually
@@ -314,6 +327,7 @@ Visit: http://localhost:3000/subtitle-generator
 6. 📥 Download final video
 
 **Key Features:**
+
 - ⚡ **Fast**: No AI analysis, straight to subtitles
 - ✏️ **Visual Editor**: Edit, merge, delete segments
 - 🎨 **9 Templates**: Professional styles for any content
@@ -321,6 +335,7 @@ Visit: http://localhost:3000/subtitle-generator
 - 🌍 **Multi-language**: Auto-detect or manual selection
 
 **Time Formats:**
+
 - Whisper returns: SECONDS
 - Frontend stores: MILLISECONDS
 - Remotion uses: SECONDS (automatic conversion)
@@ -330,24 +345,29 @@ Subtitles have a 200ms delay offset for better audio sync. Adjustable in:
 `packages/remotion-compositions/src/hooks/useActiveSubtitle.ts:33`
 
 **Documentation:**
+
 - **Complete Guide**: [SUBTITLE_GENERATOR.md](SUBTITLE_GENERATOR.md)
 - **Bug Fixes**: [SUBTITLE_FIX.md](SUBTITLE_FIX.md)
 - **Timing Config**: [SUBTITLE_TIMING_ADJUSTMENT.md](SUBTITLE_TIMING_ADJUSTMENT.md)
 - **Navigation**: [NAVIGATION_UPDATE.md](NAVIGATION_UPDATE.md)
 
 **API Endpoints:**
+
 - `POST /api/generate-subtitles` - Generate subtitles from video
 - `POST /api/render-video-subtitles` - Render video with templates
 
 **Service:**
+
 - `apps/web/server/services/subtitle-generation-service.ts`
 
 **Components:**
+
 - `features/video/components/subtitle-editor.tsx` - Visual editor
 - `features/video/components/template-selector.tsx` - Template picker
 - `features/video/hooks/use-subtitle-generation.ts` - State management
 
 **Common Issues:**
+
 - Subtitles don't appear → See [SUBTITLE_FIX.md](SUBTITLE_FIX.md)
 - Timing off → Adjust `SUBTITLE_OFFSET` in useActiveSubtitle.ts
 - Template not working → Verify all 9 templates in Root.tsx schema
@@ -369,12 +389,14 @@ pnpm dev
 Visit: http://localhost:3000/video-wizard
 
 **Process:**
+
 1. 📤 Upload video
 2. 🎙️ Extract audio & transcribe
 3. 🤖 AI analysis for viral clips
 4. 📊 View results with scores
 
 **Documentation:**
+
 - [Video Wizard Overview](apps/web/VIDEO_WIZARD.md)
 - [Quick Start Guide](apps/web/VIDEO_WIZARD_QUICKSTART.md)
 - [Processing Engine Quick Start](apps/processing-engine/QUICKSTART.md)
@@ -382,27 +404,32 @@ Visit: http://localhost:3000/video-wizard
 ## 📚 Documentation
 
 ### Main Documentation
+
 - **[CLAUDE.md](CLAUDE.md)** - Complete Claude Code instructions (UPDATED 2026-01-30)
 - **[README.md](README.md)** - This file
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview
 - **[FEATURE_GUIDE.md](FEATURE_GUIDE.md)** - Guide for creating features
 
-### 🆕 Subtitle Generator Docs (NEW!)
+### ✅ Subtitle Generator Docs (NEW!)
+
 - **[SUBTITLE_GENERATOR.md](SUBTITLE_GENERATOR.md)** - Complete feature guide
 - **[SUBTITLE_FIX.md](SUBTITLE_FIX.md)** - Bug fixes and troubleshooting
 - **[SUBTITLE_TIMING_ADJUSTMENT.md](SUBTITLE_TIMING_ADJUSTMENT.md)** - Timing configuration
 - **[NAVIGATION_UPDATE.md](NAVIGATION_UPDATE.md)** - Navigation integration
 
 ### Development
+
 - **[.copilot/project-instructions.md](.copilot/project-instructions.md)** - Project guidelines
 - **[.copilot/code-patterns.md](.copilot/code-patterns.md)** - Code templates
 - **[.copilot/architecture-decisions.md](.copilot/architecture-decisions.md)** - Technical decisions
 
 ### Git & Quality
+
 - **[COMMIT_CONVENTIONS.md](COMMIT_CONVENTIONS.md)** - Commit message guidelines
 - **[HUSKY_SETUP.md](HUSKY_SETUP.md)** - Git hooks setup and troubleshooting
 
 ### Features & Services
+
 - **[features/video/README.md](apps/web/features/video/README.md)** - Video feature module
 - **[server/README.md](apps/web/server/README.md)** - Server-side code
 - **[apps/processing-engine/README.md](apps/processing-engine/README.md)** - Python engine
@@ -427,6 +454,7 @@ git commit -m "feat(video): add subtitle rendering"
 ### Pre-commit Checks
 
 Automatically run on every commit:
+
 - ✓ **ESLint**: Lints and fixes JavaScript/TypeScript
 - ✓ **Prettier**: Formats all code files
 - ✓ **Python linters**: Black and Flake8 for Python code
@@ -437,6 +465,7 @@ See [HUSKY_SETUP.md](HUSKY_SETUP.md) for detailed setup instructions.
 ## 🏗️ Architecture Highlights
 
 ### Screaming Architecture
+
 The project uses **feature-based organization** where the structure "screams" what the application does:
 
 ```
@@ -449,12 +478,14 @@ features/
 ```
 
 ### Separation of Concerns
+
 - **API Routes**: HTTP handling only
 - **Services**: Business logic
 - **Features**: UI modules with components + hooks
 - **Components**: Presentational, atomic, reusable
 
 ### Type Safety
+
 - TypeScript strict mode
 - Zod schemas for validation
 - Type inference throughout
@@ -469,11 +500,47 @@ To learn more about the technologies used in this project:
 - [FastAPI Documentation](https://fastapi.tiangolo.com/) - learn about FastAPI
 - [MediaPipe](https://developers.google.com/mediapipe) - learn about MediaPipe
 
-## 📅 Changelog
+## Changelog
 
-### 2026-01-30 - Major Update: Subtitle Generator
+### 2026-02-09 - Documentation & Feature Consolidation
 
-#### 🆕 New Features
+#### Documentation
+
+- Comprehensive update of all documentation to reflect current system state
+- Updated `CLAUDE.md` with complete API reference, Brand Kit, Silence/Filler, Aspect Ratio docs
+- Updated `ARCHITECTURE.md` with three-service architecture and data flow diagrams
+- Updated `IMPLEMENTATION_STATUS.md` with full feature matrix and stats
+- Updated feature `README.md` with all 15 components, 3 hooks, 5 utility modules
+- Updated server `README.md` with all 4 services and type schemas
+
+### 2026-02-01 - Brand Kit & Cleanup Tools
+
+#### New Features
+
+- **Brand Kit System**: Persistent brand customization with localStorage
+  - Logo URL, position (4 corners), and scale (0.1-2.0x)
+  - Primary, secondary, text, and background colors
+  - Font family selection (10 predefined options)
+  - Collapsible settings UI with reset/clear actions
+  - `useBrandKit()` hook with Zod validation
+
+- **Silence/Filler Detection**: Automated subtitle cleanup
+  - Detects silences (gaps > threshold), filler words (13 defaults), short segments
+  - Auto-Clean All, Clean Filler Text, Remove Filler/Short Segments
+  - Configurable thresholds (silence: 1000ms, min segment: 300ms)
+  - Collapsible issues list with per-issue removal
+  - Pure detection algorithms with no side effects
+
+- **Aspect Ratio Selector**: Visual grid for output format
+  - 9:16 (Vertical), 1:1 (Square), 4:5 (Portrait), 16:9 (Landscape)
+  - Dimension preview, icon indicators, use-case descriptions
+
+- **SRT/VTT Export**: Download subtitle files from the editor
+
+### 2026-01-30 - Subtitle Generator Release
+
+#### New Features
+
 - **Subtitle Generator**: Standalone subtitle generation feature
   - Visual subtitle editor with edit/merge/delete
   - 9 professional templates
@@ -485,48 +552,34 @@ To learn more about the technologies used in this project:
   - Added to sidebar navigation
   - Consistent UI across app
 
-#### 🐛 Bug Fixes
+#### Bug Fixes
+
 - **CRITICAL**: Fixed subtitle rendering bug in Remotion
   - Issue: Videos rendered at 0.06s instead of 60s
   - Cause: Incorrect time format conversion (dividing by 1000 twice)
   - Fix: Use seconds directly in `Root.tsx:66`
-  - Impact: All videos now render with correct duration
 
 - **Schema Update**: Expanded template enum to include all 9 templates
-  - Previously only accepted 4 templates (default, viral, minimal, modern)
-  - Now accepts: hormozi, mrbeast, mrbeastemoji, highlight, colorshift
 
-#### ⚙️ Improvements
+#### Improvements
+
 - **Subtitle Timing**: Added 200ms offset for better audio sync
-  - Configurable in `useActiveSubtitle.ts:33`
-  - Improves synchronization between audio and text
+- **Logging**: Added debug logs for Remotion and subtitle detection
 
-- **Logging**: Added debug logs for troubleshooting
-  - Remotion duration calculation
-  - Active subtitle detection
-  - Initial state validation
+#### Architecture
 
-#### 📝 Documentation
-- Added `SUBTITLE_GENERATOR.md` - Complete feature guide
-- Added `SUBTITLE_FIX.md` - Bug fixes and troubleshooting
-- Added `SUBTITLE_TIMING_ADJUSTMENT.md` - Timing configuration
-- Added `NAVIGATION_UPDATE.md` - Navigation changes
-- Updated `CLAUDE.md` - Full project instructions
-- Updated `README.md` - This file
-
-#### 🏗️ Architecture
 - New Service: `subtitle-generation-service.ts`
 - New API Routes: `/api/generate-subtitles`, `/api/render-video-subtitles`
 - New Hook: `use-subtitle-generation.ts`
 - New Components: `SubtitleEditor`, `TemplateSelector`
 - New Container: `SubtitleGeneratorContainer`
-- New Page: `/subtitle-generator/page.tsx`
 
 ### Previous Updates
+
 - Video Wizard full pipeline
 - Content Intelligence feature
-- Remotion integration
-- Python processing engine
+- Remotion integration with 9 templates
+- Python processing engine with smart cropping
 - Git hooks and quality tools
 
 ## Deploy on Vercel
@@ -537,5 +590,5 @@ Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ---
 
-**Last Updated**: 2026-01-30
-**Version**: 2.0.0 (Subtitle Generator Release)
+**Last Updated**: 2026-02-09
+**Version**: 2.1.0 (Brand Kit + Cleanup Tools + Documentation Update)

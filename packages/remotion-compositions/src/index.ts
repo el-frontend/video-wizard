@@ -3,7 +3,7 @@ import { RemotionRoot } from './Root';
 
 /**
  * Remotion Entry Point
- * 
+ *
  * This file is the entry point for Remotion CLI and bundler
  * Registers all available compositions
  */
@@ -15,7 +15,12 @@ export { VideoComposition } from './compositions/VideoComposition';
 
 // Export types
 export type {
-    CaptionTemplate, CaptionTemplateProps, SubtitleSegment, VideoCompositionProps, WordTiming
+  BrandKit,
+  CaptionTemplate,
+  CaptionTemplateProps,
+  SubtitleSegment,
+  VideoCompositionProps,
+  WordTiming,
 } from './types';
 
 // Export hooks

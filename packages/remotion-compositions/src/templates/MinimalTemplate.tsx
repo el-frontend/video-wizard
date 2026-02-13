@@ -12,6 +12,7 @@ export function MinimalTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -48,12 +49,10 @@ export function MinimalTemplate({
 
   // Gentle fade-in (first 12 frames)
   const entryDuration = 12;
-  const opacity = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const opacity = interpolate(frameInChunk, [0, entryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Gentle fade-out (last 10 frames)
   const exitDuration = 10;
@@ -77,13 +76,13 @@ export function MinimalTemplate({
       <div style={{ opacity: finalOpacity }}>
         <p
           style={{
-            color: '#FFFFFF',
+            color: brandKit?.textColor ?? '#FFFFFF',
             fontSize: '44px',
             fontWeight: 500,
             textAlign: 'center',
             margin: 0,
             lineHeight: 1.5,
-            fontFamily: 'Helvetica Neue, sans-serif',
+            fontFamily: brandKit?.fontFamily ?? 'Helvetica Neue, sans-serif',
             textShadow: '0 2px 8px rgba(0, 0, 0, 0.5)',
           }}
         >

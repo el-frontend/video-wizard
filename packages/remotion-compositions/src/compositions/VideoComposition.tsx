@@ -4,7 +4,7 @@ import { CaptionOverlay } from './CaptionOverlay';
 
 /**
  * Video Composition Component
- * 
+ *
  * Main composition that renders:
  * 1. Video background layer (source video)
  * 2. Caption overlay layer (synchronized subtitles)
@@ -15,6 +15,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
   template,
   language = 'en',
   backgroundColor = '#000000',
+  brandKit,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -45,6 +46,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
           currentTime={currentTime}
           template={template}
           language={language}
+          brandKit={brandKit}
         />
       </Sequence>
     </AbsoluteFill>

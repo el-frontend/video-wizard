@@ -12,6 +12,7 @@ export function DefaultTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -48,12 +49,10 @@ export function DefaultTemplate({
 
   // Smooth entry animation (first 12 frames)
   const entryDuration = 12;
-  const opacity = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const opacity = interpolate(frameInChunk, [0, entryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Smooth exit animation (last 10 frames of chunk)
   const exitDuration = 10;
@@ -77,7 +76,9 @@ export function DefaultTemplate({
       <div
         style={{
           opacity: finalOpacity,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          backgroundColor: brandKit?.primaryColor
+            ? `${brandKit.primaryColor}B3`
+            : 'rgba(0, 0, 0, 0.7)',
           padding: '20px 40px',
           borderRadius: '8px',
           maxWidth: '90%',
@@ -85,13 +86,13 @@ export function DefaultTemplate({
       >
         <p
           style={{
-            color: '#FFFFFF',
+            color: brandKit?.textColor ?? '#FFFFFF',
             fontSize: '48px',
             fontWeight: 700,
             textAlign: 'center',
             margin: 0,
             lineHeight: 1.4,
-            fontFamily: 'Inter, system-ui, sans-serif',
+            fontFamily: brandKit?.fontFamily ?? 'Inter, system-ui, sans-serif',
           }}
         >
           {currentChunk.join(' ')}

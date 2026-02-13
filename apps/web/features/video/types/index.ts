@@ -9,6 +9,14 @@ import type { AspectRatio } from '../lib/aspect-ratios';
 
 export type { AspectRatio } from '../lib/aspect-ratios';
 
+// Brand Kit types
+export type { BrandKit, LogoPosition } from './brand-kit';
+export { BrandKitSchema, BRAND_KIT_STORAGE_KEY, DEFAULT_FONT_OPTIONS } from './brand-kit';
+
+// Silence/Filler types
+export type { DetectedIssue, DetectionResult, SilenceFillerConfig } from './silence-filler';
+export { SilenceFillerConfigSchema } from './silence-filler';
+
 export interface TranscriptSegment {
   id: number;
   start: number;

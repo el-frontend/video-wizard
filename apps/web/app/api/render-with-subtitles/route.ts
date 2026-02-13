@@ -28,7 +28,14 @@ interface InputSubtitle {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { clipPath, subtitles, template = 'viral', language = 'en', aspectRatio = '9:16' } = body;
+    const {
+      clipPath,
+      subtitles,
+      template = 'viral',
+      language = 'en',
+      aspectRatio = '9:16',
+      brandKit,
+    } = body;
 
     if (!clipPath) {
       return NextResponse.json(
@@ -97,6 +104,7 @@ export async function POST(request: NextRequest) {
           aspectRatio,
           backgroundColor: '#000000',
           durationInFrames,
+          brandKit,
         },
       }),
     });

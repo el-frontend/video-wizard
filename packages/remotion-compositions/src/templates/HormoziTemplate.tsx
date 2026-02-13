@@ -15,6 +15,7 @@ export function HormoziTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -56,12 +57,10 @@ export function HormoziTemplate({
 
   // Chunk entry animation
   const chunkEntryDuration = 10;
-  const chunkOpacity = interpolate(
-    frameInChunk,
-    [0, chunkEntryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkOpacity = interpolate(frameInChunk, [0, chunkEntryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Exit animation - only fade in the last 4 frames for quick transition
   const exitDuration = 4;
@@ -76,7 +75,9 @@ export function HormoziTemplate({
   const finalOpacity = Math.min(chunkOpacity, exitOpacity);
 
   // Accent colors for emphasis (every 2nd-3rd word gets highlighted)
-  const accentColors = ['#FFD700', '#FF6B6B', '#00D4FF'];
+  const accentColors = brandKit?.primaryColor
+    ? [brandKit.primaryColor, brandKit.secondaryColor ?? '#FF6B6B', '#00D4FF']
+    : ['#FFD700', '#FF6B6B', '#00D4FF'];
 
   return (
     <AbsoluteFill
@@ -108,19 +109,15 @@ export function HormoziTemplate({
 
           // Pop-in from bottom animation - faster pop for snappier feel
           const popDuration = 8;
-          const translateY = interpolate(
-            frameInWord,
-            [0, popDuration],
-            [40, 0],
-            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-          );
+          const translateY = interpolate(frameInWord, [0, popDuration], [40, 0], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          });
 
-          const wordOpacity = interpolate(
-            frameInWord,
-            [0, popDuration * 0.6],
-            [0, 1],
-            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-          );
+          const wordOpacity = interpolate(frameInWord, [0, popDuration * 0.6], [0, 1], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          });
 
           // Scale pop effect
           const scale = interpolate(
@@ -145,10 +142,7 @@ export function HormoziTemplate({
           // Only show revealed words
           if (!isRevealed) {
             return (
-              <div
-                key={`${word}-${wordIndex}-${currentChunkIndex}`}
-                style={{ opacity: 0 }}
-              >
+              <div key={`${word}-${wordIndex}-${currentChunkIndex}`} style={{ opacity: 0 }}>
                 <p style={{ fontSize: '52px', margin: 0 }}>{word}</p>
               </div>
             );
@@ -166,24 +160,24 @@ export function HormoziTemplate({
             >
               <p
                 style={{
-                  color: shouldAccent ? accentColor : '#FFFFFF',
+                  color: shouldAccent ? accentColor : (brandKit?.textColor ?? '#FFFFFF'),
                   fontSize: '52px',
                   fontWeight: 900,
                   textAlign: 'center',
                   margin: 0,
                   lineHeight: 1.1,
-                  fontFamily: 'Montserrat, system-ui, sans-serif',
+                  fontFamily: brandKit?.fontFamily ?? 'Montserrat, system-ui, sans-serif',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
-                  // Yellow stroke effect
+                  // Stroke effect (uses primaryColor or default gold)
                   textShadow: `
-                    -3px -3px 0 #FFD700,
-                    3px -3px 0 #FFD700,
-                    -3px 3px 0 #FFD700,
-                    3px 3px 0 #FFD700,
-                    0 0 20px rgba(255, 215, 0, 0.5)
+                    -3px -3px 0 ${brandKit?.primaryColor ?? '#FFD700'},
+                    3px -3px 0 ${brandKit?.primaryColor ?? '#FFD700'},
+                    -3px 3px 0 ${brandKit?.primaryColor ?? '#FFD700'},
+                    3px 3px 0 ${brandKit?.primaryColor ?? '#FFD700'},
+                    0 0 20px ${brandKit?.primaryColor ? `${brandKit.primaryColor}80` : 'rgba(255, 215, 0, 0.5)'}
                   `,
-                  WebkitTextStroke: '2px #FFD700',
+                  WebkitTextStroke: `2px ${brandKit?.primaryColor ?? '#FFD700'}`,
                 }}
               >
                 {word}

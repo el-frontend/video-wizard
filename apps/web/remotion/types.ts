@@ -39,6 +39,20 @@ export type CaptionTemplate =
   | 'mrbeastemoji';
 
 /**
+ * Brand Kit for custom styling overrides
+ */
+export interface BrandKit {
+  logoUrl?: string;
+  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  logoScale?: number;
+  primaryColor?: string;
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+}
+
+/**
  * Props for the main video composition
  */
 export interface VideoCompositionProps {
@@ -47,6 +61,7 @@ export interface VideoCompositionProps {
   template: CaptionTemplate;
   backgroundColor?: string;
   videoStartTime?: number; // Start offset in the source video
+  brandKit?: BrandKit;
 }
 
 /**
@@ -56,4 +71,5 @@ export interface CaptionTemplateProps {
   currentWord: string;
   currentSegment: SubtitleSegment | null;
   isActive: boolean;
+  brandKit?: BrandKit;
 }

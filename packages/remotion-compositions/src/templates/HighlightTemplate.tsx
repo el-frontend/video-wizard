@@ -12,6 +12,7 @@ export function HighlightTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -53,19 +54,15 @@ export function HighlightTemplate({
 
   // Entry animation for the whole chunk (first 10 frames)
   const entryDuration = 10;
-  const chunkOpacity = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkOpacity = interpolate(frameInChunk, [0, entryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-  const chunkScale = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0.95, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkScale = interpolate(frameInChunk, [0, entryDuration], [0.95, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Exit animation (last 8 frames)
   const exitDuration = 8;
@@ -106,12 +103,10 @@ export function HighlightTemplate({
 
           // Highlight animation for individual word (quick sweep)
           const highlightDuration = Math.min(durationPerWord * 0.6, 8);
-          const highlightProgress = interpolate(
-            frameInWord,
-            [0, highlightDuration],
-            [0, 1],
-            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-          );
+          const highlightProgress = interpolate(frameInWord, [0, highlightDuration], [0, 1], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          });
 
           const isHighlighted = wordIndex <= currentWordIndex;
           const isCurrentWord = wordIndex === currentWordIndex;
@@ -139,7 +134,7 @@ export function HighlightTemplate({
                   left: 0,
                   height: '100%',
                   width: bgWidth,
-                  backgroundColor: '#8B5CF6',
+                  backgroundColor: brandKit?.primaryColor ?? '#8B5CF6',
                   borderRadius: '6px',
                   transition: 'none',
                   overflow: 'hidden',
@@ -149,13 +144,13 @@ export function HighlightTemplate({
               <p
                 style={{
                   position: 'relative',
-                  color: '#FFFFFF',
+                  color: brandKit?.textColor ?? '#FFFFFF',
                   fontSize: '46px',
                   fontWeight: 800,
                   textAlign: 'center',
                   margin: 0,
                   lineHeight: 1.1,
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  fontFamily: brandKit?.fontFamily ?? 'system-ui, -apple-system, sans-serif',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                   textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',

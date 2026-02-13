@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { CaptionTemplate } from '@/remotion/types';
 import type { AspectRatio } from '../lib/aspect-ratios';
+import type { BrandKit } from '../types/brand-kit';
 import { getPythonEngineUrl, validateVideoFile } from '../lib/utils';
 import { isYouTubeUrl } from '../lib/youtube';
 
@@ -226,7 +227,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
   /**
    * Render video with subtitles
    */
-  const renderVideo = async () => {
+  const renderVideo = async (brandKit?: BrandKit) => {
     if (!state.uploadedPath || state.subtitles.length === 0) {
       updateState({
         error: 'No video or subtitles available',
@@ -253,6 +254,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
           template: state.selectedTemplate,
           language: state.language,
           aspectRatio: state.aspectRatio,
+          brandKit,
         }),
       });
 

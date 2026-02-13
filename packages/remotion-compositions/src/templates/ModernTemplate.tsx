@@ -12,6 +12,7 @@ export function ModernTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -48,20 +49,16 @@ export function ModernTemplate({
 
   // Slide up animation for each chunk
   const entryDuration = 14;
-  const slideY = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [30, 0],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const slideY = interpolate(frameInChunk, [0, entryDuration], [30, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Fade in
-  const opacity = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const opacity = interpolate(frameInChunk, [0, entryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Fade out (last 10 frames)
   const exitDuration = 10;
@@ -86,7 +83,9 @@ export function ModernTemplate({
         style={{
           transform: `translateY(${slideY}px)`,
           opacity: finalOpacity,
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(168, 85, 247, 0.9) 100%)',
+          background: brandKit?.primaryColor
+            ? `linear-gradient(135deg, ${brandKit.primaryColor}E6 0%, ${brandKit.secondaryColor ?? brandKit.primaryColor}E6 100%)`
+            : 'linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(168, 85, 247, 0.9) 100%)',
           padding: '24px 48px',
           borderRadius: '12px',
           maxWidth: '88%',
@@ -96,13 +95,13 @@ export function ModernTemplate({
       >
         <p
           style={{
-            color: '#FFFFFF',
+            color: brandKit?.textColor ?? '#FFFFFF',
             fontSize: '52px',
             fontWeight: 700,
             textAlign: 'center',
             margin: 0,
             lineHeight: 1.3,
-            fontFamily: 'system-ui, -apple-system, sans-serif',
+            fontFamily: brandKit?.fontFamily ?? 'system-ui, -apple-system, sans-serif',
             letterSpacing: '-0.5px',
           }}
         >

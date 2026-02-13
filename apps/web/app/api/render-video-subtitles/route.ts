@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       template = 'viral',
       language = 'en',
       aspectRatio = '9:16',
+      brandKit,
     } = body;
 
     if (!videoPath) {
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       template: template as CaptionTemplate,
       language,
       aspectRatio,
+      brandKit,
     });
 
     return NextResponse.json({

@@ -12,6 +12,7 @@ export function ColorShiftTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -53,19 +54,15 @@ export function ColorShiftTemplate({
 
   // Entry animation for the whole chunk (first 12 frames)
   const entryDuration = 12;
-  const chunkOpacity = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkOpacity = interpolate(frameInChunk, [0, entryDuration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-  const chunkScale = interpolate(
-    frameInChunk,
-    [0, entryDuration],
-    [0.9, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkScale = interpolate(frameInChunk, [0, entryDuration], [0.9, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Exit animation (last 10 frames)
   const exitDuration = 10;
@@ -78,9 +75,9 @@ export function ColorShiftTemplate({
 
   const finalOpacity = Math.min(chunkOpacity, exitOpacity);
 
-  // Colors
-  const yellowColor = '#FACC15'; // Tailwind yellow-400
-  const greenColor = '#22C55E'; // Tailwind green-500
+  // Colors (brandKit overrides: primary → start color, secondary → end color)
+  const yellowColor = brandKit?.primaryColor ?? '#FACC15'; // Tailwind yellow-400
+  const greenColor = brandKit?.secondaryColor ?? '#22C55E'; // Tailwind green-500
 
   return (
     <AbsoluteFill
@@ -110,12 +107,10 @@ export function ColorShiftTemplate({
 
           // Color transition animation
           const colorTransitionDuration = Math.min(durationPerWord * 0.5, 6);
-          const colorProgress = interpolate(
-            frameInWord,
-            [0, colorTransitionDuration],
-            [0, 1],
-            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-          );
+          const colorProgress = interpolate(frameInWord, [0, colorTransitionDuration], [0, 1], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          });
 
           const isColored = wordIndex < currentWordIndex;
           const isCurrentWord = wordIndex === currentWordIndex;
@@ -154,7 +149,7 @@ export function ColorShiftTemplate({
                   textAlign: 'center',
                   margin: 0,
                   lineHeight: 1.1,
-                  fontFamily: 'Impact, Arial Black, sans-serif',
+                  fontFamily: brandKit?.fontFamily ?? 'Impact, Arial Black, sans-serif',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                   textShadow: `

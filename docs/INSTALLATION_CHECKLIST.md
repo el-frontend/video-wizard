@@ -14,11 +14,13 @@ Use this checklist to ensure everything is set up correctly.
 ### Option 1: Automated Setup (Recommended)
 
 - [ ] Make setup script executable
+
   ```bash
   chmod +x setup-hooks.sh
   ```
 
 - [ ] Run the setup script
+
   ```bash
   ./setup-hooks.sh
   ```
@@ -28,11 +30,13 @@ Use this checklist to ensure everything is set up correctly.
 ### Option 2: Manual Setup
 
 - [ ] Install dependencies
+
   ```bash
   pnpm install
   ```
 
 - [ ] Initialize Husky
+
   ```bash
   pnpm prepare
   ```
@@ -57,29 +61,37 @@ Use this checklist to ensure everything is set up correctly.
 ### Test Hooks
 
 - [ ] Test valid commit message
+
   ```bash
   git commit --allow-empty -m "test(setup): verify hooks work"
   ```
+
   Expected: ✅ Commit succeeds
 
 - [ ] Test invalid commit message
+
   ```bash
   git commit --allow-empty -m "invalid message format"
   ```
+
   Expected: ❌ Commit fails with validation error
 
 - [ ] Test interactive commit tool
+
   ```bash
   pnpm commit
   ```
+
   Expected: ✅ Shows interactive prompts
 
 - [ ] Create a test file with formatting issues
+
   ```bash
   echo "const x='test'" > test.js
   git add test.js
   git commit -m "test(format): check prettier"
   ```
+
   Expected: ✅ Prettier auto-fixes the file
 
 - [ ] Remove test file
@@ -181,6 +193,7 @@ If you encounter issues not covered here:
 **Note:** Mark each checkbox as you complete the steps. If you encounter any issues, refer to the troubleshooting section and documentation.
 
 **Status:**
+
 - [ ] Installation Complete
 - [ ] Verification Passed
 - [ ] Team Informed

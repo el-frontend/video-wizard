@@ -1,14 +1,21 @@
 # Video Feature Module
 
-This module implements the complete video processing workflow using a screaming architecture pattern.
+This module implements the complete video processing workflows using a screaming architecture pattern.
 
 ## Overview
 
-The video feature handles:
-- Video file upload and validation
-- Transcription generation via Python engine
-- AI-powered content analysis
-- Viral clip detection and ranking
+The video feature handles two main workflows:
+
+1. **Video Wizard** — Full pipeline: upload → transcribe → AI analysis → viral clips → render
+2. **Subtitle Generator** — Standalone: upload → transcribe → edit → render (no AI analysis)
+
+Plus cross-cutting capabilities:
+
+- Multi-aspect ratio output (9:16, 1:1, 4:5, 16:9)
+- Brand kit customization (logo, colors, fonts)
+- Silence/filler word detection and cleanup
+- Subtitle export (SRT/VTT)
+- YouTube URL support
 
 ## Architecture
 
@@ -17,7 +24,7 @@ This module follows the **screaming architecture** pattern with separation betwe
 - **Components** (`components/`): Atomic, presentational React components (client-side)
 - **Containers** (`containers/`): Client-side components that orchestrate state and logic
 - **Hooks** (`hooks/`): Custom React hooks for state management and side effects
-- **Types** (`types/`): TypeScript interfaces and type definitions
+- **Types** (`types/`): TypeScript interfaces, Zod schemas, and type definitions
 - **Utils** (`lib/`): Utility functions and helpers
 
 ### Component Patterns
@@ -25,6 +32,7 @@ This module follows the **screaming architecture** pattern with separation betwe
 We use two component patterns:
 
 #### Presentational Components
+
 - Pure and atomic
 - Receive data via props
 - Emit events via callbacks
@@ -32,6 +40,7 @@ We use two component patterns:
 - Are highly reusable
 
 #### Container Components
+
 - Use 'use client' directive
 - Manage state with hooks
 - Orchestrate presentational components
@@ -42,24 +51,41 @@ We use two component patterns:
 
 ```
 features/video/
-├── components/           # Presentational components
-│   ├── video-header.tsx
-│   ├── video-uploader.tsx
-│   ├── processing-progress.tsx
-│   ├── transcription-results.tsx
-│   ├── analysis-results.tsx
-│   ├── video-how-it-works.tsx
-│   └── index.ts         # Component exports
-├── containers/          # Container components
-│   └── video-container.tsx  # Main workflow orchestrator
-├── hooks/               # Custom hooks
-│   └── use-video-processing.ts
-├── types/               # Type definitions
-│   └── index.ts
-├── lib/                 # Utilities
-│   └── utils.ts
-├── index.ts             # Main module export
-└── README.md            # This file
+├── components/                    # Presentational components
+│   ├── analysis-results.tsx       # AI analysis display with clip list
+│   ├── aspect-ratio-selector.tsx  # 4-ratio visual grid selector
+│   ├── brand-kit-settings.tsx     # Logo, colors, fonts customization
+│   ├── clip-card.tsx              # Individual viral clip card
+│   ├── clip-edit-modal.tsx        # Modal for editing clip details
+│   ├── processing-progress.tsx    # Step-by-step progress indicator
+│   ├── remotion-preview.tsx       # Video preview with Remotion Player
+│   ├── silence-filler-panel.tsx   # Cleanup tools (silence/filler detection)
+│   ├── subtitle-editor.tsx        # Table-based subtitle editing + export
+│   ├── template-selector.tsx      # Radio group with 9 templates
+│   ├── transcription-results.tsx  # Transcription segment display
+│   ├── video-header.tsx           # Page title and description
+│   ├── video-how-it-works.tsx     # Educational information
+│   ├── video-uploader.tsx         # Drag-and-drop file upload
+│   └── index.ts                   # Component exports
+├── containers/                    # Container components
+│   ├── subtitle-generator-container.tsx  # Subtitle Generator orchestrator
+│   └── video-container.tsx        # Video Wizard orchestrator
+├── hooks/                         # Custom hooks
+│   ├── use-brand-kit.ts           # Brand kit state (localStorage persistence)
+│   ├── use-subtitle-generation.ts # Subtitle Generator workflow state
+│   └── use-video-processing.ts    # Video Wizard workflow state
+├── types/                         # Type definitions
+│   ├── brand-kit.ts               # BrandKit Zod schema + types
+│   ├── silence-filler.ts          # Detection types + config schema
+│   └── index.ts                   # Core feature types
+├── lib/                           # Utilities
+│   ├── aspect-ratios.ts           # Aspect ratio config, dimensions, CSS
+│   ├── silence-filler-detection.ts # Detection algorithms (pure functions)
+│   ├── subtitle-export.ts         # SRT/VTT export + download
+│   ├── utils.ts                   # formatTimestamp, validateVideoFile, etc.
+│   └── youtube.ts                 # YouTube URL validation
+├── index.ts                       # Main module export
+└── README.md                      # This file
 ```
 
 ## Usage
@@ -75,242 +101,370 @@ export default function VideoWizardPage() {
 }
 ```
 
-This is the **recommended approach** because:
-- Pages remain server components by default
-- Better for performance and SEO
-- Follows Next.js App Router best practices
-- Cleaner separation of concerns
-
-### Alternative: Direct Hook Usage (Client Component)
-
-If you need custom orchestration logic:
-
 ```tsx
-'use client';
+// app/subtitle-generator/page.tsx (Server Component)
+import { SubtitleGeneratorContainer } from '@/features/video/containers/subtitle-generator-container';
 
-import {
-  VideoHeader,
-  VideoUploader,
-  ProcessingProgress,
-  TranscriptionResults,
-  AnalysisResults,
-  VideoHowItWorks,
-  useVideoProcessing,
-} from '@/features/video';
-
-export default function CustomVideoPage() {
-  const {
-    file,
-    currentStep,
-    transcription,
-    analysis,
-    error,
-    progress,
-    setFile,
-    processVideo,
-    resetState,
-  } = useVideoProcessing({
-    onComplete: (data) => console.log('Done!', data),
-    onError: (err) => console.error('Error:', err),
-  });
-
-  return (
-    <div>
-      <VideoHeader />
-      <VideoUploader
-        file={file}
-        currentStep={currentStep}
-        onFileSelect={setFile}
-        onProcess={processVideo}
-        onReset={resetState}
-        error={error}
-      />
-      <ProcessingProgress
-        currentStep={currentStep}
-        progress={progress}
-        error={error}
-      />
-      {transcription && <TranscriptionResults transcription={transcription} />}
-      {analysis && <AnalysisResults analysis={analysis} />}
-    </div>
-  );
+export default function SubtitleGeneratorPage() {
+  return <SubtitleGeneratorContainer />;
 }
 ```
+
+This is the **recommended approach** because:
+
+- Pages remain server components by default
+- Better performance (smaller client bundle)
+- Follows Next.js App Router best practices
+- Clean separation between server and client code
 
 ## Containers
 
+### SubtitleGeneratorContainer
+
+Main container for the `/subtitle-generator` page.
+
+**Location**: `containers/subtitle-generator-container.tsx`
+
+**Features**:
+
+- 4-step workflow: Upload/Configure → Edit Subtitles → Configure Output → Download
+- Tab-based input selection (file upload / YouTube URL)
+- Language selector with 10+ languages
+- AspectRatioSelector component
+- TemplateSelector with 9 templates
+- SubtitleEditor for manual editing
+- SilenceFillerPanel for automatic cleanup
+- BrandKitSettings integration
+- Download buttons for rendered video
+
 ### VideoContainer
 
-Main container component that orchestrates the video processing workflow.
+Main container for the `/video-wizard` page.
 
 **Location**: `containers/video-container.tsx`
 
-**Type**: Client Component ('use client')
-
 **Features**:
+
 - Uses `useVideoProcessing` hook for state management
-- Composes all presentational components
-- Handles workflow lifecycle
-- Provides callbacks for events
-
-**Usage**:
-```tsx
-import { VideoContainer } from '@/features/video/containers/video-container';
-
-// In your server component page
-export default function Page() {
-  return <VideoContainer />;
-}
-```
-
-**Why use containers?**
-- Keep pages as server components
-- Better performance (smaller client bundle)
-- Improved SEO
-- Follows Next.js best practices
-- Clear separation between server and client code
+- Orchestrates: Upload → Transcribe → Analyze → Generate clips → Edit → Render
+- Displays up to 5 top clips sorted by viral score
+- Individual clip editing via ClipEditModal
+- ClipCard components for each clip with template switching
 
 ## Components
 
-### VideoHeader
-Displays the feature title, description, and badges.
-- **Props**: None
-- **Usage**: Static header component
-
 ### VideoUploader
+
 Handles file selection and upload initiation.
+
 - **Props**: `file`, `currentStep`, `onFileSelect`, `onProcess`, `onReset`, `error`
-- **Validation**: File type (video/*), size (max 500MB)
+- **Validation**: File type (video/\*), size (max 5GB)
+
+### SubtitleEditor
+
+Table-based editor for subtitle segments.
+
+- **Props**: `subtitles`, `onSubtitlesChange`, `disabled`
+- **Features**: Edit text/timing, add/delete/merge segments, SRT/VTT export
+
+### TemplateSelector
+
+Radio group for selecting caption templates.
+
+- **Props**: `selected`, `onChange`, `disabled`
+- **Templates**: viral, minimal, modern, default, highlight, colorshift, hormozi, mrbeast, mrbeastemoji
+
+### AspectRatioSelector
+
+Visual grid for selecting output aspect ratio.
+
+- **Props**: `selected`, `onChange`, `disabled`, `className`
+- **Ratios**: 9:16 (Vertical), 1:1 (Square), 4:5 (Portrait), 16:9 (Landscape)
+
+### BrandKitSettings
+
+Collapsible settings for brand customization.
+
+- **Props**: `brandKit`, `onBrandKitChange`, `disabled`
+- **Sections**: Logo (URL, position, scale), Colors (primary, secondary, text, bg), Typography (font family)
+
+### SilenceFillerPanel
+
+Automated cleanup tools for subtitle quality.
+
+- **Props**: `subtitles`, `onSubtitlesChange`, `disabled`, `timeScale`
+- **Actions**: Auto-Clean All, Clean Filler Text, Remove Filler Segments, Remove Short Segments
+- **Detection**: Silences, filler words (13 defaults), short segments
+- **Settings**: Configurable silence threshold, min segment duration
+
+### ClipCard
+
+Displays an individual viral clip with metadata.
+
+- **Props**: `clip`, `index`, `onEdit`, `onRender`
+- **Info**: Viral score, duration, summary, hook, conclusion
+
+### ClipEditModal
+
+Modal for editing individual clip details.
+
+- **Props**: `clip`, `isOpen`, `onClose`, `onSave`
 
 ### ProcessingProgress
-Shows step-by-step progress through the workflow.
+
+Step-by-step progress indicator.
+
 - **Props**: `currentStep`, `progress`, `error`
-- **Steps**: Upload → Transcribe → Analyze
+
+### RemotionPreview
+
+Client-side video preview using Remotion Player.
 
 ### TranscriptionResults
-Displays the generated transcript with timestamps.
+
+Displays transcription segments with timestamps.
+
 - **Props**: `transcription`
 - **Format**: `[MM:SS - MM:SS] Text`
 
 ### AnalysisResults
+
 Shows AI analysis summary and viral clip recommendations.
+
 - **Props**: `analysis`, `onClipSelect`
-- **Features**: Summary, clip list with scores
+
+### VideoHeader
+
+Static header with title, description, and badges.
 
 ### VideoHowItWorks
-Informational component explaining the workflow.
-- **Props**: None
-- **Usage**: Shown when idle
+
+Educational component explaining the workflow.
 
 ## Hooks
 
-### useVideoProcessing
+### useSubtitleGeneration
 
-Main hook for video processing workflow.
+Manages the standalone subtitle generation workflow.
 
-**Parameters:**
-```typescript
-{
-  onComplete?: (data: { transcription, analysis }) => void;
-  onError?: (error: Error) => void;
-}
-```
+**State**:
 
-**Returns:**
 ```typescript
 {
   file: File | null;
-  currentStep: ProcessingStep;
-  transcription: TranscriptionResult | null;
-  analysis: ContentAnalysis | null;
+  youtubeUrl: string;
+  inputMode: 'file' | 'youtube';
+  aspectRatio: AspectRatio;            // '9:16' | '1:1' | '4:5' | '16:9'
+  currentStep: SubtitleGenerationStep; // idle → uploading → generating → editing → rendering → complete
+  uploadedPath: string;
+  subtitles: SubtitleSegment[];        // Stored in MILLISECONDS
+  language: string;
+  selectedTemplate: CaptionTemplate;
+  renderedVideoUrl: string;
   error: string;
   progress: string;
-  setFile: (file: File | null) => void;
-  processVideo: () => Promise<void>;
-  resetState: () => void;
 }
 ```
 
-**Workflow:**
-1. Upload video to Python engine (`/upload`)
-2. Transcribe video (`/transcribe`)
-3. Analyze content with AI (`/api/analyze-content`)
+**Methods**:
+
+- `setFile()`, `setYoutubeUrl()`, `setInputMode()`, `setAspectRatio()`, `setLanguage()`, `setTemplate()`
+- `updateSubtitles()` — Update subtitle array
+- `generateSubtitles()` — Upload video + transcribe
+- `renderVideo(brandKit?)` — Render with Remotion
+- `resetState()` — Reset to initial state
+
+### useVideoProcessing
+
+Manages the full Video Wizard workflow.
+
+**State**:
+
+```typescript
+{
+  file: File | null;
+  youtubeUrl: string;
+  inputMode: 'file' | 'youtube';
+  aspectRatio: AspectRatio;
+  currentStep: ProcessingStep; // idle → uploading → transcribing → analyzing → complete
+  uploadedPath: string;
+  transcription: TranscriptionResult | null;
+  analysis: ContentAnalysis | null;
+  language: string;
+  error: string;
+  progress: string;
+}
+```
+
+**Methods**:
+
+- `setFile()`, `setYoutubeUrl()`, `setInputMode()`, `setAspectRatio()`
+- `processVideo()` — Upload → Transcribe → Analyze (full pipeline)
+- `resetState()` — Reset to initial state
+
+### useBrandKit
+
+Manages brand kit state with localStorage persistence.
+
+**Returns**:
+
+```typescript
+{
+  brandKit: BrandKit | null;
+  setBrandKit: (kit: BrandKit | null) => void;
+  updateBrandKit: (updates: Partial<BrandKit>) => void;
+  clearBrandKit: () => void;
+}
+```
 
 ## Types
 
-### ProcessingStep
-```typescript
-type ProcessingStep = 
-  | 'idle' 
-  | 'uploading' 
-  | 'transcribing' 
-  | 'analyzing' 
-  | 'complete' 
-  | 'error';
-```
+### Core Types (`types/index.ts`)
 
-### TranscriptSegment
 ```typescript
+type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
+
+type ProcessingStep = 'idle' | 'uploading' | 'transcribing' | 'analyzing' | 'complete' | 'error';
+
+type SubtitleGenerationStep =
+  | 'idle'
+  | 'uploading'
+  | 'generating-subtitles'
+  | 'editing'
+  | 'rendering'
+  | 'complete'
+  | 'error';
+
+type SubtitleTemplate =
+  | 'viral'
+  | 'minimal'
+  | 'modern'
+  | 'default'
+  | 'highlight'
+  | 'colorshift'
+  | 'hormozi'
+  | 'mrbeast'
+  | 'mrbeastemoji';
+
+interface SubtitleSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 interface TranscriptSegment {
   id: number;
   start: number;
   end: number;
   text: string;
 }
-```
 
-### TranscriptionResult
-```typescript
 interface TranscriptionResult {
   video_path: string;
   audio_path?: string;
   segments: TranscriptSegment[];
   full_text: string;
   segment_count: number;
+  language: string;
+}
+
+interface GeneratedClip {
+  index: number;
+  summary: string;
+  viralScore: number;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  videoUrl?: string;
+  clipPath?: string;
+  renderedVideoUrl?: string;
+  template?: SubtitleTemplate;
+  language?: string;
+  aspectRatio?: AspectRatio;
+  isLoading: boolean;
+  isRendering?: boolean;
+  error?: string;
 }
 ```
 
-### VideoProcessingState
+### Brand Kit Types (`types/brand-kit.ts`)
+
 ```typescript
-interface VideoProcessingState {
-  file: File | null;
-  currentStep: ProcessingStep;
-  uploadedPath: string;
-  transcription: TranscriptionResult | null;
-  analysis: ContentAnalysis | null;
-  error: string;
-  progress: string;
+BrandKit {
+  logoUrl?: string;
+  logoPosition: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  logoScale: number;       // 0.1–2.0
+  primaryColor?: string;   // Hex #RRGGBB
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;     // CSS font stack
+}
+```
+
+### Silence/Filler Types (`types/silence-filler.ts`)
+
+```typescript
+type DetectedIssueType = 'silence' | 'filler' | 'short-segment';
+
+interface DetectedIssue {
+  type: DetectedIssueType;
+  segmentIndex: number;
+  start: number;
+  end: number;
+  duration: number;
+  description: string;
+  matchedFillers?: string[];
+  gapAfterIndex?: number;
+}
+
+interface DetectionResult {
+  issues: DetectedIssue[];
+  silenceCount: number;
+  fillerCount: number;
+  shortSegmentCount: number;
+  totalSilenceDuration: number;
+  totalFillerDuration: number;
 }
 ```
 
 ## Utilities
 
-### formatTimestamp
-Converts seconds to `MM:SS` format.
+### `lib/utils.ts`
 
-```typescript
-formatTimestamp(125) // "02:05"
-```
+- `formatTimestamp(seconds)` — Converts to `MM:SS` format
+- `formatTranscriptForAI(segments)` — Formats as `[MM:SS - MM:SS] text` for AI
+- `validateVideoFile(file)` — Validates type and size (max 5GB)
+- `getPythonEngineUrl()` — Gets processing engine URL from env
 
-### formatTranscriptForAI
-Formats transcript segments for AI analysis.
+### `lib/aspect-ratios.ts`
 
-```typescript
-const formatted = formatTranscriptForAI(segments);
-// "[00:00 - 00:05] Hello world\n\n[00:05 - 00:10] Next segment"
-```
+- `ASPECT_RATIO_CONFIG` — Dimensions, labels, descriptions, CSS classes for each ratio
+- `getDimensions(ratio)` — Returns `{ width, height }` for a given ratio
+- `getAspectClass(ratio)` — Returns Tailwind CSS class string
 
-### validateVideoFile
-Validates file type and size.
+### `lib/subtitle-export.ts`
 
-```typescript
-const error = validateVideoFile(file);
-// Returns error message or null
-```
+- `subtitlesToSrt(subtitles)` — Convert to SRT format string
+- `subtitlesToVtt(subtitles)` — Convert to VTT format string
+- `downloadSrt(subtitles, filename)` — Download as `.srt` file
+- `downloadVtt(subtitles, filename)` — Download as `.vtt` file
+
+### `lib/youtube.ts`
+
+- `isYouTubeUrl(url)` — Validates YouTube URL format
+- `extractVideoId(url)` — Extracts 11-character video ID
+
+### `lib/silence-filler-detection.ts`
+
+- `detectIssues(subtitles, config?, timeScale?)` — Run all enabled detectors
+- `removeDetectedIssues(subtitles, issues)` — Remove affected segments
+- `cleanFillerWordsFromText(subtitles, fillerWords?)` — Strip filler words from text
+- `getDefaultFillerWords()` — Returns default filler word list
 
 ## Configuration
 
-The module uses environment variables:
+Environment variables used:
 
 ```env
 NEXT_PUBLIC_PYTHON_ENGINE_URL=http://localhost:8000
@@ -319,34 +473,16 @@ NEXT_PUBLIC_PYTHON_ENGINE_URL=http://localhost:8000
 ## Integration
 
 This feature integrates with:
-- **Python Processing Engine**: Video upload and transcription
-- **Content Analysis Service**: AI-powered clip detection
-- **Server Services**: `@/server/services/content-analysis-service`
 
-## Testing
-
-```typescript
-// Example test
-import { validateVideoFile } from '@/features/video/lib/utils';
-
-test('validates video file', () => {
-  const file = new File(['content'], 'video.mp4', { type: 'video/mp4' });
-  expect(validateVideoFile(file)).toBeNull();
-});
-```
-
-## Future Enhancements
-
-- [ ] Add video player for clip preview
-- [ ] Support batch video processing
-- [ ] Add progress percentage tracking
-- [ ] Implement clip editing interface
-- [ ] Add export functionality
-- [ ] Support multiple languages
+- **Python Processing Engine**: Video upload, transcription, clip creation, YouTube download
+- **Content Analysis Service**: AI-powered viral clip detection (`server/services/content-analysis-service.ts`)
+- **Subtitle Generation Service**: Subtitle generation and Remotion rendering (`server/services/subtitle-generation-service.ts`)
+- **Clip Integration Service**: Clip creation and file management (`server/services/clip-integration-service.ts`)
+- **Remotion Compositions**: 9 caption templates (`packages/remotion-compositions/`)
 
 ## Related Documentation
 
 - [Project Instructions](../../.copilot/project-instructions.md)
 - [Code Patterns](../../.copilot/code-patterns.md)
 - [Server Module](../../server/README.md)
-- [Content Analysis Service](../../server/services/content-analysis-service.ts)
+- [Remotion Compositions](../../../../packages/remotion-compositions/README.md)

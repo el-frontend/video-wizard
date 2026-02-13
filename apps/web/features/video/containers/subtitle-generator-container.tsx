@@ -15,8 +15,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
 import { AlertCircle, CheckCircle2, Download, FileText, Link, Upload, Video } from 'lucide-react';
 import { AspectRatioSelector } from '../components/aspect-ratio-selector';
+import { BrandKitSettings } from '../components/brand-kit-settings';
 import { SubtitleEditor } from '../components/subtitle-editor';
 import { TemplateSelector } from '../components/template-selector';
+import { useBrandKit } from '../hooks/use-brand-kit';
 import type { VideoInputMode } from '../hooks/use-subtitle-generation';
 import { useSubtitleGeneration } from '../hooks/use-subtitle-generation';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
@@ -59,6 +61,8 @@ export function SubtitleGeneratorContainer() {
     renderVideo,
     resetState,
   } = useSubtitleGeneration();
+
+  const { brandKit, setBrandKit } = useBrandKit();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -268,8 +272,15 @@ export function SubtitleGeneratorContainer() {
                   />
                 </div>
 
+                <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+
                 <div className="flex gap-4">
-                  <Button onClick={renderVideo} disabled={!canRender} className="flex-1" size="lg">
+                  <Button
+                    onClick={() => renderVideo(brandKit ?? undefined)}
+                    disabled={!canRender}
+                    className="flex-1"
+                    size="lg"
+                  >
                     <Video className="mr-2 h-4 w-4" />
                     Render Video with Subtitles
                   </Button>

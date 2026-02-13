@@ -15,6 +15,7 @@ export function MrBeastTemplate({
   currentWord,
   currentSegment,
   isActive,
+  brandKit,
 }: CaptionTemplateProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -56,19 +57,15 @@ export function MrBeastTemplate({
 
   // Chunk pop-in animation
   const popDuration = 12;
-  const chunkScale = interpolate(
-    frameInChunk,
-    [0, popDuration * 0.4, popDuration],
-    [0.3, 1.1, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkScale = interpolate(frameInChunk, [0, popDuration * 0.4, popDuration], [0.3, 1.1, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-  const chunkOpacity = interpolate(
-    frameInChunk,
-    [0, popDuration * 0.5],
-    [0, 1],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const chunkOpacity = interpolate(frameInChunk, [0, popDuration * 0.5], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // Exit animation
   const exitDuration = 8;
@@ -89,8 +86,8 @@ export function MrBeastTemplate({
   const finalOpacity = Math.min(chunkOpacity, exitOpacity);
   const finalScale = Math.min(chunkScale, exitScale);
 
-  // MrBeast green color for highlights
-  const mrBeastGreen = '#00FF00';
+  // MrBeast green color for highlights (brandKit primary overrides)
+  const mrBeastGreen = brandKit?.primaryColor ?? '#00FF00';
 
   return (
     <AbsoluteFill
@@ -123,18 +120,16 @@ export function MrBeastTemplate({
           // Individual word pop effect
           const wordPopDuration = 10;
           const wordScale = isCurrentWord
-            ? interpolate(
-                frameInWord,
-                [0, wordPopDuration * 0.4, wordPopDuration],
-                [1, 1.15, 1],
-                { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-              )
+            ? interpolate(frameInWord, [0, wordPopDuration * 0.4, wordPopDuration], [1, 1.15, 1], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              })
             : 1;
 
           // Determine if word should be green (highlight keywords)
           // Highlight every 2nd word or words that are longer (likely important)
           const isKeyword = wordIndex % 2 === 1 || word.length > 5;
-          const textColor = isKeyword ? mrBeastGreen : '#FFFFFF';
+          const textColor = isKeyword ? mrBeastGreen : (brandKit?.textColor ?? '#FFFFFF');
 
           return (
             <div
@@ -152,7 +147,8 @@ export function MrBeastTemplate({
                   margin: 0,
                   lineHeight: 1.1,
                   // Comic-style font
-                  fontFamily: 'Impact, Bangers, Comic Sans MS, cursive, sans-serif',
+                  fontFamily:
+                    brandKit?.fontFamily ?? 'Impact, Bangers, Comic Sans MS, cursive, sans-serif',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                   letterSpacing: '1px',

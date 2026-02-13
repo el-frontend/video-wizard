@@ -11,20 +11,25 @@ Video Wizard is a monorepo application for AI-powered video content analysis, vi
 ### Main Features
 
 1. **Video Wizard** (`/video-wizard`) - Full viral clip analysis pipeline
-   - Upload video → Transcribe → AI analysis → Extract viral clips
+   - Upload video or YouTube URL → Transcribe → AI analysis → Extract viral clips
    - Scoring system (0-100) for viral potential
-   - Subtitle editing and template selection
+   - Subtitle editing, template selection, aspect ratio support
+   - Smart vertical clip creation with face detection
 
-2. **Subtitle Generator** (`/subtitle-generator`) - NEW! Standalone subtitle generation
-   - Upload video → Generate subtitles → Select template → Render
+2. **Subtitle Generator** (`/subtitle-generator`) - Standalone subtitle generation
+   - Upload video or YouTube URL → Generate subtitles → Edit → Select template → Render
    - 9 customizable templates (viral, minimal, modern, hormozi, mrbeast, etc.)
-   - Real-time subtitle editing
-   - No content analysis required
+   - Visual subtitle editor with merge/delete/add
+   - Silence/filler word detection and auto-cleanup
+   - Multi-aspect ratio support (9:16, 1:1, 4:5, 16:9)
+   - Brand kit customization (logo, colors, fonts)
+   - SRT/VTT subtitle file export
+   - Multi-language support with auto-detection
 
 3. **Content Intelligence** (`/content-intelligence`) - AI-powered transcript analysis
-   - Analyze existing transcripts
-   - Viral moment detection
-   - Engagement insights
+   - Analyze existing transcripts (paste or sample)
+   - Viral moment detection with scoring (0-100)
+   - Hook and conclusion identification
 
 4. **Remotion Studio** (`/remotion`) - Low-level video composition engine
 
@@ -138,41 +143,90 @@ video-wizard/
 │   │   ├── app/                  # App Router pages
 │   │   │   ├── api/              # HTTP handlers only
 │   │   │   │   ├── analyze-content/       # AI content analysis
-│   │   │   │   ├── generate-subtitles/    # NEW! Generate subtitles only
-│   │   │   │   ├── render-video-subtitles/ # NEW! Render with subtitles
-│   │   │   │   └── render-with-subtitles/ # Regenerate with edited subtitles
-│   │   │   ├── video-wizard/     # Full pipeline page
-│   │   │   ├── subtitle-generator/ # NEW! Standalone subtitle generation
-│   │   │   └── content-intelligence/  # Transcript analysis page
+│   │   │   │   ├── create-clip/           # Create vertical clips (Python)
+│   │   │   │   ├── generate-subtitles/    # Generate subtitles only
+│   │   │   │   ├── render-video-subtitles/ # Render with subtitles
+│   │   │   │   ├── render-with-subtitles/ # Regenerate with edited subtitles
+│   │   │   │   ├── render-final/          # Final render (disabled, 501)
+│   │   │   │   └── transcribe/            # Proxy to Python transcription
+│   │   │   ├── video-wizard/              # Full pipeline page
+│   │   │   ├── subtitle-generator/        # Standalone subtitle generation
+│   │   │   └── content-intelligence/      # Transcript analysis page
 │   │   ├── features/             # Feature modules
 │   │   │   └── video/            # Video processing feature
 │   │   │       ├── components/   # UI components
-│   │   │       │   ├── subtitle-editor.tsx      # NEW! Edit subtitles
-│   │   │       │   └── template-selector.tsx    # NEW! Select templates
+│   │   │       │   ├── analysis-results.tsx       # AI analysis display
+│   │   │       │   ├── aspect-ratio-selector.tsx  # Multi-ratio selector
+│   │   │       │   ├── brand-kit-settings.tsx     # Brand customization UI
+│   │   │       │   ├── clip-card.tsx               # Viral clip card
+│   │   │       │   ├── clip-edit-modal.tsx         # Clip editing modal
+│   │   │       │   ├── processing-progress.tsx    # Progress indicator
+│   │   │       │   ├── remotion-preview.tsx        # Video preview player
+│   │   │       │   ├── silence-filler-panel.tsx   # Cleanup tools panel
+│   │   │       │   ├── subtitle-editor.tsx        # Edit subtitles
+│   │   │       │   ├── template-selector.tsx      # Select templates (9)
+│   │   │       │   ├── transcription-results.tsx  # Transcription display
+│   │   │       │   ├── video-header.tsx           # Page header
+│   │   │       │   ├── video-how-it-works.tsx     # Educational info
+│   │   │       │   ├── video-uploader.tsx         # File upload
+│   │   │       │   └── index.ts                   # Component exports
 │   │   │       ├── containers/   # Page containers
-│   │   │       │   └── subtitle-generator-container.tsx # NEW!
-│   │   │       └── hooks/        # React hooks
-│   │   │           └── use-subtitle-generation.ts # NEW! Subtitle workflow
+│   │   │       │   ├── subtitle-generator-container.tsx # Subtitle flow
+│   │   │       │   └── video-container.tsx        # Video Wizard flow
+│   │   │       ├── hooks/        # React hooks
+│   │   │       │   ├── use-brand-kit.ts           # Brand kit state (localStorage)
+│   │   │       │   ├── use-subtitle-generation.ts # Subtitle workflow
+│   │   │       │   └── use-video-processing.ts    # Video Wizard workflow
+│   │   │       ├── types/        # Feature types
+│   │   │       │   ├── brand-kit.ts               # BrandKit Zod schema
+│   │   │       │   ├── silence-filler.ts          # Detection types
+│   │   │       │   └── index.ts                   # Core types
+│   │   │       └── lib/          # Feature utilities
+│   │   │           ├── aspect-ratios.ts           # Ratio config & dimensions
+│   │   │           ├── silence-filler-detection.ts # Detection algorithms
+│   │   │           ├── subtitle-export.ts         # SRT/VTT export
+│   │   │           ├── utils.ts                   # Common utilities
+│   │   │           └── youtube.ts                 # YouTube URL validation
 │   │   ├── server/               # Server-side code
 │   │   │   ├── services/         # Business logic
-│   │   │   │   └── subtitle-generation-service.ts # NEW! Subtitle service
+│   │   │   │   ├── clip-integration-service.ts    # Clip creation/upload
+│   │   │   │   ├── content-analysis-service.ts    # AI viral analysis
+│   │   │   │   ├── subtitle-generation-service.ts # Subtitle generation
+│   │   │   │   └── video-render-service.ts        # Video rendering (legacy)
 │   │   │   ├── types/            # Zod schemas & types
+│   │   │   │   ├── content-analysis.ts            # Viral clip schemas
+│   │   │   │   ├── clip-render.ts                 # Clip render schemas
+│   │   │   │   └── video-render.ts                # Render schemas
 │   │   │   ├── config/           # Configuration
+│   │   │   │   └── ai.ts                          # OpenAI model config
 │   │   │   ├── prompts/          # AI prompts
+│   │   │   │   └── viral-editor.ts                # Viral analysis prompt
 │   │   │   └── lib/              # Server utilities
+│   │   │       └── utils.ts                       # Error classes, logger
 │   │   ├── components/           # Shared UI
+│   │   │   ├── layout/
+│   │   │   │   └── app-sidebar.tsx                # Fixed sidebar navigation
 │   │   │   └── ui/               # shadcn/ui components
 │   │   └── lib/                  # Client utilities
 │   ├── remotion-server/          # Remotion render server
 │   │   ├── server/               # Express API
+│   │   │   ├── index.ts          # API endpoints & job queue
+│   │   │   └── render-queue.ts   # Render job management
 │   │   └── renders/              # Output directory
 │   └── processing-engine/        # Python video service
-│       ├── main.py               # FastAPI app
-│       ├── analyzer.py           # AI video analysis
+│       ├── main.py               # FastAPI app (REST API)
+│       ├── analyzer.py           # Face detection (MediaPipe)
 │       ├── renderer.py           # FFmpeg rendering
-│       └── audio_service.py      # Transcription
+│       ├── audio_service.py      # Whisper transcription
+│       └── smart_clipper.py      # Intelligent cropping
 ├── packages/
 │   ├── remotion-compositions/    # Shared Remotion templates
+│   │   └── src/
+│   │       ├── Root.tsx           # Composition registry
+│   │       ├── compositions/     # VideoComposition, CaptionOverlay
+│   │       ├── templates/        # 9 caption templates
+│   │       ├── hooks/            # useActiveSubtitle
+│   │       └── types.ts          # Remotion-level types
 │   ├── ui/                       # Shared components
 │   └── tsconfig/                 # Shared TypeScript configs
 └── .copilot/                     # Additional documentation
@@ -342,10 +396,7 @@ pnpm --filter processing-engine dev
 
 ### Environment Variables
 
-Required in `apps/web/.env.local`:
-```bash
-OPENAI_API_KEY=sk-...
-```
+See full list in the **Environment Variables** section below.
 
 ## Testing Approach
 
@@ -392,14 +443,14 @@ OPENAI_API_KEY=sk-...
    - Subtitles array (in SECONDS, not milliseconds)
    - Template name
    - Language code
-   - Duration in frames
+   - Aspect ratio dimensions
+   - Brand kit (optional)
 2. Server creates job and returns jobId
 3. Client polls job status every 2 seconds
 4. Remotion renders video with captions (up to 30 min timeout)
 5. Returns final video URL when complete
 
 **Important**: Subtitles must be in SECONDS. The service converts from milliseconds to seconds before sending to Remotion.
-4. Returns video file or progress updates
 
 ## Important Notes
 
@@ -481,26 +532,61 @@ return NextResponse.json(
 );
 ```
 
-### Use feature hook
+### Use feature hooks
 ```typescript
-const { state, actions } = useVideoProcessing();
-
-// NEW! For subtitle generation only
+// Video Wizard (full pipeline with AI analysis)
 const {
-  file,
-  subtitles,
-  selectedTemplate,
-  setFile,
-  setTemplate,
-  updateSubtitles,
-  generateSubtitles,
-  renderVideo,
+  file, youtubeUrl, inputMode, aspectRatio,
+  currentStep, uploadedPath, transcription, analysis,
+  language, error, progress,
+  setFile, setYoutubeUrl, setInputMode, setAspectRatio,
+  processVideo, resetState,
+} = useVideoProcessing();
+
+// Subtitle Generator (standalone, no AI analysis)
+const {
+  file, youtubeUrl, inputMode, aspectRatio,
+  currentStep, subtitles, selectedTemplate,
+  renderedVideoUrl, language, error, progress,
+  setFile, setYoutubeUrl, setInputMode, setAspectRatio,
+  setLanguage, setTemplate, updateSubtitles,
+  generateSubtitles, renderVideo, resetState,
 } = useSubtitleGeneration();
+
+// Brand Kit (localStorage persisted)
+const {
+  brandKit, setBrandKit, updateBrandKit, clearBrandKit,
+} = useBrandKit();
 ```
 
 ---
 
-## NEW! Subtitle Generator Feature
+## Complete API Reference
+
+### API Endpoints
+
+| Method | Route | Description | Service |
+|--------|-------|-------------|---------|
+| POST | `/api/transcribe` | Proxy to Python transcription | ClipIntegrationService |
+| POST | `/api/analyze-content` | AI viral clip detection | ContentAnalysisService |
+| POST | `/api/create-clip` | Create vertical clip (smart crop) | ClipIntegrationService |
+| POST | `/api/generate-subtitles` | Generate subtitles from video | SubtitleGenerationService |
+| POST | `/api/render-video-subtitles` | Render video with subtitles | SubtitleGenerationService |
+| POST | `/api/render-with-subtitles` | Re-render clip with edited subtitles | SubtitleGenerationService |
+| POST | `/api/render-final` | Final render (disabled, returns 501) | — |
+
+### Services
+
+| Service | File | Methods |
+|---------|------|---------|
+| **ContentAnalysisService** | `server/services/content-analysis-service.ts` | `analyzeTranscript()`, `validateTranscript()` |
+| **SubtitleGenerationService** | `server/services/subtitle-generation-service.ts` | `generateSubtitles()`, `renderWithSubtitles()`, `pollRenderJob()`, `getRenderStatus()` |
+| **ClipIntegrationService** | `server/services/clip-integration-service.ts` | `createClip()`, `transcribeVideo()`, `uploadVideo()`, `getVideoUrl()` |
+| **VideoRenderService** | `server/services/video-render-service.ts` | Legacy — server-side rendering disabled |
+
+---
+
+## Subtitle Generator Feature
 
 ### Overview
 
@@ -512,7 +598,8 @@ The Subtitle Generator is a standalone feature that allows users to generate and
 - `apps/web/server/services/subtitle-generation-service.ts`
   - `generateSubtitles()` - Transcribe video with Whisper
   - `renderWithSubtitles()` - Render video with Remotion
-  - `pollRenderJob()` - Poll job status until completion
+  - `pollRenderJob()` - Poll job status until completion (30min timeout, 2s interval)
+  - `getRenderStatus()` - Get current job status without polling
 
 **API Routes**:
 - `POST /api/generate-subtitles` - Generate subtitles from video
@@ -522,7 +609,10 @@ The Subtitle Generator is a standalone feature that allows users to generate and
 - Hook: `features/video/hooks/use-subtitle-generation.ts`
 - Components:
   - `TemplateSelector` - Choose from 9 templates
-  - `SubtitleEditor` - Edit, merge, delete subtitles
+  - `SubtitleEditor` - Edit, merge, delete subtitles + SRT/VTT export
+  - `AspectRatioSelector` - Choose output aspect ratio (9:16, 1:1, 4:5, 16:9)
+  - `BrandKitSettings` - Logo, colors, fonts customization
+  - `SilenceFillerPanel` - Auto-detect and remove silences, fillers, short segments
 - Container: `SubtitleGeneratorContainer` - Main page orchestration
 - Page: `app/subtitle-generator/page.tsx`
 
@@ -609,57 +699,244 @@ The Subtitle Generator is accessible from:
 - **Fix**: Check `Root.tsx:29` includes all 9 templates
 - **Fixed**: 2026-01-30
 
-### Testing the Feature
+---
+
+## Brand Kit System
+
+### Overview
+
+Persistent brand customization that applies across all subtitle templates. Stored in `localStorage` and sent to Remotion for rendering.
+
+### Architecture
+
+- **Types**: `features/video/types/brand-kit.ts` — Zod schema with validation
+- **Hook**: `features/video/hooks/use-brand-kit.ts` — State + localStorage persistence
+- **Component**: `features/video/components/brand-kit-settings.tsx` — Collapsible settings UI
+
+### BrandKit Schema
+
+```typescript
+BrandKit {
+  logoUrl?: string;              // URL to logo image
+  logoPosition: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'; // default: 'top-right'
+  logoScale: number;             // 0.1–2.0, default: 1
+  primaryColor?: string;         // Hex #RRGGBB
+  secondaryColor?: string;       // Hex #RRGGBB
+  textColor?: string;            // Hex #RRGGBB
+  backgroundColor?: string;      // Hex #RRGGBB
+  fontFamily?: string;           // CSS font stack
+}
+```
+
+### Font Options
+
+10 predefined fonts: Impact, Montserrat, Helvetica Neue, System UI, Georgia, Oswald, Roboto, Inter, Poppins, Arial.
+
+### Usage
+
+```typescript
+const { brandKit, setBrandKit, updateBrandKit, clearBrandKit } = useBrandKit();
+
+// In render call
+renderVideo(brandKit); // Passes brand kit to Remotion server
+```
+
+---
+
+## Silence/Filler Detection System
+
+### Overview
+
+Automated detection and cleanup of silences, filler words, and short noise segments in subtitle data.
+
+### Architecture
+
+- **Types**: `features/video/types/silence-filler.ts` — Detection types, config schema
+- **Utility**: `features/video/lib/silence-filler-detection.ts` — Pure detection algorithms
+- **Component**: `features/video/components/silence-filler-panel.tsx` — Cleanup UI
+
+### Detection Types
+
+1. **Silence**: Gaps between consecutive segments > threshold (default: 1000ms)
+2. **Filler Words**: Segments containing "um", "uh", "like", "you know", etc. (13 default fillers)
+3. **Short Segments**: Segments shorter than threshold (default: 300ms)
+
+### Configuration
+
+```typescript
+SilenceFillerConfig {
+  silenceThresholdMs: number;       // default: 1000
+  minSegmentDurationMs: number;     // default: 300
+  fillerWords: string[];            // 13 defaults (um, uh, like, etc.)
+  enableSilenceDetection: boolean;  // default: true
+  enableFillerDetection: boolean;   // default: true
+  enableShortSegmentDetection: boolean; // default: true
+}
+```
+
+### API
+
+```typescript
+// Run detection
+const result: DetectionResult = detectIssues(subtitles, config, timeScale);
+
+// Remove detected segments
+const cleaned = removeDetectedIssues(subtitles, result.issues);
+
+// Strip filler words from text (keeping segments)
+const cleaned = cleanFillerWordsFromText(subtitles, fillerWords);
+```
+
+### Time Scale Parameter
+
+- `timeScale = 1` when subtitles are in milliseconds (Subtitle Generator)
+- `timeScale = 1000` when subtitles are in seconds (Video Wizard)
+
+---
+
+## Multi-Aspect Ratio Support
+
+### Supported Ratios
+
+| Ratio | Dimensions | Label | Use Case |
+|-------|-----------|-------|----------|
+| 9:16 | 1080×1920 | Vertical | TikTok, Reels, Stories |
+| 1:1 | 1080×1080 | Square | Instagram Posts |
+| 4:5 | 1080×1350 | Portrait | Instagram Feed |
+| 16:9 | 1920×1080 | Landscape | YouTube, Standard |
+
+### Architecture
+
+- **Config**: `features/video/lib/aspect-ratios.ts` — Dimensions, labels, CSS classes
+- **Component**: `features/video/components/aspect-ratio-selector.tsx` — Visual grid selector
+- **Default**: `9:16` (vertical, most common for short-form content)
+
+### Usage
+
+```typescript
+import { ASPECT_RATIO_CONFIG, getDimensions, getAspectClass } from '@/features/video/lib/aspect-ratios';
+
+const { width, height } = getDimensions('9:16'); // { width: 1080, height: 1920 }
+const cssClass = getAspectClass('1:1'); // 'aspect-square'
+```
+
+---
+
+## YouTube Integration
+
+### Overview
+
+Both Video Wizard and Subtitle Generator support YouTube URL input as an alternative to file upload.
+
+### Supported URL Formats
+
+- `https://www.youtube.com/watch?v=VIDEO_ID`
+- `https://youtu.be/VIDEO_ID`
+- `https://www.youtube.com/shorts/VIDEO_ID`
+- `https://www.youtube.com/embed/VIDEO_ID`
+- `https://www.youtube.com/v/VIDEO_ID`
+
+### Architecture
+
+- **Utility**: `features/video/lib/youtube.ts` — `isYouTubeUrl()`, `extractVideoId()`
+- **Processing**: Python engine `POST /download-youtube` endpoint
+- **UI**: Tab-based input mode in both containers (`file` | `youtube`)
+
+---
+
+## Subtitle Export
+
+### Overview
+
+Export edited subtitles as SRT or VTT files for use in external video editors.
+
+### Supported Formats
+
+- **SRT** (SubRip Text): `HH:MM:SS,mmm` timestamps
+- **VTT** (WebVTT): `HH:MM:SS.mmm` timestamps with `WEBVTT` header
+
+### API
+
+```typescript
+import { downloadSrt, downloadVtt } from '@/features/video/lib/subtitle-export';
+
+downloadSrt(subtitles, 'my-video');  // Downloads my-video.srt
+downloadVtt(subtitles, 'my-video');  // Downloads my-video.vtt
+```
+
+---
+
+## Processing Engine (Python) Endpoints
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET | `/` | Service info |
+| GET | `/health` | Health check |
+| POST | `/upload` | Video file upload |
+| POST | `/transcribe` | Whisper transcription |
+| POST | `/render-clip` | Smart vertical clip creation |
+| POST | `/analyze-video` | Face/head tracking analysis |
+| POST | `/render-video` | Apply crop data to video |
+| POST | `/process-video` | Full analyze + render pipeline |
+| POST | `/download-youtube` | Download YouTube video |
+| GET | `/uploads/{path}` | Serve uploaded files |
+| GET | `/output/{path}` | Serve rendered output |
+
+## Remotion Server Endpoints
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| POST | `/renders` | Create render job |
+| GET | `/renders/:jobId` | Get job status/video URL |
+| GET | `/renders/*` | Serve rendered video files |
+
+---
+
+## Environment Variables
+
+Required in `apps/web/.env.local`:
+```bash
+OPENAI_API_KEY=sk-...                           # OpenAI API key (required)
+NEXT_PUBLIC_PYTHON_ENGINE_URL=http://localhost:8000  # Processing engine URL
+REMOTION_SERVER_URL=http://localhost:3001            # Remotion render server
+PYTHON_ENGINE_INTERNAL_URL=http://processing-engine:8000  # Docker container URL
+```
+
+---
+
+## Testing the Features
 
 ```bash
 # 1. Start all services
 pnpm dev  # Or start individually
 
-# 2. Navigate to subtitle generator
+# 2. Test Subtitle Generator
 open http://localhost:3000/subtitle-generator
-
-# 3. Test workflow
 # - Upload a short video (10-30s for quick testing)
+# - Or paste a YouTube URL
 # - Wait for subtitle generation
-# - Edit a subtitle to verify editor works
-# - Select different templates
+# - Test cleanup tools (silence/filler detection)
+# - Edit subtitles in the editor
+# - Select different templates and aspect ratios
+# - Configure brand kit (optional)
 # - Render and download
 
-# 4. Verify logs
+# 3. Test Video Wizard
+open http://localhost:3000/video-wizard
+# - Upload video → transcription → AI analysis
+# - View viral clips with scores
+# - Edit individual clips with template selection
+
+# 4. Test Content Intelligence
+open http://localhost:3000/content-intelligence
+# - Paste transcript or use sample
+# - View viral clip analysis
+
+# 5. Verify logs
 # Check Remotion Server console for:
 # [Remotion] Calculated duration: { durationInSeconds: X }
 # [useActiveSubtitle] Active segment: { currentTime: X }
 ```
-
-### Example Usage
-
-```typescript
-// Programmatic usage of the service
-import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
-
-// Generate subtitles
-const result = await subtitleGenerationService.generateSubtitles({
-  videoPath: 'uploads/my-video.mp4',
-  language: 'en', // or 'auto'
-});
-
-// Render with template
-const rendered = await subtitleGenerationService.renderWithSubtitles({
-  videoPath: 'uploads/my-video.mp4',
-  subtitles: result.subtitles,
-  template: 'viral',
-  language: 'en',
-});
-
-console.log('Video URL:', rendered.videoUrl);
-```
-
-### Documentation Files
-
-- `SUBTITLE_GENERATOR.md` - Complete feature documentation
-- `SUBTITLE_FIX.md` - Bug fixes and troubleshooting
-- `SUBTITLE_TIMING_ADJUSTMENT.md` - Timing configuration guide
-- `NAVIGATION_UPDATE.md` - Navigation integration details
 
 ---
 

@@ -6,39 +6,59 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                     User Interface                           │
 │                   (Next.js App Router)                       │
-└───────────────────────┬─────────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────┐
-        │               │               │
-        ▼               ▼               ▼
-┌──────────────┐ ┌─────────────┐ ┌──────────────┐
-│   Features   │ │  Shared UI  │ │   API Routes │
-│   Modules    │ │ Components  │ │  (HTTP Only) │
-└──────┬───────┘ └─────────────┘ └──────┬───────┘
-       │                                  │
-       │                                  ▼
-       │                         ┌────────────────┐
-       │                         │    Server      │
-       │                         │  (Business     │
-       │                         │   Logic)       │
-       │                         └────────┬───────┘
-       │                                  │
-       │                         ┌────────┼────────┐
-       │                         │        │        │
-       │                         ▼        ▼        ▼
-       │                    ┌────────┬────────┬────────┐
-       │                    │Services│ Types  │Prompts │
-       │                    └────────┴────────┴────────┘
-       │                                  │
-       └──────────────────────────────────┤
-                                          │
-                  ┌───────────────────────┼───────────────┐
-                  │                       │               │
-                  ▼                       ▼               ▼
-          ┌──────────────┐      ┌──────────────┐  ┌─────────┐
-          │ OpenAI GPT-4 │      │   Python     │  │Database │
-          │   (AI SDK)   │      │   Engine     │  │ (Future)│
-          └──────────────┘      └──────────────┘  └─────────┘
+│                                                              │
+│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐   │
+│  │ Video Wizard │ │  Subtitle    │ │    Content        │   │
+│  │ /video-wizard│ │  Generator   │ │    Intelligence   │   │
+│  │              │ │ /subtitle-   │ │ /content-         │   │
+│  │              │ │  generator   │ │  intelligence     │   │
+│  └──────┬───────┘ └──────┬───────┘ └────────┬──────────┘   │
+│         │                │                    │              │
+│         ▼                ▼                    ▼              │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │              Feature Modules (video/)               │     │
+│  │  Components │ Containers │ Hooks │ Types │ Utils    │     │
+│  └──────────────────────┬─────────────────────────────┘     │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+          ▼               ▼               ▼
+   ┌──────────────┐ ┌─────────────┐ ┌──────────────┐
+   │   API Routes │ │  Shared UI  │ │   Layout     │
+   │  (HTTP Only) │ │ Components  │ │  (Sidebar)   │
+   └──────┬───────┘ └─────────────┘ └──────────────┘
+          │
+          ▼
+   ┌────────────────┐
+   │    Server      │
+   │  (Business     │
+   │   Logic)       │
+   └────────┬───────┘
+            │
+   ┌────────┼────────────┐
+   │        │            │
+   ▼        ▼            ▼
+┌────────┬────────┬────────────┐
+│Services│ Types  │ Prompts    │
+│        │ (Zod)  │ (AI)       │
+└────────┴────────┴────────────┘
+            │
+   ┌────────┼────────────────────┐
+   │        │                    │
+   ▼        ▼                    ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ OpenAI GPT   │  │   Python     │  │  Remotion    │
+│ (Vercel AI   │  │   Engine     │  │  Server      │
+│  SDK)        │  │ (FastAPI)    │  │ (Express)    │
+└──────────────┘  └──────────────┘  └──────────────┘
+                         │                  │
+                         ▼                  ▼
+                  ┌──────────────┐  ┌──────────────┐
+                  │   FFmpeg     │  │  Remotion    │
+                  │   Whisper    │  │ Compositions │
+                  │   MediaPipe  │  │ (9 templates)│
+                  └──────────────┘  └──────────────┘
 ```
 
 ## Feature Module Architecture (Screaming Architecture)
@@ -47,92 +67,152 @@
 
 ```
 apps/web/
-├── app/                          # Next.js pages
-│   ├── video-wizard/page.tsx    # Composes feature components
-│   └── api/                      # HTTP handlers only
-│       └── analyze-content/
-│           └── route.ts
+├── app/                          # Next.js pages & API routes
+│   ├── page.tsx                  # Dashboard (/)
+│   ├── video-wizard/page.tsx     # Video Wizard
+│   ├── subtitle-generator/page.tsx # Subtitle Generator
+│   ├── content-intelligence/page.tsx # Content Intelligence
+│   └── api/                      # 7 HTTP endpoints
+│       ├── analyze-content/      # AI viral clip detection
+│       ├── create-clip/          # Create vertical clips
+│       ├── generate-subtitles/   # Generate subtitles
+│       ├── render-video-subtitles/ # Render with subtitles
+│       ├── render-with-subtitles/  # Re-render edited clips
+│       ├── render-final/         # Final render (disabled)
+│       └── transcribe/           # Proxy to Python
 │
-├── features/                     # 🎯 FEATURE MODULES
+├── features/                     # FEATURE MODULES
 │   └── video/                    # Video processing feature
-│       ├── components/           # Presentational components
-│       │   ├── video-header.tsx
-│       │   ├── video-uploader.tsx
-│       │   ├── processing-progress.tsx
-│       │   ├── transcription-results.tsx
+│       ├── components/           # 15 presentational components
 │       │   ├── analysis-results.tsx
+│       │   ├── aspect-ratio-selector.tsx
+│       │   ├── brand-kit-settings.tsx
+│       │   ├── clip-card.tsx
+│       │   ├── clip-edit-modal.tsx
+│       │   ├── processing-progress.tsx
+│       │   ├── remotion-preview.tsx
+│       │   ├── silence-filler-panel.tsx
+│       │   ├── subtitle-editor.tsx
+│       │   ├── template-selector.tsx
+│       │   ├── transcription-results.tsx
+│       │   ├── video-header.tsx
 │       │   ├── video-how-it-works.tsx
+│       │   ├── video-uploader.tsx
 │       │   └── index.ts
-│       ├── hooks/
-│       │   └── use-video-processing.ts  # State + workflow logic
-│       ├── types/
-│       │   └── index.ts          # Feature-specific types
-│       ├── lib/
-│       │   └── utils.ts          # Feature utilities
-│       ├── index.ts              # Main export
-│       └── README.md
+│       ├── containers/           # 2 page orchestrators
+│       │   ├── subtitle-generator-container.tsx
+│       │   └── video-container.tsx
+│       ├── hooks/                # 3 state management hooks
+│       │   ├── use-brand-kit.ts
+│       │   ├── use-subtitle-generation.ts
+│       │   └── use-video-processing.ts
+│       ├── types/                # 3 type definition files
+│       │   ├── brand-kit.ts
+│       │   ├── silence-filler.ts
+│       │   └── index.ts
+│       └── lib/                  # 5 utility modules
+│           ├── aspect-ratios.ts
+│           ├── silence-filler-detection.ts
+│           ├── subtitle-export.ts
+│           ├── utils.ts
+│           └── youtube.ts
 │
 ├── server/                       # Server-side code
-│   ├── services/                 # Business logic
-│   │   └── content-analysis-service.ts
-│   ├── types/                    # Schemas + types
-│   │   └── content-analysis.ts
-│   ├── config/                   # Configuration
-│   │   └── ai.ts
+│   ├── services/                 # 4 business logic services
+│   │   ├── content-analysis-service.ts
+│   │   ├── subtitle-generation-service.ts
+│   │   ├── clip-integration-service.ts
+│   │   └── video-render-service.ts (legacy)
+│   ├── types/                    # 3 Zod schema files
+│   ├── config/                   # AI model configuration
 │   ├── prompts/                  # AI prompts
-│   │   └── viral-editor.ts
 │   └── lib/                      # Server utilities
-│       └── utils.ts
 │
-└── components/                   # Shared UI components
-    └── ui/                       # shadcn/ui components
-        ├── button.tsx
-        ├── card.tsx
-        └── ...
+├── components/                   # Shared UI components
+│   ├── layout/
+│   │   └── app-sidebar.tsx       # Fixed sidebar navigation
+│   └── ui/                       # shadcn/ui components
+└── lib/                          # Client utilities
 ```
 
-## Data Flow: Video Processing Workflow
+## Data Flow: Video Wizard
 
 ```
 1. User Interaction
    ┌──────────────────────────────────┐
-   │  VideoWizardPage (app/page.tsx)  │
-   │  - Composes feature components   │
+   │  VideoContainer                   │
+   │  (container component)            │
    └───────────┬──────────────────────┘
                │ useVideoProcessing()
                ▼
 2. Feature Hook
    ┌──────────────────────────────────┐
    │  useVideoProcessing (hook)       │
-   │  - Manages state                 │
-   │  - Orchestrates workflow         │
-   │  - Handles errors                │
+   │  - Manages state machine         │
+   │  - Orchestrates workflow          │
+   │  - Supports file + YouTube input  │
    └───────────┬──────────────────────┘
                │ processVideo()
                ▼
 3. API Calls
-   ┌────────────────┬─────────────────┐
-   │ Upload Video   │ Transcribe      │ Analyze Content
-   │ POST /upload   │ POST /transcribe│ POST /api/analyze-content
-   └────────┬───────┴────────┬────────┴────────┬──────────
+   ┌────────────────┬─────────────────┬──────────────────┐
+   │ Upload Video   │ Transcribe      │ Analyze Content  │
+   │ POST /upload   │ POST /transcribe│ POST /api/       │
+   │ (Python)       │ (Python)        │ analyze-content  │
+   └────────┬───────┴────────┬────────┴────────┬─────────┘
             │                │                 │
             ▼                ▼                 ▼
    ┌──────────────┐ ┌──────────────┐ ┌─────────────────┐
-   │ Python       │ │ Python       │ │ Next.js API     │
-   │ Engine       │ │ Engine       │ │ Route           │
+   │ Python       │ │ Whisper      │ │ Content         │
+   │ Engine       │ │ Transcription│ │ Analysis        │
+   │ (upload)     │ │              │ │ Service         │
    └──────────────┘ └──────────────┘ └────────┬────────┘
                                                │
                                                ▼
-4. Business Logic                     ┌─────────────────────┐
-                                      │ ContentAnalysis     │
-                                      │ Service             │
-                                      └──────────┬──────────┘
-                                                 │
-                                                 ▼
-5. AI Processing                      ┌─────────────────────┐
-                                      │ OpenAI GPT-4o       │
-                                      │ (Vercel AI SDK)     │
-                                      └─────────────────────┘
+4. AI Processing                     ┌─────────────────────┐
+                                     │ OpenAI GPT           │
+                                     │ (Vercel AI SDK)      │
+                                     │ Viral scoring 0-100  │
+                                     └─────────────────────┘
+```
+
+## Data Flow: Subtitle Generator
+
+```
+1. User Interaction
+   ┌──────────────────────────────────────┐
+   │  SubtitleGeneratorContainer           │
+   │  - File upload OR YouTube URL         │
+   │  - Language selection                 │
+   │  - Aspect ratio selection             │
+   └───────────┬──────────────────────────┘
+               │ useSubtitleGeneration()
+               ▼
+2. Generate Subtitles
+   ┌──────────────────────────────────────┐
+   │  POST /api/generate-subtitles        │
+   │  → SubtitleGenerationService         │
+   │  → Python /transcribe (Whisper)      │
+   │  → Returns subtitles (milliseconds)   │
+   └───────────┬──────────────────────────┘
+               │
+               ▼
+3. User Editing
+   ┌──────────────────────────────────────┐
+   │  SubtitleEditor     TemplateSelector │
+   │  SilenceFillerPanel AspectRatio      │
+   │  BrandKitSettings                    │
+   └───────────┬──────────────────────────┘
+               │ renderVideo(brandKit)
+               ▼
+4. Render
+   ┌──────────────────────────────────────┐
+   │  POST /api/render-video-subtitles    │
+   │  → SubtitleGenerationService         │
+   │  → Remotion Server POST /renders     │
+   │  → Poll /renders/{jobId} (30min max) │
+   │  → Returns videoUrl                  │
+   └──────────────────────────────────────┘
 ```
 
 ## Component Communication
@@ -141,24 +221,21 @@ apps/web/
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│                     Page Component                          │
-│                   (app/page.tsx)                            │
-│                                                             │
-│  const { state, actions } = useVideoProcessing();          │
-│                                                             │
-│  return (                                                   │
-│    <>                                                       │
-│      <VideoHeader />                                        │
-│      <VideoUploader                                         │
-│        file={state.file}                                    │
-│        onFileSelect={actions.setFile}                       │
-│        onProcess={actions.processVideo}                     │
-│      />                                                     │
-│      <ProcessingProgress currentStep={state.currentStep} />│
-│      <TranscriptionResults transcription={state.trans...} />│
-│      <AnalysisResults analysis={state.analysis} />         │
-│    </>                                                      │
-│  );                                                         │
+│                     Container Component                      │
+│                                                              │
+│  const hook = useSubtitleGeneration();                       │
+│  const { brandKit, setBrandKit } = useBrandKit();           │
+│                                                              │
+│  return (                                                    │
+│    <>                                                        │
+│      <VideoUploader ... />                                   │
+│      <SubtitleEditor subtitles={...} onChange={...} />       │
+│      <SilenceFillerPanel subtitles={...} onChange={...} />   │
+│      <TemplateSelector selected={...} onChange={...} />      │
+│      <AspectRatioSelector selected={...} onChange={...} />   │
+│      <BrandKitSettings brandKit={brandKit} onChange={...} /> │
+│    </>                                                       │
+│  );                                                          │
 └────────────────────────────────────────────────────────────┘
           │                          ▲
           │ Props (data)             │ Events (callbacks)
@@ -188,9 +265,9 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-✅ **Only** handles HTTP (request/response)
-✅ Delegates to services
-❌ No business logic
+- Only handles HTTP (request/response)
+- Delegates to services
+- No business logic
 
 ### Service (Business Logic Layer)
 
@@ -198,93 +275,76 @@ export async function POST(request: NextRequest) {
 // server/services/content-analysis-service.ts
 export class ContentAnalysisService {
   async analyzeTranscript(transcript: string): Promise<ContentAnalysis> {
-    // Validate
-    // Call AI
-    // Transform data
-    // Return result
+    // Validate → Call AI → Transform data → Return result
   }
 }
 ```
 
-✅ Contains business logic
-✅ Reusable across routes
-✅ Testable independently
-❌ No HTTP concerns
+- Contains business logic
+- Reusable across routes
+- Testable independently
+- No HTTP concerns
 
 ### Feature Module (UI Layer)
 
 ```typescript
 // features/video/hooks/use-video-processing.ts
 export function useVideoProcessing() {
-  // State management
-  // Workflow orchestration
-  // Error handling
+  // State management + Workflow orchestration + Error handling
   // Returns: state + actions
 }
 ```
 
-✅ Manages UI state
-✅ Orchestrates API calls
-✅ Provides callbacks
-❌ No direct DB access
+- Manages UI state
+- Orchestrates API calls
+- Provides callbacks
+- No direct DB access
+
+## Three-Service Architecture
+
+### Web App (Next.js, port 3000)
+
+- Frontend UI and API routes
+- Business logic in services
+- Delegates heavy processing to Python and Remotion
+
+### Processing Engine (Python/FastAPI, port 8000)
+
+- Video upload and storage
+- Whisper transcription
+- FFmpeg rendering and smart cropping
+- Face detection (MediaPipe)
+- YouTube video download
+
+### Remotion Server (Express, port 3001)
+
+- Video rendering with subtitle templates
+- Job queue management
+- 9 caption templates (viral, minimal, modern, etc.)
+- Multi-aspect ratio support
+- Brand kit overlay (logo, colors)
 
 ## Benefits of This Architecture
 
 ### 1. Discoverability (Screaming Architecture)
 
-```
-features/
-├── video/          # "I handle video processing!"
-├── analytics/      # "I handle analytics!" (future)
-└── auth/           # "I handle authentication!" (future)
-```
-
 The folder structure "screams" what the application does.
 
 ### 2. Maintainability
 
-- All video-related code in `features/video/`
-- Easy to find and modify
-- Changes isolated to feature
+All video-related code in `features/video/`. Changes isolated to feature.
 
 ### 3. Reusability
 
-- Components are atomic and reusable
-- Services can be called from multiple routes
-- Features can be extracted into libraries
+Components are atomic, services callable from multiple routes, features extractable.
 
 ### 4. Testability
 
-- Services tested independently
-- Components tested with props
-- Features tested end-to-end
+Services tested independently, components tested with props, features tested end-to-end.
 
 ### 5. Scalability
 
-- Add new features without conflicts
-- Team members can own features
-- Clear boundaries prevent coupling
-
-## Future Enhancements
-
-### Planned Features
-
-```
-features/
-├── video/                    # ✅ Complete
-├── content-intelligence/     # 🔄 To migrate
-├── video-editor/            # 📅 Planned
-├── clip-export/             # 📅 Planned
-└── analytics/               # 📅 Planned
-```
-
-### Possible Improvements
-
-1. Add container components (server-side data fetching)
-2. Extract shared feature utilities
-3. Create feature-specific tests
-4. Add feature flags for gradual rollout
-5. Implement cross-feature communication via events
+Add new features without conflicts, clear boundaries prevent coupling.
 
 ## References
 

@@ -8,6 +8,7 @@ import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { Download, FileText } from 'lucide-react';
 import type { SubtitleSegment } from '../hooks/use-subtitle-generation';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
+import { SilenceFillerPanel } from './silence-filler-panel';
 
 interface SubtitleEditorProps {
   subtitles: SubtitleSegment[];
@@ -87,6 +88,15 @@ export function SubtitleEditor({
           </div>
         )}
       </div>
+
+      {/* Silence/Filler Cleanup Panel */}
+      {subtitles.length > 0 && (
+        <SilenceFillerPanel
+          subtitles={subtitles}
+          onSubtitlesChange={onSubtitlesChange}
+          disabled={disabled}
+        />
+      )}
 
       <ScrollArea className="h-[500px] rounded-md border">
         <div className="p-4 space-y-2">
