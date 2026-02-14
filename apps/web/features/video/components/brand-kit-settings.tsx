@@ -178,7 +178,7 @@ export function BrandKitSettings({
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-muted-foreground">Typography</h4>
             <Select
-              value={brandKit?.fontFamily ?? ''}
+              value={brandKit?.fontFamily ?? 'Arial'}
               onValueChange={(v) => updateField('fontFamily', v || undefined)}
               disabled={disabled}
             >
@@ -186,7 +186,7 @@ export function BrandKitSettings({
                 <SelectValue placeholder="Use template default" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Use template default</SelectItem>
+                <SelectItem value="Arial">Use template default</SelectItem>
                 {DEFAULT_FONT_OPTIONS.map((font) => (
                   <SelectItem key={font.value} value={font.value}>
                     <span style={{ fontFamily: font.value }}>{font.label}</span>

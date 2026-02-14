@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@workspace/ui/components/button';
 import { Card } from '@workspace/ui/components/card';
 import { Input } from '@workspace/ui/components/input';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { Download, FileText } from 'lucide-react';
+import { useState } from 'react';
 import type { SubtitleSegment } from '../hooks/use-subtitle-generation';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
 import { SilenceFillerPanel } from './silence-filler-panel';
@@ -16,13 +16,18 @@ interface SubtitleEditorProps {
   disabled?: boolean;
 }
 
-function formatTime(milliseconds: number): string {
-  const totalSeconds = Math.floor(milliseconds / 1000);
+/**
+ * Format time from seconds to MM:SS.ms format
+ * @param seconds - Time in seconds (e.g., 1.5, 65.37)
+ * @returns Formatted time string (e.g., "00:01.50", "01:05.37")
+ */
+function formatTime(seconds: number): string {
+  const totalSeconds = Math.floor(seconds);
   const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const ms = Math.floor((milliseconds % 1000) / 10);
+  const secs = totalSeconds % 60;
+  const ms = Math.floor((seconds % 1) * 100);
 
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
 }
 
 export function SubtitleEditor({
@@ -108,7 +113,7 @@ export function SubtitleEditor({
                     {formatTime(subtitle.start)} → {formatTime(subtitle.end)}
                   </span>
                   <span className="text-xs">
-                    Duration: {((subtitle.end - subtitle.start) / 1000).toFixed(2)}s
+                    Duration: {(subtitle.end - subtitle.start).toFixed(2)}s
                   </span>
                 </div>
 

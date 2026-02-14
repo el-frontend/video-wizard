@@ -2,35 +2,40 @@
  * Subtitle Export Utilities
  *
  * Converts SubtitleSegment[] to SRT and VTT formats for download.
- * Subtitles in the frontend are stored in milliseconds.
+ *
+ * IMPORTANT: Subtitles use SECONDS (not milliseconds)
+ * - Input: start/end in seconds (e.g., 1.5 = 1.5 seconds)
+ * - Output: SRT/VTT standard timestamp format
  */
 
 import type { SubtitleSegment } from '../types';
 
 /**
- * Formats milliseconds to SRT timestamp format: HH:MM:SS,mmm
+ * Formats seconds to SRT timestamp format: HH:MM:SS,mmm
+ * @param seconds - Time in seconds (e.g., 1.5, 65.37)
  */
-function formatSrtTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
+function formatSrtTimestamp(seconds: number): string {
+  const totalSeconds = Math.floor(seconds);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const milliseconds = Math.floor(ms % 1000);
+  const secs = totalSeconds % 60;
+  const milliseconds = Math.floor((seconds % 1) * 1000);
 
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
 }
 
 /**
- * Formats milliseconds to VTT timestamp format: HH:MM:SS.mmm
+ * Formats seconds to VTT timestamp format: HH:MM:SS.mmm
+ * @param seconds - Time in seconds (e.g., 1.5, 65.37)
  */
-function formatVttTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
+function formatVttTimestamp(seconds: number): string {
+  const totalSeconds = Math.floor(seconds);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const milliseconds = Math.floor(ms % 1000);
+  const secs = totalSeconds % 60;
+  const milliseconds = Math.floor((seconds % 1) * 1000);
 
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
 }
 
 /**

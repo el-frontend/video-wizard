@@ -68,12 +68,19 @@ export async function POST(request: NextRequest) {
       text: sub.text,
     }));
 
+    // Debug: Log first and last subtitle to verify timing format
+    console.log('Subtitle timing verification:', {
+      firstSubtitle: formattedSubtitles[0],
+      lastSubtitle: formattedSubtitles[formattedSubtitles.length - 1],
+      totalSubtitles: formattedSubtitles.length,
+    });
+
     // Calculate duration from clip length
-    // Subtitles are already adjusted to clip time (start from 0)
+    // Subtitles are in SECONDS (not milliseconds)
     const lastSubtitle = formattedSubtitles[formattedSubtitles.length - 1];
-    const clipDurationMs = lastSubtitle ? lastSubtitle.end : 10000; // Default 10 seconds
+    const clipDurationSeconds = lastSubtitle ? lastSubtitle.end : 10; // Default 10 seconds
     const fps = 30;
-    const durationInFrames = Math.ceil((clipDurationMs / 1000) * fps);
+    const durationInFrames = Math.ceil(clipDurationSeconds * fps);
 
     // Use internal URL for container-to-container communication
     const videoUrl = `${PYTHON_ENGINE_INTERNAL_URL}/${clipPath}`;
@@ -85,7 +92,7 @@ export async function POST(request: NextRequest) {
       language,
       aspectRatio,
       durationInFrames,
-      clipDurationSeconds: clipDurationMs / 1000,
+      clipDurationSeconds,
     });
 
     // Create render job on Remotion server

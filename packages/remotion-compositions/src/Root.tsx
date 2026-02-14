@@ -36,17 +36,30 @@ export const RemotionRoot: React.FC = () => {
             };
           const fps = 30;
 
-          // Calculate dimensions from aspect ratio
-          const dims = aspectRatio ? ASPECT_DIMENSIONS[aspectRatio] : undefined;
+          // Calculate dimensions from aspect ratio (default to 9:16 if not provided)
+          const ratioKey = aspectRatio || '9:16';
+          const dims = ASPECT_DIMENSIONS[ratioKey];
+
+          if (!dims) {
+            console.warn(`[Remotion] Invalid aspect ratio: ${ratioKey}, falling back to 9:16`);
+          }
+
           const dimensionOverrides = dims ? { width: dims.width, height: dims.height } : {};
+
+          console.log('[Remotion] Dimension calculation:', {
+            aspectRatio: ratioKey,
+            dimensions: dimensionOverrides,
+          });
 
           // If durationInFrames is explicitly provided, use it
           if (durationInFrames) {
             console.log(
               '[Remotion] Using explicit durationInFrames:',
               durationInFrames,
-              'aspectRatio:',
-              aspectRatio
+              'with aspect ratio:',
+              ratioKey,
+              'and dimensions:',
+              dimensionOverrides
             );
             return { durationInFrames, ...dimensionOverrides };
           }
@@ -63,7 +76,8 @@ export const RemotionRoot: React.FC = () => {
               durationInSeconds,
               durationInFrames: calculatedDuration,
               subtitleCount: subtitles.length,
-              aspectRatio,
+              aspectRatio: ratioKey,
+              dimensions: dimensionOverrides,
             });
 
             return {
@@ -73,7 +87,10 @@ export const RemotionRoot: React.FC = () => {
           }
 
           // Fallback to default 10 seconds
-          console.log('[Remotion] Using fallback duration: 300 frames');
+          console.log(
+            '[Remotion] Using fallback duration: 300 frames with dimensions:',
+            dimensionOverrides
+          );
           return { durationInFrames: 300, ...dimensionOverrides };
         }}
         defaultProps={

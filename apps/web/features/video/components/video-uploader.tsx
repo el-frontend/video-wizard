@@ -124,8 +124,8 @@ export function VideoUploader({
           </div>
         )}
 
-        <div className="flex gap-2">
-          <Button onClick={onProcess} disabled={!canProcess} className="w-full">
+        <div className="flex gap-2 justify-between items-center">
+          <Button onClick={onProcess} disabled={!canProcess} className="w-full flex-1">
             {isProcessing
               ? 'Processing...'
               : inputMode === 'youtube'
@@ -134,7 +134,7 @@ export function VideoUploader({
           </Button>
 
           {currentStep !== 'idle' && (
-            <Button variant="outline" onClick={onReset} disabled={!canReset}>
+            <Button className="w-32" variant="outline" onClick={onReset} disabled={!canReset}>
               Reset
             </Button>
           )}

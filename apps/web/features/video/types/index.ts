@@ -10,12 +10,12 @@ import type { AspectRatio } from '../lib/aspect-ratios';
 export type { AspectRatio } from '../lib/aspect-ratios';
 
 // Brand Kit types
+export { BRAND_KIT_STORAGE_KEY, BrandKitSchema, DEFAULT_FONT_OPTIONS } from './brand-kit';
 export type { BrandKit, LogoPosition } from './brand-kit';
-export { BrandKitSchema, BRAND_KIT_STORAGE_KEY, DEFAULT_FONT_OPTIONS } from './brand-kit';
 
 // Silence/Filler types
-export type { DetectedIssue, DetectionResult, SilenceFillerConfig } from './silence-filler';
 export { SilenceFillerConfigSchema } from './silence-filler';
+export type { DetectedIssue, DetectionResult, SilenceFillerConfig } from './silence-filler';
 
 export interface TranscriptSegment {
   id: number;
@@ -61,10 +61,19 @@ export interface VideoProcessingState {
 
 /**
  * Subtitle segment for video clips
+ *
+ * IMPORTANT: All timing values are in SECONDS (not milliseconds)
+ * - start: Start time in seconds (e.g., 1.5 = 1.5 seconds)
+ * - end: End time in seconds (e.g., 3.2 = 3.2 seconds)
+ *
+ * This format is consistent with:
+ * - Python processing engine output (Whisper transcription)
+ * - Remotion Player and Remotion Server expectations
+ * - Standard video timing conventions
  */
 export interface SubtitleSegment {
-  start: number;
-  end: number;
+  start: number; // Time in seconds
+  end: number; // Time in seconds
   text: string;
 }
 

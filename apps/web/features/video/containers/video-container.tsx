@@ -262,10 +262,11 @@ export function VideoContainer() {
     try {
       console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
 
-      // Convert subtitles to milliseconds format
+      // Remotion expects subtitles in SECONDS, not milliseconds
+      // Keep subtitles in seconds format (they're already in seconds from the processing engine)
       const formattedSubtitles = clip.subtitles.map((sub) => ({
-        start: sub.start * 1000, // Convert to ms
-        end: sub.end * 1000,
+        start: sub.start, // Keep in seconds
+        end: sub.end, // Keep in seconds
         text: sub.text,
       }));
 

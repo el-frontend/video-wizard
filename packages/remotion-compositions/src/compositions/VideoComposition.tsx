@@ -18,10 +18,22 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
   brandKit,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
 
   // Calculate current time in seconds
   const currentTime = frame / fps;
+
+  // Debug log on first frame
+  if (frame === 0) {
+    console.log('[VideoComposition] Initialized with:', {
+      videoUrl,
+      subtitleCount: subtitles.length,
+      template,
+      language,
+      compositionDimensions: { width, height },
+      totalDuration: subtitles.length > 0 ? subtitles[subtitles.length - 1].end : 0,
+    });
+  }
 
   return (
     <AbsoluteFill style={{ backgroundColor }}>
@@ -33,7 +45,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
             style={{
               width: '100%',
               height: '100%',
-              objectFit: 'cover',
+              objectFit: 'cover', // Cover maintains aspect ratio and fills the frame
             }}
           />
         </AbsoluteFill>
