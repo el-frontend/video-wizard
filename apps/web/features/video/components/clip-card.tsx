@@ -3,20 +3,14 @@
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@workspace/ui/components/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@workspace/ui/components/select';
 import { Download, Edit, FileText, Film, Loader2, Play, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
-import type { BrandKit } from '../types/brand-kit';
 import { getAspectClass } from '../lib/aspect-ratios';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
+import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
+import type { BrandKit } from '../types/brand-kit';
 import { RemotionPreview } from './remotion-preview';
+import { SubtitleTemplateSelector } from './subtitle-template-selector';
 
 interface ClipCardProps {
   index: number;
@@ -155,25 +149,11 @@ export function ClipCard({
 
         {/* Template Selector */}
         {hasSubtitles && videoUrl && !isLoading && (
-          <div className="mb-3">
-            <label className="text-xs text-muted-foreground mb-1.5 block">Subtitle Style</label>
-            <Select value={template} onValueChange={onTemplateChange}>
-              <SelectTrigger className="w-full h-9">
-                <SelectValue placeholder="Select template" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="viral">🔥 Viral - Bold & Energetic</SelectItem>
-                <SelectItem value="hormozi">💪 Hormozi - High Energy</SelectItem>
-                <SelectItem value="mrbeast">🎮 MrBeast - Comic Style</SelectItem>
-                <SelectItem value="mrbeastemoji">😎 MrBeast + Emoji</SelectItem>
-                <SelectItem value="highlight">💜 Highlight - Word Sweep</SelectItem>
-                <SelectItem value="colorshift">🌈 Color Shift - Yellow to Green</SelectItem>
-                <SelectItem value="modern">🎨 Modern - Contemporary</SelectItem>
-                <SelectItem value="minimal">✨ Minimal - Clean & Simple</SelectItem>
-                <SelectItem value="default">📝 Default - Standard</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <SubtitleTemplateSelector
+            value={template}
+            onValueChange={onTemplateChange}
+            className="mb-3"
+          />
         )}
 
         {/* Subtitle Count & Export */}

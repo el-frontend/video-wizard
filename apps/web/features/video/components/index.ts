@@ -11,6 +11,7 @@ export { ProcessingProgress } from './processing-progress';
 export { RemotionPreview } from './remotion-preview';
 export { SilenceFillerPanel } from './silence-filler-panel';
 export { SubtitleEditor } from './subtitle-editor';
+export { SubtitleTemplateSelector } from './subtitle-template-selector';
 export { TemplateSelector } from './template-selector';
 export { TranscriptionResults } from './transcription-results';
 export { VideoHeader } from './video-header';

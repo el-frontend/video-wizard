@@ -9,20 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@workspace/ui/components/select';
 import { Loader2, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { getAspectClass } from '../lib/aspect-ratios';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
 import type { BrandKit } from '../types/brand-kit';
-import { getAspectClass } from '../lib/aspect-ratios';
 import { RemotionPreview } from './remotion-preview';
 import { SilenceFillerPanel } from './silence-filler-panel';
+import { SubtitleTemplateSelector } from './subtitle-template-selector';
 
 interface ClipEditModalProps {
   open: boolean;
@@ -125,45 +119,11 @@ export function ClipEditModal({
           {/* Right: Controls and Subtitle Editor */}
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
             {/* Template Selector */}
-            <div className="mb-4 shrink-0">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Subtitle Style
-              </label>
-              <Select
-                value={selectedTemplate}
-                onValueChange={(v) => setSelectedTemplate(v as SubtitleTemplate)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="viral">
-                    <div className="flex items-center gap-2">
-                      <span>🔥</span>
-                      <span>Viral - Bold & Energetic</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="minimal">
-                    <div className="flex items-center gap-2">
-                      <span>✨</span>
-                      <span>Minimal - Clean & Simple</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="modern">
-                    <div className="flex items-center gap-2">
-                      <span>🎨</span>
-                      <span>Modern - Contemporary</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="default">
-                    <div className="flex items-center gap-2">
-                      <span>📝</span>
-                      <span>Default - Standard</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <SubtitleTemplateSelector
+              value={selectedTemplate}
+              onValueChange={(v) => setSelectedTemplate(v as SubtitleTemplate)}
+              className="mb-4 shrink-0"
+            />
 
             {/* Subtitle Editor - Scrollable */}
             <div className="flex-1 overflow-y-auto pr-2 min-h-0">
