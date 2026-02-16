@@ -405,7 +405,7 @@ Visit: http://localhost:3000/video-wizard
 
 ### Main Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - Complete Claude Code instructions (UPDATED 2026-01-30)
+- **[AGENTS.md](AGENTS.md)** - Complete AI agent instructions (UPDATED 2026-01-30)
 - **[README.md](README.md)** - This file
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview
 - **[FEATURE_GUIDE.md](FEATURE_GUIDE.md)** - Guide for creating features
@@ -507,7 +507,7 @@ To learn more about the technologies used in this project:
 #### Documentation
 
 - Comprehensive update of all documentation to reflect current system state
-- Updated `CLAUDE.md` with complete API reference, Brand Kit, Silence/Filler, Aspect Ratio docs
+- Updated `AGENTS.md` with complete API reference, Brand Kit, Silence/Filler, Aspect Ratio docs
 - Updated `ARCHITECTURE.md` with three-service architecture and data flow diagrams
 - Updated `IMPLEMENTATION_STATUS.md` with full feature matrix and stats
 - Updated feature `README.md` with all 15 components, 3 hooks, 5 utility modules
