@@ -114,8 +114,9 @@ video-wizard/
 │   ├── project-instructions.md  # Project guidelines
 │   ├── code-patterns.md         # Code templates
 │   └── architecture-decisions.md # Technical decisions
-├── ARCHITECTURE.md              # ✅ Architecture overview
-├── FEATURE_GUIDE.md             # ✅ Feature development guide
+├── docs/                        # ✅ Project documentation
+│   ├── ARCHITECTURE.md          # Architecture overview
+│   └── FEATURE_GUIDE.md         # Feature development guide
 └── turbo.json                   # Turborepo configuration
 ```
 
@@ -213,7 +214,7 @@ pnpm --filter remotion-server dev
 
 **Server runs on:** http://localhost:3001
 **Complete Guide:** [apps/remotion-server/QUICKSTART.md](apps/remotion-server/QUICKSTART.md)
-**Infrastructure Overview:** [REMOTION_INFRASTRUCTURE.md](REMOTION_INFRASTRUCTURE.md)
+**Infrastructure Overview:** [REMOTION_INFRASTRUCTURE.md](docs/REMOTION_INFRASTRUCTURE.md)
 
 **Features:**
 
@@ -346,10 +347,10 @@ Subtitles have a 200ms delay offset for better audio sync. Adjustable in:
 
 **Documentation:**
 
-- **Complete Guide**: [SUBTITLE_GENERATOR.md](SUBTITLE_GENERATOR.md)
-- **Bug Fixes**: [SUBTITLE_FIX.md](SUBTITLE_FIX.md)
-- **Timing Config**: [SUBTITLE_TIMING_ADJUSTMENT.md](SUBTITLE_TIMING_ADJUSTMENT.md)
-- **Navigation**: [NAVIGATION_UPDATE.md](NAVIGATION_UPDATE.md)
+- **Complete Guide**: [SUBTITLE_GENERATOR.md](docs/SUBTITLE_GENERATOR.md)
+- **Bug Fixes**: [SUBTITLE_FIX.md](docs/SUBTITLE_FIX.md)
+- **Timing Config**: [SUBTITLE_TIMING_ADJUSTMENT.md](docs/SUBTITLE_TIMING_ADJUSTMENT.md)
+- **Navigation**: [NAVIGATION_UPDATE.md](docs/NAVIGATION_UPDATE.md)
 
 **API Endpoints:**
 
@@ -368,7 +369,7 @@ Subtitles have a 200ms delay offset for better audio sync. Adjustable in:
 
 **Common Issues:**
 
-- Subtitles don't appear → See [SUBTITLE_FIX.md](SUBTITLE_FIX.md)
+- Subtitles don't appear → See [SUBTITLE_FIX.md](docs/SUBTITLE_FIX.md)
 - Timing off → Adjust `SUBTITLE_OFFSET` in useActiveSubtitle.ts
 - Template not working → Verify all 9 templates in Root.tsx schema
 
@@ -407,15 +408,15 @@ Visit: http://localhost:3000/video-wizard
 
 - **[AGENTS.md](AGENTS.md)** - Complete AI agent instructions (UPDATED 2026-01-30)
 - **[README.md](README.md)** - This file
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview
-- **[FEATURE_GUIDE.md](FEATURE_GUIDE.md)** - Guide for creating features
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture overview
+- **[FEATURE_GUIDE.md](docs/FEATURE_GUIDE.md)** - Guide for creating features
 
 ### ✅ Subtitle Generator Docs (NEW!)
 
-- **[SUBTITLE_GENERATOR.md](SUBTITLE_GENERATOR.md)** - Complete feature guide
-- **[SUBTITLE_FIX.md](SUBTITLE_FIX.md)** - Bug fixes and troubleshooting
-- **[SUBTITLE_TIMING_ADJUSTMENT.md](SUBTITLE_TIMING_ADJUSTMENT.md)** - Timing configuration
-- **[NAVIGATION_UPDATE.md](NAVIGATION_UPDATE.md)** - Navigation integration
+- **[SUBTITLE_GENERATOR.md](docs/SUBTITLE_GENERATOR.md)** - Complete feature guide
+- **[SUBTITLE_FIX.md](docs/SUBTITLE_FIX.md)** - Bug fixes and troubleshooting
+- **[SUBTITLE_TIMING_ADJUSTMENT.md](docs/SUBTITLE_TIMING_ADJUSTMENT.md)** - Timing configuration
+- **[NAVIGATION_UPDATE.md](docs/NAVIGATION_UPDATE.md)** - Navigation integration
 
 ### Development
 
@@ -426,14 +427,14 @@ Visit: http://localhost:3000/video-wizard
 ### Git & Quality
 
 - **[COMMIT_CONVENTIONS.md](docs/COMMIT_CONVENTIONS.md)** - Commit message guidelines
-- **[HUSKY_SETUP.md](HUSKY_SETUP.md)** - Git hooks setup and troubleshooting
+- **[HUSKY_SETUP.md](docs/HUSKY_SETUP.md)** - Git hooks setup and troubleshooting
 
 ### Features & Services
 
 - **[features/video/README.md](apps/web/features/video/README.md)** - Video feature module
 - **[server/README.md](apps/web/server/README.md)** - Server-side code
 - **[apps/processing-engine/README.md](apps/processing-engine/README.md)** - Python engine
-- **[REMOTION_INFRASTRUCTURE.md](REMOTION_INFRASTRUCTURE.md)** - Remotion setup
+- **[REMOTION_INFRASTRUCTURE.md](docs/REMOTION_INFRASTRUCTURE.md)** - Remotion setup
 
 ## 🔧 Code Quality
 
@@ -460,7 +461,7 @@ Automatically run on every commit:
 - ✓ **Python linters**: Black and Flake8 for Python code
 - ✓ **Commit validation**: Ensures proper commit message format
 
-See [HUSKY_SETUP.md](HUSKY_SETUP.md) for detailed setup instructions.
+See [HUSKY_SETUP.md](docs/HUSKY_SETUP.md) for detailed setup instructions.
 
 ## 🏗️ Architecture Highlights
 
