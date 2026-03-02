@@ -1,10 +1,32 @@
-version: '3.8'
-
 networks:
   video-wizard-network:
     driver: bridge
 
+volumes:
+  pgdata:
+    driver: local
+
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: video-wizard-postgres
+    networks:
+      - video-wizard-network
+    ports:
+      - '127.0.0.1:5432:5432'
+    env_file:
+      - .env.docker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U videowizard -d videowizard']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   # Python Processing Engine
   processing-engine:
     build:
@@ -14,7 +36,7 @@ services:
     networks:
       - video-wizard-network
     ports:
-      - "8000:8000"
+      - '8000:8000'
     volumes:
       - ./apps/processing-engine/uploads:/app/uploads
       - ./apps/processing-engine/output:/app/output
@@ -35,7 +57,7 @@ services:
     networks:
       - video-wizard-network
     ports:
-      - "3001:3001"
+      - '3001:3001'
     env_file:
       - ./apps/remotion-server/.env
     environment:

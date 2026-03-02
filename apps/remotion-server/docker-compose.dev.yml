@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   remotion-server:
     build:
       context: ../..
       dockerfile: apps/remotion-server/Dockerfile
     ports:
-      - "3001:3001"
+      - '3001:3001'
     environment:
       - NODE_ENV=development
       - PORT=3001
