@@ -1,1 +1,13 @@
-{ "version": "7", "dialect": "postgresql", "entries": [] }
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1772420863787,
+      "tag": "0000_complete_redwing",
+      "breakpoints": true
+    }
+  ]
+}
