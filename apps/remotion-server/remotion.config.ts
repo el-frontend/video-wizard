@@ -5,12 +5,12 @@
 
 import { Config } from '@remotion/cli/config';
 
-// Set video output format to JPEG for better quality
+// Use JPEG for faster frame encoding compared to PNG
 Config.setVideoImageFormat('jpeg');
 
 // Overwrite output files if they already exist
 Config.setOverwriteOutput(true);
 
-// Set the number of shared memory pixels for multi-threaded rendering
-// Adjust based on your system's capabilities
+// Use the ANGLE GL backend for better compatibility across platforms
+// On Linux CI/containers 'swangle' (software ANGLE) is a reliable fallback
 Config.setChromiumOpenGlRenderer('angle');

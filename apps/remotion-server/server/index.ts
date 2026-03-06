@@ -9,7 +9,13 @@ const {
   PORT = 3001, 
   REMOTION_SERVE_URL, 
   RENDERS_DIR = './renders',
-  PUBLIC_URL = `http://localhost:${PORT}`
+  PUBLIC_URL = `http://localhost:${PORT}`,
+  // Maximum render jobs that can run concurrently (default: 1 to conserve memory)
+  MAX_CONCURRENT_RENDERS = '1',
+  // Number of CPU threads / Chromium tabs per render job (default: Remotion auto-detect)
+  RENDER_CONCURRENCY,
+  // Per-render timeout in milliseconds (default: 5 minutes)
+  RENDER_TIMEOUT_MS = '300000',
 } = process.env;
 
 /**
@@ -25,11 +31,34 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
     fs.mkdirSync(rendersDir, { recursive: true });
   }
 
+  const parsedMaxConcurrent = parseInt(MAX_CONCURRENT_RENDERS, 10);
+  if (isNaN(parsedMaxConcurrent) || parsedMaxConcurrent < 1) {
+    console.warn(`⚠️  Invalid MAX_CONCURRENT_RENDERS="${MAX_CONCURRENT_RENDERS}", using default: 1`);
+  }
+  const maxConcurrentRenders = !isNaN(parsedMaxConcurrent) && parsedMaxConcurrent >= 1 ? parsedMaxConcurrent : 1;
+
+  const parsedTimeout = parseInt(RENDER_TIMEOUT_MS, 10);
+  if (isNaN(parsedTimeout) || parsedTimeout <= 0) {
+    console.warn(`⚠️  Invalid RENDER_TIMEOUT_MS="${RENDER_TIMEOUT_MS}", using default: 300000`);
+  }
+  const timeoutInMilliseconds = !isNaN(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 300_000;
+
+  const parsedConcurrencyPerRender = RENDER_CONCURRENCY ? parseInt(RENDER_CONCURRENCY, 10) : undefined;
+  if (parsedConcurrencyPerRender !== undefined && (isNaN(parsedConcurrencyPerRender) || parsedConcurrencyPerRender < 1)) {
+    console.warn(`⚠️  Invalid RENDER_CONCURRENCY="${RENDER_CONCURRENCY}", using Remotion auto-detect`);
+  }
+  const concurrencyPerRender =
+    parsedConcurrencyPerRender !== undefined && !isNaN(parsedConcurrencyPerRender) && parsedConcurrencyPerRender >= 1
+      ? parsedConcurrencyPerRender
+      : undefined;
+
   const queue = makeRenderQueue({
-    port: Number(PORT),
     serveUrl: remotionBundleUrl,
     rendersDir,
     publicUrl: PUBLIC_URL,
+    maxConcurrentRenders,
+    concurrencyPerRender,
+    timeoutInMilliseconds,
   });
 
   // Serve rendered videos
@@ -175,6 +204,8 @@ async function main() {
   app.listen(Number(PORT), () => {
     console.info(`✅ Server is running on port ${PORT}`);
     console.info(`📹 Ready to accept render jobs at http://localhost:${PORT}/renders`);
+    console.info(`⚙️  Max concurrent renders: ${MAX_CONCURRENT_RENDERS}`);
+    if (RENDER_CONCURRENCY) console.info(`⚙️  Threads per render: ${RENDER_CONCURRENCY}`);
   });
 }
 
