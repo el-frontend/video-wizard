@@ -42,39 +42,63 @@ type JobState =
     };
 
 /**
- * Creates and manages a render job queue
- * Handles sequential rendering of video compositions
+ * Creates and manages a render queue
+ * Supports configurable concurrency for parallel rendering of video compositions
  */
 export const makeRenderQueue = ({
-  port,
   serveUrl,
   rendersDir,
   publicUrl,
+  maxConcurrentRenders = 1,
+  concurrencyPerRender,
+  timeoutInMilliseconds = 300_000,
 }: {
-  port: number;
   serveUrl: string;
   rendersDir: string;
   publicUrl: string;
+  /** Maximum number of render jobs that can run in parallel. Default: 1 */
+  maxConcurrentRenders?: number;
+  /** Number of CPU threads (Chromium tabs) used per render job. Defaults to Remotion's auto-detect */
+  concurrencyPerRender?: number;
+  /** Per-render timeout in milliseconds. Default: 5 minutes */
+  timeoutInMilliseconds?: number;
 }) => {
   const jobs = new Map<string, JobState>();
-  let queue: Promise<unknown> = Promise.resolve();
+  const pendingJobIds: string[] = [];
+  let activeRenders = 0;
+
+  /**
+   * Attempts to start pending jobs up to the concurrency limit
+   */
+  const tryProcessNext = () => {
+    while (activeRenders < maxConcurrentRenders && pendingJobIds.length > 0) {
+      const nextJobId = pendingJobIds.shift()!;
+      activeRenders++;
+      processRender(nextJobId).finally(() => {
+        activeRenders--;
+        tryProcessNext();
+      });
+    }
+  };
 
   /**
    * Processes a render job
    * Handles composition selection, rendering, and error management
    */
-  const processRender = async (jobId: string) => {
+  const processRender = async (jobId: string): Promise<void> => {
     const job = jobs.get(jobId);
     if (!job) {
       throw new Error(`Render job ${jobId} not found`);
     }
 
     const { cancel, cancelSignal } = makeCancelSignal();
+    const startTime = Date.now();
+    let lastLoggedPct = -1;
 
     jobs.set(jobId, {
       progress: 0,
       status: 'in-progress',
-      cancel: cancel,
+      cancel,
       data: job.data,
     });
 
@@ -88,6 +112,7 @@ export const makeRenderQueue = ({
         serveUrl,
         id: compositionId,
         inputProps,
+        timeoutInMilliseconds,
       });
 
       console.info(`[${jobId}] Starting render...`);
@@ -99,19 +124,32 @@ export const makeRenderQueue = ({
         composition,
         inputProps,
         codec: 'h264',
+        // Number of CPU threads / Chromium tabs used during rendering
+        ...(concurrencyPerRender !== undefined && { concurrency: concurrencyPerRender }),
+        // Per-render timeout to prevent stuck jobs
+        timeoutInMilliseconds,
+        // Chromium flags that improve performance in containerised Linux environments
+        chromiumOptions: {
+          enableMultiProcessOnLinux: true,
+        },
         onProgress: (progress) => {
-          console.info(`[${jobId}] Render progress: ${Math.round(progress.progress * 100)}%`);
+          const pct = Math.floor(progress.progress * 10) * 10;
+          if (pct > lastLoggedPct) {
+            lastLoggedPct = pct;
+            console.info(`[${jobId}] Render progress: ${pct}%`);
+          }
           jobs.set(jobId, {
             progress: progress.progress,
             status: 'in-progress',
-            cancel: cancel,
+            cancel,
             data: job.data,
           });
         },
         outputLocation: path.join(rendersDir, `${jobId}.mp4`),
       });
 
-      console.info(`[${jobId}] Render completed successfully`);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.info(`[${jobId}] Render completed in ${elapsed}s`);
 
       jobs.set(jobId, {
         status: 'completed',
@@ -119,7 +157,8 @@ export const makeRenderQueue = ({
         data: job.data,
       });
     } catch (error) {
-      console.error(`[${jobId}] Render failed:`, error);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`[${jobId}] Render failed after ${elapsed}s:`, error);
       jobs.set(jobId, {
         status: 'failed',
         error: error as Error,
@@ -131,7 +170,7 @@ export const makeRenderQueue = ({
   /**
    * Adds a job to the render queue
    */
-  const queueRender = async ({
+  const queueRender = ({
     jobId,
     data,
   }: {
@@ -142,23 +181,22 @@ export const makeRenderQueue = ({
       status: 'queued',
       data,
       cancel: () => {
+        const idx = pendingJobIds.indexOf(jobId);
+        if (idx !== -1) pendingJobIds.splice(idx, 1);
         jobs.delete(jobId);
       },
     });
 
-    // Add to queue - processes sequentially
-    queue = queue.then(() => processRender(jobId));
+    pendingJobIds.push(jobId);
+    tryProcessNext();
   };
 
   /**
-   * Creates a new render job
-   * Returns the job ID for tracking
+   * Creates a new render job and returns the job ID for tracking
    */
   function createJob(data: JobData) {
     const jobId = randomUUID();
-
     queueRender({ jobId, data });
-
     return jobId;
   }
 
