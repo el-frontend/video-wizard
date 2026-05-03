@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { pgEnum, pgTable, index, check } from 'drizzle-orm/pg-core';
 import * as t from 'drizzle-orm/pg-core';
 
+import { users } from './users';
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -33,8 +35,10 @@ export const jobs = pgTable(
   {
     id: t.uuid().primaryKey().defaultRandom(),
 
-    // TODO: Add foreign key constraint once users table is created (ticket TBD)
-    userId: t.uuid('user_id').notNull(),
+    userId: t
+      .uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
 
     type: jobTypeEnum('type').notNull(),
     status: jobStatusEnum('status').notNull().default('pending'),

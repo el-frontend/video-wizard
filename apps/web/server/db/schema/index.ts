@@ -5,4 +5,5 @@
  * Add new schema files here as they are created.
  */
 
+export * from './users';
 export * from './jobs';
