@@ -15,6 +15,13 @@
       "when": 1777778952315,
       "tag": "0001_dizzy_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777780279991,
+      "tag": "0002_productive_silver_centurion",
+      "breakpoints": true
     }
   ]
 }
