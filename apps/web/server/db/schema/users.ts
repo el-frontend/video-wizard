@@ -4,18 +4,20 @@ import * as t from 'drizzle-orm/pg-core';
 /**
  * Users table
  *
- * Auth-provider agnostic: stores the canonical user identity that other
- * tables (jobs, etc.) reference via foreign key. Any auth solution
- * (NextAuth.js, Clerk, Lucia, custom) can populate these rows on signup.
+ * Column shape matches Auth.js (NextAuth) DrizzleAdapter expectations
+ * (id, name, email, emailVerified, image) so the adapter can use this
+ * table directly. Extra columns (createdAt, updatedAt) are ignored by
+ * the adapter and used by the rest of the app.
  */
 export const users = pgTable(
   'users',
   {
     id: t.uuid().primaryKey().defaultRandom(),
 
-    email: t.varchar('email', { length: 320 }).notNull().unique(),
     name: t.varchar('name', { length: 255 }),
-    imageUrl: t.text('image_url'),
+    email: t.varchar('email', { length: 320 }).notNull().unique(),
+    emailVerified: t.timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+    image: t.text('image_url'),
 
     createdAt: t.timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: t
