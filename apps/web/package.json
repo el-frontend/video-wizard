@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.7",
+    "@auth/drizzle-adapter": "^1.11.2",
     "@base-ui/react": "^1.0.0",
     "@remotion/player": "^4.0.405",
     "@workspace/remotion-compositions": "workspace:*",
@@ -25,6 +26,7 @@
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.468.0",
     "next": "16.1.1",
+    "next-auth": "5.0.0-beta.31",
     "next-themes": "^0.4.6",
     "pg": "^8.19.0",
     "radix-ui": "^1.4.3",
