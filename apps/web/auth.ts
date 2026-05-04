@@ -1,88 +1,82 @@
+import { eq } from 'drizzle-orm';
 import NextAuth from 'next-auth';
-import { DrizzleAdapter } from '@auth/drizzle-adapter';
+import Credentials from 'next-auth/providers/credentials';
+import { z } from 'zod';
 
 import { db } from '@/server/db';
-import { accounts, sessions, users, verificationTokens } from '@/server/db/schema';
+import { users } from '@/server/db/schema';
+import { verifyPassword } from '@/server/lib/password';
+
+const credentialsSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
 
 /**
  * Auth.js (NextAuth v5) configuration.
  *
- * Magic-link sign-in only (passwordless email). To add OAuth later, push
- * additional providers into the `providers` array.
+ * Email + bcrypt password sign-in stored in the local PostgreSQL DB.
+ * No external email service required — sign-up is a regular API call
+ * (see /api/auth/signup) and sign-in checks the bcrypt hash here.
  *
- * Email delivery:
- * - If AUTH_RESEND_KEY is set, the magic link is sent via the Resend HTTP API.
- * - Otherwise (dev / first-time contributors), the link is printed to the
- *   server console so you can sign in without configuring email.
+ * JWT sessions are mandatory with the Credentials provider; the database
+ * adapter is intentionally not wired so the user record is the single
+ * source of truth and there is no redundant `sessions` row per login.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: DrizzleAdapter(db, {
-    usersTable: users,
-    accountsTable: accounts,
-    sessionsTable: sessions,
-    verificationTokensTable: verificationTokens,
-  }),
-
   session: { strategy: 'jwt' },
 
   pages: {
     signIn: '/signin',
-    verifyRequest: '/signin/verify',
   },
 
   providers: [
-    {
-      id: 'email',
-      type: 'email',
-      name: 'Email',
-      from: process.env.AUTH_EMAIL_FROM ?? 'noreply@video-wizard.local',
-      maxAge: 24 * 60 * 60,
-      options: {},
-      async sendVerificationRequest({ identifier, url, provider }) {
-        const resendKey = process.env.AUTH_RESEND_KEY;
-
-        if (!resendKey) {
-          // Dev fallback: print the magic link to stdout. This lets new
-          // contributors test sign-in immediately without setting up email.
-          console.log(
-            [
-              '',
-              'Magic sign-in link (dev mode — AUTH_RESEND_KEY not set)',
-              `  to:  ${identifier}`,
-              `  url: ${url}`,
-              '',
-            ].join('\n')
-          );
-          return;
-        }
-
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: provider.from,
-            to: identifier,
-            subject: 'Sign in to Video Wizard',
-            html: `
-              <p>Click the link below to sign in to Video Wizard:</p>
-              <p><a href="${url}">${url}</a></p>
-              <p>If you didn't request this, you can safely ignore this email.</p>
-            `,
-          }),
-        });
-
-        if (!res.ok) {
-          const errorBody = await res.text();
-          throw new Error(`Resend send failed (${res.status}): ${errorBody}`);
-        }
+    Credentials({
+      name: 'Email & password',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' },
       },
-    },
+      async authorize(rawCredentials) {
+        const parsed = credentialsSchema.safeParse(rawCredentials);
+        if (!parsed.success) return null;
+
+        const { email, password } = parsed.data;
+
+        const [user] = await db
+          .select({
+            id: users.id,
+            email: users.email,
+            name: users.name,
+            image: users.image,
+            passwordHash: users.passwordHash,
+          })
+          .from(users)
+          .where(eq(users.email, email.toLowerCase()))
+          .limit(1);
+
+        if (!user || !user.passwordHash) return null;
+
+        const ok = await verifyPassword(password, user.passwordHash);
+        if (!ok) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        };
+      },
+    }),
   ],
 
   callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.sub = user.id;
+      }
+      return token;
+    },
     async session({ session, token }) {
       if (session.user && token.sub) {
         session.user.id = token.sub;

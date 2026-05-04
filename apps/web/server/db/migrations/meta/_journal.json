@@ -22,6 +22,13 @@
       "when": 1777780279991,
       "tag": "0002_productive_silver_centurion",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777855649007,
+      "tag": "0003_fluffy_silhouette",
+      "breakpoints": true
     }
   ]
 }

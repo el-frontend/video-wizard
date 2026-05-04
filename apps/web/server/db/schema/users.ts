@@ -4,10 +4,10 @@ import * as t from 'drizzle-orm/pg-core';
 /**
  * Users table
  *
- * Column shape matches Auth.js (NextAuth) DrizzleAdapter expectations
- * (id, name, email, emailVerified, image) so the adapter can use this
- * table directly. Extra columns (createdAt, updatedAt) are ignored by
- * the adapter and used by the rest of the app.
+ * Email + bcrypt password authentication. The shape (id, name, email,
+ * emailVerified, image) is also compatible with the Auth.js DrizzleAdapter
+ * in case OAuth providers are added later — the auth/* tables already
+ * exist for that, but the current sign-in flow uses Credentials only.
  */
 export const users = pgTable(
   'users',
@@ -16,6 +16,8 @@ export const users = pgTable(
 
     name: t.varchar('name', { length: 255 }),
     email: t.varchar('email', { length: 320 }).notNull().unique(),
+    /** bcrypt hash of the user's password. Null for users created via OAuth. */
+    passwordHash: t.text('password_hash'),
     emailVerified: t.timestamp('email_verified', { withTimezone: true, mode: 'date' }),
     image: t.text('image_url'),
 
