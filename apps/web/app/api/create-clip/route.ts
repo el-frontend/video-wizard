@@ -1,78 +1,77 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
 import { logger } from '@/server/lib/utils';
 import { clipIntegrationService } from '@/server/services/clip-integration-service';
+import { jobHistoryService } from '@/server/services/job-history-service';
 import { ClipRenderRequestSchema } from '@/server/types/clip-render';
-import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * POST /api/create-clip
- * 
- * Proxy endpoint to Python backend /render-clip
- * Creates a vertical clip from a video segment with smart cropping
- * 
- * This endpoint:
- * 1. Validates request
- * 2. Calls Python service to create clip
- * 3. Returns clip metadata with accessible URL
+ *
+ * Proxies to the Python backend `/render-clip` to create a vertical clip
+ * with smart cropping. Records a `clip_creation` job in the user's history.
  */
 export async function POST(request: NextRequest) {
+  let user;
+  try {
+    user = await requireAuth();
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    throw error;
+  }
+
+  let validatedData;
   try {
     const body = await request.json();
-    const validatedData = ClipRenderRequestSchema.parse(body);
+    validatedData = ClipRenderRequestSchema.parse(body);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ZodError') {
+      return NextResponse.json(
+        { success: false, message: 'Invalid request data', errors: error },
+        { status: 400 }
+      );
+    }
+    throw error;
+  }
 
-    logger.info('Create clip request received', {
-      start_time: validatedData.start_time,
-      end_time: validatedData.end_time,
-    });
+  logger.info('Create clip request received', {
+    start_time: validatedData.start_time,
+    end_time: validatedData.end_time,
+  });
 
-    // Call Python service to create clip
+  const job = await jobHistoryService.create({
+    userId: user.id,
+    type: 'clip_creation',
+    inputData: validatedData,
+  });
+
+  try {
+    await jobHistoryService.markProcessing(job.id);
+
     const result = await clipIntegrationService.createClip(validatedData);
 
     if (!result.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: result.error || 'Clip creation failed',
-        },
-        { status: 500 }
-      );
+      const message = result.error || 'Clip creation failed';
+      await jobHistoryService.fail(job.id, message);
+      return NextResponse.json({ success: false, message }, { status: 500 });
     }
 
-    // Convert output_url to full URL if needed
     const fullUrl = result.output_url
       ? clipIntegrationService.getVideoUrl(result.output_url)
       : null;
 
-    logger.info('Clip created successfully', {
-      output_url: fullUrl,
-    });
+    const enriched = { ...result, output_url: fullUrl };
+    await jobHistoryService.complete(job.id, enriched);
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...result,
-        output_url: fullUrl,
-      },
-    });
+    logger.info('Clip created successfully', { output_url: fullUrl });
+
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    await jobHistoryService.fail(job.id, message);
     logger.error('Create clip endpoint error', error);
 
-    if (error instanceof Error && error.name === 'ZodError') {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid request data',
-          errors: error,
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: error instanceof Error ? error.message : 'Internal server error',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }
