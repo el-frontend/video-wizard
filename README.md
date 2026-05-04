@@ -122,7 +122,4 @@ stays in services, long work goes through the queue.
 
 ## License
 
-This project does not yet have a declared license. Open an
-[issue](https://github.com/<owner>/<repo>/issues) if you'd like to
-suggest one (MIT and Apache-2.0 are both reasonable defaults for a
-project like this).
+[MIT](./LICENSE) © Video Wizard Contributors.
