@@ -1,13 +1,14 @@
 'use client';
 
 import {
-    Film,
-    HelpCircle,
-    LayoutDashboard,
-    Settings,
-    Sparkles,
-    Subtitles,
-    Video
+  Film,
+  HelpCircle,
+  History,
+  LayoutDashboard,
+  Settings,
+  Sparkles,
+  Subtitles,
+  Video,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -43,6 +44,11 @@ const navItems: NavItem[] = [
     title: 'Remotion Studio',
     href: '/remotion',
     icon: Film,
+  },
+  {
+    title: 'Job History',
+    href: '/jobs',
+    icon: History,
   },
 ];
 
