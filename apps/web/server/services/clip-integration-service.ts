@@ -1,27 +1,44 @@
 import { logger } from '@/server/lib/utils';
 import type {
-    ClipRenderRequest,
-    ClipRenderResponse,
-    TranscriptionResponse,
+  ClipRenderRequest,
+  ClipRenderResponse,
+  TranscriptionResponse,
 } from '@/server/types/clip-render';
 
 /**
  * Clip Integration Service
- * 
+ *
  * Integrates with Python processing-engine backend
- * Handles communication with /render-clip and /transcribe endpoints
+ * Handles communication with /render-clip and /transcribe endpoints.
+ *
+ * Two URL flavors:
+ * - `baseUrl`   — used by server-side fetch calls. Resolves the Python
+ *                 service in-network when running inside Docker, or via
+ *                 localhost on host dev.
+ * - `publicUrl` — used by `getVideoUrl()`. The result is sent to the
+ *                 browser, so it must be a host-routable URL.
  */
 export class ClipIntegrationService {
   private readonly baseUrl: string;
+  private readonly publicUrl: string;
 
-  constructor(baseUrl: string = 'http://localhost:8000') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string, publicUrl?: string) {
+    this.baseUrl =
+      baseUrl ||
+      process.env.PYTHON_ENGINE_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
+      'http://localhost:8000';
+    this.publicUrl =
+      publicUrl ||
+      process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
+      process.env.PYTHON_ENGINE_INTERNAL_URL ||
+      'http://localhost:8000';
   }
 
   /**
    * Create a vertical clip from a video segment
    * Calls Python backend /render-clip endpoint
-   * 
+   *
    * @param request - Clip render parameters
    * @returns Clip metadata with output URL
    */
@@ -56,24 +73,19 @@ export class ClipIntegrationService {
       return result;
     } catch (error) {
       logger.error('Clip creation failed', error);
-      throw new Error(
-        error instanceof Error ? error.message : 'Failed to create clip'
-      );
+      throw new Error(error instanceof Error ? error.message : 'Failed to create clip');
     }
   }
 
   /**
    * Transcribe a video to get timestamped subtitles
    * Calls Python backend /transcribe endpoint
-   * 
+   *
    * @param videoPath - Path to video file
    * @param language - Optional language code
    * @returns Transcription with segments
    */
-  async transcribeVideo(
-    videoPath: string,
-    language?: string
-  ): Promise<TranscriptionResponse> {
+  async transcribeVideo(videoPath: string, language?: string): Promise<TranscriptionResponse> {
     try {
       logger.info('Transcribing video via Python service', { videoPath });
 
@@ -103,15 +115,13 @@ export class ClipIntegrationService {
       return result;
     } catch (error) {
       logger.error('Transcription failed', error);
-      throw new Error(
-        error instanceof Error ? error.message : 'Failed to transcribe video'
-      );
+      throw new Error(error instanceof Error ? error.message : 'Failed to transcribe video');
     }
   }
 
   /**
    * Upload video to Python service
-   * 
+   *
    * @param file - Video file to upload
    * @returns Upload result with file path
    */
@@ -144,25 +154,21 @@ export class ClipIntegrationService {
       return result;
     } catch (error) {
       logger.error('Video upload failed', error);
-      throw new Error(
-        error instanceof Error ? error.message : 'Failed to upload video'
-      );
+      throw new Error(error instanceof Error ? error.message : 'Failed to upload video');
     }
   }
 
   /**
    * Get full video URL from Python service
-   * Converts relative path to absolute URL
+   * Converts relative path to a browser-routable absolute URL.
    */
   getVideoUrl(relativePath: string): string {
     if (relativePath.startsWith('http')) {
       return relativePath;
     }
-    return `${this.baseUrl}${relativePath}`;
+    return `${this.publicUrl}${relativePath}`;
   }
 }
 
-// Singleton instance
-export const clipIntegrationService = new ClipIntegrationService(
-  process.env.NEXT_PUBLIC_PROCESSING_ENGINE_URL || 'http://localhost:8000'
-);
+// Singleton instance — env-driven via the constructor.
+export const clipIntegrationService = new ClipIntegrationService();

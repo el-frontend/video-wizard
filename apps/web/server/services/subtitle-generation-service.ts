@@ -61,12 +61,19 @@ export interface RenderSubtitlesResult {
 }
 
 export class SubtitleGenerationService {
+  /** URL the server uses to call the Python engine (in-network). */
   private pythonEngineUrl: string;
   private remotionServerUrl: string;
+  /** URL embedded in payloads sent to Remotion (so its renderer can fetch). */
   private pythonEngineInternalUrl: string;
 
   constructor() {
-    this.pythonEngineUrl = process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL || 'http://localhost:8000';
+    // Prefer the in-network address when running in Docker, fall back to
+    // the browser-facing one for host-based dev (port-mapped to localhost).
+    this.pythonEngineUrl =
+      process.env.PYTHON_ENGINE_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
+      'http://localhost:8000';
     this.remotionServerUrl = process.env.REMOTION_SERVER_URL || 'http://localhost:3001';
     this.pythonEngineInternalUrl =
       process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://processing-engine:8000';
