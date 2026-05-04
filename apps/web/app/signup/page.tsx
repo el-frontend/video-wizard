@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useState, useTransition } from 'react';
 
@@ -10,23 +10,15 @@ import { Card } from '@workspace/ui/components/card';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 
-const ERROR_MESSAGES: Record<string, string> = {
-  CredentialsSignin: 'Invalid email or password.',
-  Configuration: 'The server is not fully configured for sign-in. Check the AUTH_SECRET env var.',
-  Default: 'Something went wrong while signing in. Please try again.',
-};
+import { MIN_PASSWORD_LENGTH } from '@/server/lib/password';
 
-export default function SignInPage() {
+export default function SignUpPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') ?? '/';
-  const initialError = searchParams.get('error');
 
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(
-    initialError ? (ERROR_MESSAGES[initialError] ?? ERROR_MESSAGES.Default) : null
-  );
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -34,18 +26,35 @@ export default function SignInPage() {
     setError(null);
 
     startTransition(async () => {
-      const result = await signIn('credentials', {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name || undefined, email, password }),
+      });
+
+      const body = (await res.json()) as
+        | { success: true; data: { id: string; email: string } }
+        | { success: false; error: string };
+
+      if (!body.success) {
+        setError(body.error);
+        return;
+      }
+
+      // Auto sign-in after signup
+      const signInResult = await signIn('credentials', {
         email,
         password,
         redirect: false,
       });
 
-      if (result?.error) {
-        setError(ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.Default);
+      if (signInResult?.error) {
+        setError('Account created. Please sign in.');
+        router.push('/signin');
         return;
       }
 
-      router.push(callbackUrl);
+      router.push('/');
       router.refresh();
     });
   }
@@ -54,10 +63,8 @@ export default function SignInPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <Card className="w-full max-w-md p-8">
         <div className="mb-6 space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-          <p className="text-muted-foreground text-sm">
-            Welcome back. Enter your credentials to continue.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+          <p className="text-muted-foreground text-sm">Sign up with your email and a password.</p>
         </div>
 
         {error && (
@@ -67,6 +74,19 @@ export default function SignInPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name (optional)</Label>
+            <Input
+              id="name"
+              name="name"
+              type="text"
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isPending}
+            />
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -89,22 +109,26 @@ export default function SignInPage() {
               name="password"
               type="password"
               required
-              autoComplete="current-password"
+              minLength={MIN_PASSWORD_LENGTH}
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isPending}
             />
+            <p className="text-muted-foreground text-xs">
+              At least {MIN_PASSWORD_LENGTH} characters.
+            </p>
           </div>
 
           <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? 'Signing in...' : 'Sign in'}
+            {isPending ? 'Creating account...' : 'Create account'}
           </Button>
         </form>
 
         <p className="text-muted-foreground mt-6 text-center text-sm">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-foreground underline">
-            Sign up
+          Already have an account?{' '}
+          <Link href="/signin" className="text-foreground underline">
+            Sign in
           </Link>
         </p>
       </Card>
