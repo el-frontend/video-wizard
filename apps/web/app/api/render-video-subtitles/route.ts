@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import type { CaptionTemplate } from '@/remotion/types';
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
 import { jobHistoryService } from '@/server/services/job-history-service';
-import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
+import { queueService } from '@/server/services/queue-service';
 
 /**
  * POST /api/render-video-subtitles
  *
- * Render a video with subtitles using the Remotion server. Records a
- * `render` job in the user's history.
+ * Enqueues a render job and returns the DB job id immediately. The actual
+ * render runs in the worker process (apps/web — `pnpm worker`); clients
+ * poll `GET /api/jobs/:id` to watch progress and pick up the final
+ * `videoUrl` from `resultData` once `status === 'completed'`.
  *
  * Request body:
  * - videoPath: string
@@ -18,6 +19,8 @@ import { subtitleGenerationService } from '@/server/services/subtitle-generation
  * - language: string (default: 'en')
  * - aspectRatio?: '9:16' | '1:1' | '4:5' | '16:9' (default: '9:16')
  * - brandKit?: BrandKit
+ *
+ * Response: { success: true, data: { jobId: string } }
  */
 export async function POST(request: NextRequest) {
   let user;
@@ -54,6 +57,7 @@ export async function POST(request: NextRequest) {
     type: 'render',
     inputData: {
       videoPath,
+      subtitles,
       template,
       language,
       aspectRatio,
@@ -62,37 +66,14 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  try {
-    await jobHistoryService.markProcessing(job.id);
-    console.log('Rendering video with subtitles:', {
-      videoPath,
-      template,
-      language,
-      aspectRatio,
-      subtitleCount: subtitles.length,
-    });
+  await queueService.enqueue({ jobId: job.id, queueName: 'default' });
 
-    const result = await subtitleGenerationService.renderWithSubtitles({
-      videoPath,
-      subtitles,
-      template: template as CaptionTemplate,
-      language,
-      aspectRatio,
-      brandKit,
-    });
-
-    await jobHistoryService.complete(job.id, result);
-
-    return NextResponse.json({
+  return NextResponse.json(
+    {
       success: true,
-      data: result,
-      message: 'Video rendered successfully with subtitles',
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to render video';
-    await jobHistoryService.fail(job.id, message);
-    console.error('Error rendering video with subtitles:', error);
-
-    return NextResponse.json({ success: false, message }, { status: 500 });
-  }
+      data: { jobId: job.id },
+      message: 'Render job queued',
+    },
+    { status: 202 }
+  );
 }

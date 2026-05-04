@@ -1,4 +1,5 @@
 import type { CaptionTemplate } from '@/remotion/types';
+import { jobHistoryService } from '@/server/services/job-history-service';
 import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
 
 import type { Job, JobType } from '@/server/services/job-history-service';
@@ -32,6 +33,9 @@ interface RenderInput {
 /**
  * Render handler — the headline use case for the queue. Renders are
  * minutes-long and absolutely should not block API requests.
+ *
+ * Forwards Remotion's progress (0-100) to the user-facing job row so the
+ * /jobs page progress bar moves while the render runs.
  */
 const renderHandler: JobHandler = async (job) => {
   const input = job.inputData as RenderInput | null;
@@ -39,14 +43,17 @@ const renderHandler: JobHandler = async (job) => {
     throw new Error('Invalid render input: missing videoPath or subtitles');
   }
 
-  return await subtitleGenerationService.renderWithSubtitles({
-    videoPath: input.videoPath,
-    subtitles: input.subtitles,
-    template: input.template,
-    language: input.language,
-    aspectRatio: input.aspectRatio,
-    brandKit: input.brandKit as never,
-  });
+  return await subtitleGenerationService.renderWithSubtitles(
+    {
+      videoPath: input.videoPath,
+      subtitles: input.subtitles,
+      template: input.template,
+      language: input.language,
+      aspectRatio: input.aspectRatio,
+      brandKit: input.brandKit as never,
+    },
+    (percent) => jobHistoryService.updateProgress(job.id, percent)
+  );
 };
 
 /**
