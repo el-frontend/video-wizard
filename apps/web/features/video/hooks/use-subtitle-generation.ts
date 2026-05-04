@@ -199,20 +199,43 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       });
 
       if (!subtitleResponse.ok) {
-        throw new Error('Error generating subtitles');
+        throw new Error('Error queuing transcription');
       }
 
       const subtitleData = await subtitleResponse.json();
 
-      if (!subtitleData.success || !subtitleData.data) {
-        throw new Error(subtitleData.message || 'Subtitle generation failed');
+      if (!subtitleData.success || !subtitleData.data?.jobId) {
+        throw new Error(subtitleData.message || 'Transcription queue failed');
+      }
+
+      // Worker drains the queue; poll the job until it finishes.
+      const finished = await pollJobUntilDone(subtitleData.data.jobId, (job) => {
+        if (job.status === 'queued' || job.status === 'pending') {
+          updateState({ progress: 'Waiting in queue...' });
+        } else if (job.status === 'processing') {
+          updateState({ progress: 'Transcribing audio...' });
+        }
+      });
+
+      if (finished.status === 'failed') {
+        throw new Error(finished.errorMessage || 'Transcription failed');
+      }
+
+      const result = finished.resultData as {
+        subtitles?: SubtitleSegment[];
+        language?: string;
+        totalSegments?: number;
+      } | null;
+
+      if (!result?.subtitles) {
+        throw new Error('Transcription finished but no subtitles were returned');
       }
 
       updateState({
-        subtitles: subtitleData.data.subtitles,
-        language: subtitleData.data.language,
+        subtitles: result.subtitles,
+        language: result.language ?? state.language,
         currentStep: 'editing',
-        progress: `Generated ${subtitleData.data.totalSegments} subtitle segments`,
+        progress: `Generated ${result.totalSegments ?? result.subtitles.length} subtitle segments`,
       });
     } catch (err) {
       console.error('Subtitle generation error:', err);

@@ -14,6 +14,7 @@ import {
   VideoUploader,
 } from '@/features/video';
 import { useBrandKit } from '@/features/video/hooks/use-brand-kit';
+import { pollJobUntilDone } from '@/features/video/lib/poll-job';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -125,7 +126,7 @@ export function VideoContainer() {
       setClipGenerationProgress({ current: i + 1, total: topClips.length });
 
       try {
-        // Step 1: Create the vertical clip (CROP ONLY)
+        // Step 1: Enqueue the vertical clip (CROP ONLY) and poll for it.
         const clipResponse = await fetch('/api/create-clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -139,13 +140,27 @@ export function VideoContainer() {
         });
 
         if (!clipResponse.ok) {
-          throw new Error('Failed to create clip');
+          throw new Error('Failed to queue clip creation');
         }
 
-        const clipResult = await clipResponse.json();
+        const clipQueued = await clipResponse.json();
 
-        if (!clipResult.success) {
-          throw new Error(clipResult.message || 'Clip creation failed');
+        if (!clipQueued.success || !clipQueued.data?.jobId) {
+          throw new Error(clipQueued.message || 'Clip creation queue failed');
+        }
+
+        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId);
+        if (finishedClip.status === 'failed') {
+          throw new Error(finishedClip.errorMessage || 'Clip creation failed');
+        }
+
+        const clipData = finishedClip.resultData as {
+          output_url?: string;
+          output_path?: string;
+        } | null;
+
+        if (!clipData?.output_url) {
+          throw new Error('Clip created but no output_url was returned');
         }
 
         // Step 2: Filter and adjust subtitles from original transcription
@@ -166,8 +181,8 @@ export function VideoContainer() {
             idx === i
               ? {
                   ...c,
-                  videoUrl: clipResult.data.output_url, // Cropped video without subtitles
-                  clipPath: clipResult.data.output_path,
+                  videoUrl: clipData.output_url, // Cropped video without subtitles
+                  clipPath: clipData.output_path,
                   subtitles: clipSubtitles,
                   language: detectedLanguage, // Ensure language is set
                   isLoading: false,

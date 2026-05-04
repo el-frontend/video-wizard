@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
 import { logger } from '@/server/lib/utils';
-import { clipIntegrationService } from '@/server/services/clip-integration-service';
 import { jobHistoryService } from '@/server/services/job-history-service';
+import { queueService } from '@/server/services/queue-service';
 import { ClipRenderRequestSchema } from '@/server/types/clip-render';
 
 /**
  * POST /api/create-clip
  *
- * Proxies to the Python backend `/render-clip` to create a vertical clip
- * with smart cropping. Records a `clip_creation` job in the user's history.
+ * Enqueues a clip-creation job and returns the DB job id immediately.
+ * The actual smart-crop happens in the worker (`pnpm worker`); the
+ * client polls `GET /api/jobs/:id` and reads `output_url` from
+ * `resultData` when status flips to `completed`.
+ *
+ * Response: { success: true, data: { jobId: string } }
  */
 export async function POST(request: NextRequest) {
   let user;
@@ -35,7 +39,7 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
-  logger.info('Create clip request received', {
+  logger.info('Create clip request queued', {
     start_time: validatedData.start_time,
     end_time: validatedData.end_time,
   });
@@ -46,32 +50,14 @@ export async function POST(request: NextRequest) {
     inputData: validatedData,
   });
 
-  try {
-    await jobHistoryService.markProcessing(job.id);
+  await queueService.enqueue({ jobId: job.id, queueName: 'default' });
 
-    const result = await clipIntegrationService.createClip(validatedData);
-
-    if (!result.success) {
-      const message = result.error || 'Clip creation failed';
-      await jobHistoryService.fail(job.id, message);
-      return NextResponse.json({ success: false, message }, { status: 500 });
-    }
-
-    const fullUrl = result.output_url
-      ? clipIntegrationService.getVideoUrl(result.output_url)
-      : null;
-
-    const enriched = { ...result, output_url: fullUrl };
-    await jobHistoryService.complete(job.id, enriched);
-
-    logger.info('Clip created successfully', { output_url: fullUrl });
-
-    return NextResponse.json({ success: true, data: enriched });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    await jobHistoryService.fail(job.id, message);
-    logger.error('Create clip endpoint error', error);
-
-    return NextResponse.json({ success: false, message }, { status: 500 });
-  }
+  return NextResponse.json(
+    {
+      success: true,
+      data: { jobId: job.id },
+      message: 'Clip creation job queued',
+    },
+    { status: 202 }
+  );
 }

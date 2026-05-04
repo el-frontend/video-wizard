@@ -1,5 +1,6 @@
 'use client';
 
+import { pollJobUntilDone } from '@/features/video/lib/poll-job';
 import type { SubtitleSegment } from '@/server/types/video-render';
 import { useCallback, useState } from 'react';
 
@@ -26,10 +27,10 @@ interface CreateClipParams {
 
 /**
  * Hook: useClipWorkflow
- * 
+ *
  * Orchestrates the complete workflow for creating clips with subtitles
  * Integrates Python backend /render-clip with Next.js frontend
- * 
+ *
  * Workflow:
  * 1. Call /api/create-clip -> Python /render-clip (creates vertical clip)
  * 2. Call /api/transcribe -> Python /transcribe (gets subtitles)
@@ -57,7 +58,7 @@ export function useClipWorkflow() {
         error: null,
       }));
 
-      // Step 1: Create the vertical clip via Python service
+      // Step 1: Enqueue the vertical clip via the worker queue.
       const clipResponse = await fetch('/api/create-clip', {
         method: 'POST',
         headers: {
@@ -73,24 +74,40 @@ export function useClipWorkflow() {
 
       if (!clipResponse.ok) {
         const error = await clipResponse.json();
-        throw new Error(error.message || 'Failed to create clip');
+        throw new Error(error.message || 'Failed to queue clip creation');
       }
 
-      const clipResult = await clipResponse.json();
+      const queued = await clipResponse.json();
 
-      if (!clipResult.success || !clipResult.data.output_url) {
-        throw new Error('Clip creation failed');
+      if (!queued.success || !queued.data?.jobId) {
+        throw new Error('Clip creation queue failed');
       }
 
-      const clipUrl = clipResult.data.output_url;
+      const finished = await pollJobUntilDone(queued.data.jobId);
+      if (finished.status === 'failed') {
+        throw new Error(finished.errorMessage || 'Clip creation failed');
+      }
+
+      const clipData = finished.resultData as {
+        output_url?: string;
+        duration?: number;
+        crop_dimensions?: { width: number; height: number };
+        file_size?: number;
+      } | null;
+
+      if (!clipData?.output_url) {
+        throw new Error('Clip finished but no output_url was returned');
+      }
+
+      const clipUrl = clipData.output_url;
 
       setState((prev) => ({
         ...prev,
         clipUrl,
         clipMetadata: {
-          duration: clipResult.data.duration,
-          cropDimensions: clipResult.data.crop_dimensions,
-          fileSize: clipResult.data.file_size,
+          duration: clipData.duration,
+          cropDimensions: clipData.crop_dimensions,
+          fileSize: clipData.file_size,
         },
       }));
 
@@ -120,8 +137,7 @@ export function useClipWorkflow() {
         // Filter segments to match clip time range
         const filteredSegments = transcribeResult.data.segments
           .filter(
-            (seg: SubtitleSegment) =>
-              seg.start >= params.startTime && seg.end <= params.endTime
+            (seg: SubtitleSegment) => seg.start >= params.startTime && seg.end <= params.endTime
           )
           .map((seg: SubtitleSegment) => ({
             ...seg,
