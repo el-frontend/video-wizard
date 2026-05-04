@@ -5,6 +5,11 @@ networks:
 volumes:
   pgdata:
     driver: local
+  web_node_modules:
+  web_app_node_modules:
+  web_next_cache:
+  worker_node_modules:
+  worker_app_node_modules:
 
 services:
   # PostgreSQL Database
@@ -20,12 +25,29 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U videowizard -d videowizard']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
     restart: unless-stopped
+
+  # One-shot: apply Drizzle migrations, then exit. Web and worker wait for
+  # this to complete successfully before starting.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: video-wizard-migrate
+    networks:
+      - video-wizard-network
+    env_file:
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: pnpm db:migrate
+    restart: 'no'
 
   # Python Processing Engine
   processing-engine:
@@ -64,15 +86,66 @@ services:
       - NODE_ENV=development
       - PORT=3001
       - RENDERS_DIR=./renders
-      # Access processing engine via container name on shared network
       - PYTHON_ENGINE_URL=http://processing-engine:8000
     volumes:
       - ./packages/remotion-compositions:/app/packages/remotion-compositions
       - ./apps/remotion-server/server:/app/apps/remotion-server/server
       - ./apps/remotion-server/renders:/app/apps/remotion-server/renders
-      # Share the output directory with processing engine
       - ./apps/processing-engine/output:/app/processing-engine/output
     depends_on:
       - processing-engine
     restart: unless-stopped
     command: pnpm dev
+
+  # Next.js web app (dev mode, hot reload via mounted source).
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: video-wizard-web
+    networks:
+      - video-wizard-network
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.docker
+    volumes:
+      # Hot reload: mount source. node_modules and .next stay inside the
+      # container (named volumes) so pnpm install isn't re-run on every up.
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - web_node_modules:/app/node_modules
+      - web_app_node_modules:/app/apps/web/node_modules
+      - web_next_cache:/app/apps/web/.next
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      processing-engine:
+        condition: service_started
+      remotion-server:
+        condition: service_started
+    restart: unless-stopped
+
+  # Background worker — drains the task queue (renders, etc.).
+  # Same image as web; only the command differs.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: video-wizard-worker
+    networks:
+      - video-wizard-network
+    env_file:
+      - .env.docker
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - worker_node_modules:/app/node_modules
+      - worker_app_node_modules:/app/apps/web/node_modules
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      remotion-server:
+        condition: service_started
+    command: pnpm worker
+    restart: unless-stopped
