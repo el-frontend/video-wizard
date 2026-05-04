@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { CaptionTemplate } from '@/remotion/types';
 import type { AspectRatio } from '../lib/aspect-ratios';
 import type { BrandKit } from '../types/brand-kit';
+import { pollJobUntilDone } from '../lib/poll-job';
 import { getPythonEngineUrl, validateVideoFile } from '../lib/utils';
 import { isYouTubeUrl } from '../lib/youtube';
 
@@ -225,7 +226,11 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
   };
 
   /**
-   * Render video with subtitles
+   * Enqueue a render job and poll the user's job row until it finishes.
+   *
+   * The render itself runs in the worker process (`pnpm --filter web
+   * worker`); this hook only kicks it off and watches the resulting
+   * `jobs` row via `GET /api/jobs/:id`.
    */
   const renderVideo = async (brandKit?: BrandKit) => {
     if (!state.uploadedPath || state.subtitles.length === 0) {
@@ -239,15 +244,13 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
     try {
       updateState({
         currentStep: 'rendering',
-        progress: 'Rendering video with subtitles...',
+        progress: 'Queuing render job...',
         error: '',
       });
 
       const renderResponse = await fetch('/api/render-video-subtitles', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPath: state.uploadedPath,
           subtitles: state.subtitles,
@@ -259,22 +262,43 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       });
 
       if (!renderResponse.ok) {
-        throw new Error('Error rendering video');
+        throw new Error('Error queuing render job');
       }
 
       const renderData = await renderResponse.json();
 
-      if (!renderData.success || !renderData.data) {
-        throw new Error(renderData.message || 'Render failed');
+      if (!renderData.success || !renderData.data?.jobId) {
+        throw new Error(renderData.message || 'Render queue failed');
+      }
+
+      const jobId: string = renderData.data.jobId;
+
+      const finished = await pollJobUntilDone(jobId, (job) => {
+        if (job.status === 'queued' || job.status === 'pending') {
+          updateState({ progress: 'Waiting in queue...' });
+        } else if (job.status === 'processing') {
+          const pct = typeof job.progress === 'number' ? job.progress : 0;
+          updateState({ progress: `Rendering video... ${pct}%` });
+        }
+      });
+
+      if (finished.status === 'failed') {
+        throw new Error(finished.errorMessage || 'Render failed');
+      }
+
+      const videoUrl = (finished.resultData as { videoUrl?: string } | null)?.videoUrl ?? '';
+
+      if (!videoUrl) {
+        throw new Error('Render finished but no videoUrl was returned');
       }
 
       updateState({
-        renderedVideoUrl: renderData.data.videoUrl,
+        renderedVideoUrl: videoUrl,
         currentStep: 'complete',
         progress: 'Video rendered successfully!',
       });
 
-      options?.onComplete?.(renderData.data.videoUrl);
+      options?.onComplete?.(videoUrl);
     } catch (err) {
       console.error('Render error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

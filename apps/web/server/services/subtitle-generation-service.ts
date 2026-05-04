@@ -121,9 +121,16 @@ export class SubtitleGenerationService {
   }
 
   /**
-   * Render video with subtitles using Remotion Server
+   * Render video with subtitles using Remotion Server.
+   *
+   * Optional `onProgress` is invoked with an integer 0-100 every time the
+   * upstream Remotion server reports progress. The worker uses it to keep
+   * the user-facing job's progress bar moving while the render runs.
    */
-  async renderWithSubtitles(input: RenderSubtitlesInput): Promise<RenderSubtitlesResult> {
+  async renderWithSubtitles(
+    input: RenderSubtitlesInput,
+    onProgress?: (percent: number) => void | Promise<void>
+  ): Promise<RenderSubtitlesResult> {
     try {
       // Transform subtitles to Remotion format
       const formattedSubtitles = input.subtitles.map((sub, index) => ({
@@ -184,7 +191,7 @@ export class SubtitleGenerationService {
       console.log('Render job created:', jobId);
 
       // Poll for job completion
-      const videoUrl = await this.pollRenderJob(jobId);
+      const videoUrl = await this.pollRenderJob(jobId, onProgress);
 
       return {
         jobId,
@@ -197,10 +204,15 @@ export class SubtitleGenerationService {
   }
 
   /**
-   * Poll render job status until completion
+   * Poll render job status until completion. When `onProgress` is given,
+   * forward the upstream progress (0-100 integer) on every status check.
    */
-  private async pollRenderJob(jobId: string): Promise<string> {
+  private async pollRenderJob(
+    jobId: string,
+    onProgress?: (percent: number) => void | Promise<void>
+  ): Promise<string> {
     let attempts = 0;
+    let lastReportedProgress = -1;
     const pollIntervalMs = 2000;
     const maxAttempts = Math.ceil((30 * 60 * 1000) / pollIntervalMs); // 30 minutes max
 
@@ -224,9 +236,19 @@ export class SubtitleGenerationService {
         throw new Error(jobStatus.error?.message || 'Render job failed');
       }
 
-      // Log progress
-      if (jobStatus.status === 'in-progress') {
-        console.log(`Render progress: ${Math.round(jobStatus.progress * 100)}%`);
+      if (jobStatus.status === 'in-progress' && typeof jobStatus.progress === 'number') {
+        const pct = Math.round(jobStatus.progress * 100);
+        console.log(`Render progress: ${pct}%`);
+
+        if (onProgress && pct !== lastReportedProgress) {
+          lastReportedProgress = pct;
+          try {
+            await onProgress(pct);
+          } catch (progressError) {
+            // Don't fail the render just because progress reporting failed.
+            console.warn('Progress callback threw:', progressError);
+          }
+        }
       }
 
       attempts++;
