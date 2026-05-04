@@ -2,17 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
 import { jobHistoryService } from '@/server/services/job-history-service';
-import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
+import { queueService } from '@/server/services/queue-service';
 
 /**
  * POST /api/generate-subtitles
  *
- * Generate subtitles from a video file. Records a `transcription` job in
- * the user's history.
+ * Enqueues a transcription job and returns the DB job id immediately.
+ * The actual transcription runs in the worker process (`pnpm worker`);
+ * the client polls `GET /api/jobs/:id` to pick up the result.
+ *
+ * Result shape on completion (in `resultData`):
+ *   { subtitles, language, totalSegments, videoDuration }
  *
  * Request body:
  * - videoPath: string - Path to the uploaded video file
- * - language?: string - Language code for transcription ('auto' for auto-detect)
+ * - language?: string - Language code or 'auto' for auto-detection
+ *
+ * Response: { success: true, data: { jobId: string } }
  */
 export async function POST(request: NextRequest) {
   let user;
@@ -36,33 +42,14 @@ export async function POST(request: NextRequest) {
     inputData: { videoPath, language },
   });
 
-  try {
-    await jobHistoryService.markProcessing(job.id);
-    console.log('Generating subtitles for:', videoPath);
+  await queueService.enqueue({ jobId: job.id, queueName: 'default' });
 
-    const result = await subtitleGenerationService.generateSubtitles({
-      videoPath,
-      language,
-    });
-
-    // Persist a lightweight result snapshot (skip the full subtitles array
-    // to keep the row size small; clients re-fetch from the response).
-    await jobHistoryService.complete(job.id, {
-      language: result.language,
-      totalSegments: result.totalSegments,
-      videoDuration: result.videoDuration,
-    });
-
-    return NextResponse.json({
+  return NextResponse.json(
+    {
       success: true,
-      data: result,
-      message: `Generated ${result.totalSegments} subtitle segments`,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to generate subtitles';
-    await jobHistoryService.fail(job.id, message);
-    console.error('Error generating subtitles:', error);
-
-    return NextResponse.json({ success: false, message }, { status: 500 });
-  }
+      data: { jobId: job.id },
+      message: 'Transcription job queued',
+    },
+    { status: 202 }
+  );
 }

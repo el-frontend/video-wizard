@@ -1,8 +1,10 @@
 import type { CaptionTemplate } from '@/remotion/types';
+import { clipIntegrationService } from '@/server/services/clip-integration-service';
 import { jobHistoryService } from '@/server/services/job-history-service';
 import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
 
 import type { Job, JobType } from '@/server/services/job-history-service';
+import type { ClipRenderRequest } from '@/server/types/clip-render';
 
 /**
  * A job handler reads its work payload from `job.inputData` and returns
@@ -56,23 +58,63 @@ const renderHandler: JobHandler = async (job) => {
   );
 };
 
+interface TranscriptionInput {
+  videoPath: string;
+  language?: string | null;
+}
+
+/**
+ * Transcription handler — runs Whisper via the Python engine. The full
+ * subtitles array is returned so it lands in `resultData` for the
+ * client to read after polling.
+ */
+const transcriptionHandler: JobHandler = async (job) => {
+  const input = job.inputData as TranscriptionInput | null;
+  if (!input || !input.videoPath) {
+    throw new Error('Invalid transcription input: missing videoPath');
+  }
+
+  return await subtitleGenerationService.generateSubtitles({
+    videoPath: input.videoPath,
+    language: input.language ?? undefined,
+  });
+};
+
+/**
+ * Clip creation handler — proxies to Python /render-clip and enriches
+ * the relative output path into a browser-routable URL before storing
+ * it on the job result.
+ */
+const clipCreationHandler: JobHandler = async (job) => {
+  const input = job.inputData as ClipRenderRequest | null;
+  if (!input || !input.video_path) {
+    throw new Error('Invalid clip_creation input: missing video_path');
+  }
+
+  const result = await clipIntegrationService.createClip(input);
+  if (!result.success) {
+    throw new Error(result.error || 'Clip creation failed');
+  }
+
+  return {
+    ...result,
+    output_url: result.output_url ? clipIntegrationService.getVideoUrl(result.output_url) : null,
+  };
+};
+
 /**
  * Registry of job-type → handler. Add new entries here as more endpoints
  * migrate from synchronous execution to enqueued execution.
  *
  * Stubs throw `HandlerNotImplementedError` so a misconfigured enqueue
- * (e.g. queueing an `analysis` job before its handler exists) fails loudly
- * on the worker side instead of silently sitting in the queue forever.
+ * fails loudly on the worker side instead of silently sitting in the
+ * queue forever.
  */
 export const handlers: Record<JobType, JobHandler> = {
   render: renderHandler,
-  transcription: () => {
-    throw new HandlerNotImplementedError('transcription');
-  },
+  transcription: transcriptionHandler,
+  clip_creation: clipCreationHandler,
   analysis: () => {
     throw new HandlerNotImplementedError('analysis');
-  },
-  clip_creation: () => {
-    throw new HandlerNotImplementedError('clip_creation');
   },
 };
