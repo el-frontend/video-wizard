@@ -21,6 +21,19 @@ const RENDER_CONCURRENCY = process.env.RENDER_CONCURRENCY
   : undefined;
 
 /**
+ * How many render jobs run in parallel (Phase 2). This is distinct from
+ * `RENDER_CONCURRENCY` above, which controls Chromium tabs *within* a single
+ * render — total Chromium load ≈ MAX_CONCURRENT_RENDERS × per-render
+ * concurrency, so size both against the host's RAM and `/dev/shm`.
+ *
+ * Defaults to 1 (the previous strictly-sequential behaviour); the container
+ * sets it to 2 to match the worker's dispatch concurrency.
+ */
+const MAX_CONCURRENT_RENDERS = process.env.MAX_CONCURRENT_RENDERS
+  ? Math.max(1, Number(process.env.MAX_CONCURRENT_RENDERS))
+  : 1;
+
+/**
  * Job data structure
  * Generic to support any composition with any input props
  */
@@ -57,7 +70,7 @@ type JobState =
 
 /**
  * Creates and manages a render job queue
- * Handles sequential rendering of video compositions
+ * Runs up to MAX_CONCURRENT_RENDERS video compositions in parallel
  */
 export const makeRenderQueue = ({
   port,
@@ -71,7 +84,33 @@ export const makeRenderQueue = ({
   publicUrl: string;
 }) => {
   const jobs = new Map<string, JobState>();
-  let queue: Promise<unknown> = Promise.resolve();
+
+  // Bounded concurrent scheduler: up to MAX_CONCURRENT_RENDERS jobs run at
+  // once; the rest wait in `pending` until a slot frees up.
+  const pending: string[] = [];
+  let active = 0;
+
+  /**
+   * Starts as many pending jobs as there are free slots. Safe to call
+   * repeatedly — it no-ops when the pool is full or the queue is empty.
+   */
+  const pump = () => {
+    while (active < MAX_CONCURRENT_RENDERS && pending.length > 0) {
+      const jobId = pending.shift() as string;
+      active++;
+      // processRender records its own failures on the job; the catch is a
+      // safety net (e.g. a job cancelled out from under us). Either way, free
+      // the slot and pump the next job.
+      void processRender(jobId)
+        .catch((error) => {
+          console.error(`[${jobId}] Unexpected render error:`, error);
+        })
+        .finally(() => {
+          active--;
+          pump();
+        });
+    }
+  };
 
   /**
    * Processes a render job
@@ -146,19 +185,25 @@ export const makeRenderQueue = ({
   };
 
   /**
-   * Adds a job to the render queue
+   * Adds a job to the render queue. Runs immediately if a slot is free,
+   * otherwise waits its turn in `pending`.
    */
   const queueRender = async ({ jobId, data }: { jobId: string; data: JobData }) => {
     jobs.set(jobId, {
       status: 'queued',
       data,
       cancel: () => {
+        // Drop it from the waiting list so pump() never picks up a cancelled job.
+        const index = pending.indexOf(jobId);
+        if (index !== -1) {
+          pending.splice(index, 1);
+        }
         jobs.delete(jobId);
       },
     });
 
-    // Add to queue - processes sequentially
-    queue = queue.then(() => processRender(jobId));
+    pending.push(jobId);
+    pump();
   };
 
   /**

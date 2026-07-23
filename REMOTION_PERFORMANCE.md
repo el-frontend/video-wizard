@@ -209,7 +209,7 @@ Second run, stacking the levers that actually helped (baseline drifted to
 
 | #   | Bottleneck                                                                                                                                                    | Where                                                               | Type             |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- |
-| B1  | Remotion server queue is strictly sequential — one render at a time regardless of host capacity                                                               | `render-queue.ts:150`                                               | Parallelism      |
+| B1  | ~~Remotion server queue is strictly sequential — one render at a time~~ — **fixed in Phase 2** (bounded pool, `MAX_CONCURRENT_RENDERS`)                       | `render-queue.ts`                                                   | Parallelism      |
 | B2  | Single render leaves ~half the cores idle (default concurrency) — but this workload is **encode-bound**, so raising concurrency alone did not help (measured) | `render-queue.ts:96`                                                | CPU              |
 | B3  | Encoder preset defaults to `medium` — the dominant lever here (−21–27% measured)                                                                              | `render-queue.ts:96`                                                | CPU (encode)     |
 | B4  | Source video fetched over HTTP per render; `offthreadVideoCacheSizeInBytes` unset                                                                             | `render-queue.ts:96` + `VideoComposition.tsx:43`                    | I/O              |
@@ -275,22 +275,38 @@ await renderMedia({
   `angle-egl`) helps on Linux before adopting one. Bound `offthreadVideoCache`
   against the container memory limit.
 
-### Phase 2 — Throughput / parallelism
+### Phase 2 — Throughput / parallelism ✅ IMPLEMENTED
 
-This is the larger structural win. Single-render latency is already near the
-encode floor after Phase 1; throughput is capped by two serialization layers.
+Single-render latency is already near the encode floor after Phase 1; throughput
+was capped by the server serializing every render.
 
-- Replace the sequential `queue = queue.then(...)` (`render-queue.ts:150`) with a
-  **bounded concurrent queue** (cap = `RENDER_CONCURRENCY` env), so the server
-  runs multiple renders in parallel and actually matches the worker's
-  `concurrency=2`. Today the worker can dispatch 2 renders but the server runs
-  them one at a time.
-- Because a single render is encode-bound and does **not** benefit from extra
-  per-render concurrency (measured), spend the core budget on **cross-render**
-  parallelism instead — e.g. 2 concurrent renders at default per-render
-  concurrency on a 12-core box — and cap total in-flight to avoid `/dev/shm`/OOM.
-- **Verify:** throughput (renders/min) under a burst of N jobs, not just
-  single-render latency.
+**What shipped:** the sequential `queue = queue.then(...)` is replaced with a
+**bounded concurrent pool** in `render-queue.ts`, gated by a new
+`MAX_CONCURRENT_RENDERS` env (default **1** — identical to the old behaviour;
+the container sets **2** to match the worker's dispatch concurrency). Cancelling
+a queued job now also removes it from the pending list.
+
+Two independent knobs, deliberately separate:
+
+| Env                      | Controls                            | Default          | Container |
+| ------------------------ | ----------------------------------- | ---------------- | --------- |
+| `MAX_CONCURRENT_RENDERS` | render **jobs** in parallel         | 1                | 2         |
+| `RENDER_CONCURRENCY`     | Chromium **tabs** within one render | Remotion default | 2         |
+
+Total Chromium load ≈ product of the two — size both against RAM and `/dev/shm`.
+
+**Measured** (3-job burst, `verify-queue.ts`):
+
+| Setting                    | Peak concurrent | Completed | Wall clock |
+| -------------------------- | --------------- | --------- | ---------- |
+| default (=1)               | 1               | 3/3       | 11.7 s     |
+| `MAX_CONCURRENT_RENDERS=2` | 2               | 3/3       | **10.1 s** |
+
+Honest caveat: only ~14% on this micro-benchmark, because each render already
+uses ~half the cores by default, so 2 jobs × 6 tabs saturates a 12-core box.
+The gain is larger where per-render concurrency is **capped** (the container runs
+2 × 2 = 4 tabs, leaving headroom) or on hosts with spare cores — and the hard
+serialization ceiling is now gone, which is what mattered structurally.
 
 ### Phase 3 — Infra / cold start / scale
 
@@ -318,12 +334,28 @@ encode floor after Phase 1; throughput is capped by two serialization layers.
 
 ---
 
-## Appendix — running the benchmark
+## Appendix — running the tools
+
+Both tools render a local sample video. `apps/processing-engine/output/` is
+gitignored, so point them at a file you have.
+
+**Benchmark render settings:**
 
 ```bash
 cd apps/remotion-server
 node bench.mjs
 ```
 
-Edits the config list at the top of `bench.mjs` to add/remove variants. Renders
+Edit the config list at the top of `bench.mjs` to add/remove variants. Renders
 are written to a scratch dir and discarded; only timings are reported.
+
+**Verify the concurrent queue (Phase 2):**
+
+```bash
+cd apps/remotion-server
+MAX_CONCURRENT_RENDERS=2 ./node_modules/.bin/tsx verify-queue.ts
+# optionally: SAMPLE_VIDEO=/path/to/clip.mp4
+```
+
+Enqueues 3 jobs against the real queue and asserts that it drains every job,
+never exceeds the configured limit, and actually runs in parallel.

@@ -94,6 +94,9 @@ services:
       # container (see REMOTION_PERFORMANCE.md). Raise/remove on hosts with
       # more RAM; leave unset to use Remotion's default (~half the cores).
       - RENDER_CONCURRENCY=2
+      # Run up to 2 render jobs in parallel, matching the worker's dispatch
+      # concurrency. Total Chromium tabs ≈ this × RENDER_CONCURRENCY (=4 here).
+      - MAX_CONCURRENT_RENDERS=2
     volumes:
       - ./packages/remotion-compositions:/app/packages/remotion-compositions
       - ./apps/remotion-server/server:/app/apps/remotion-server/server
