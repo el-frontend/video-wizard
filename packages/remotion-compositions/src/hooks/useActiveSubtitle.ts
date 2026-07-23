@@ -1,6 +1,14 @@
 import { useMemo } from 'react';
 import type { SubtitleSegment } from '../types';
 
+/**
+ * Per-frame debug logging is off by default: this hook runs on every frame of
+ * every render worker, so logging here forwards a message from Chromium to Node
+ * on the render hot path (see REMOTION_PERFORMANCE.md, B10). Flip to `true`
+ * locally when debugging subtitle timing.
+ */
+const DEBUG = false;
+
 interface ActiveSubtitleResult {
   currentWord: string;
   currentSegment: SubtitleSegment | null;
@@ -10,14 +18,14 @@ interface ActiveSubtitleResult {
 
 /**
  * Hook: useActiveSubtitle
- * 
+ *
  * Calculates which word should be displayed at the current time
- * 
+ *
  * Logic Flow:
  * 1. Find active segment based on start/end timestamps
  * 2. If segment has word-level timing, find active word
  * 3. Otherwise, display entire segment text
- * 
+ *
  * @param subtitles - Array of subtitle segments with timing
  * @param currentTime - Current playback time in seconds
  * @returns Active word and segment information
@@ -36,7 +44,7 @@ export function useActiveSubtitle(
     const adjustedTime = currentTime - SUBTITLE_OFFSET;
 
     // Debug: Log on first frame
-    if (currentTime === 0 && subtitles.length > 0) {
+    if (DEBUG && currentTime === 0 && subtitles.length > 0) {
       console.log('[useActiveSubtitle] Initial state:', {
         subtitleCount: subtitles.length,
         firstSubtitle: subtitles[0],
@@ -52,7 +60,7 @@ export function useActiveSubtitle(
 
     if (!currentSegment) {
       // Debug: Log when no segment is found at specific times
-      if (adjustedTime > 0 && adjustedTime < 5) {
+      if (DEBUG && adjustedTime > 0 && adjustedTime < 5) {
         console.log('[useActiveSubtitle] No active segment at time:', {
           currentTime,
           adjustedTime,
@@ -66,16 +74,18 @@ export function useActiveSubtitle(
       };
     }
 
-    // Debug: Log when segment becomes active
-    console.log('[useActiveSubtitle] Active segment:', {
-      currentTime,
-      adjustedTime,
-      segment: {
-        start: currentSegment.start,
-        end: currentSegment.end,
-        text: currentSegment.text,
-      },
-    });
+    // Debug: Log when segment becomes active (fires every frame — gated)
+    if (DEBUG) {
+      console.log('[useActiveSubtitle] Active segment:', {
+        currentTime,
+        adjustedTime,
+        segment: {
+          start: currentSegment.start,
+          end: currentSegment.end,
+          text: currentSegment.text,
+        },
+      });
+    }
 
     // If segment has word-level timing, find the active word
     if (currentSegment.words && currentSegment.words.length > 0) {

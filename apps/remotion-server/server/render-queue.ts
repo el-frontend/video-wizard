@@ -1,10 +1,24 @@
-import {
-    makeCancelSignal,
-    renderMedia,
-    selectComposition,
-} from '@remotion/renderer';
+import { makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+
+/**
+ * Render tuning — see REMOTION_PERFORMANCE.md (issue #6).
+ *
+ * `x264Preset: 'veryfast'` + a bounded off-thread video cache cut render time
+ * ~21% in benchmarks with negligible quality cost. Concurrency is left at
+ * Remotion's default unless `RENDER_CONCURRENCY` is set: forcing it higher was
+ * neutral-to-worse on this encode-bound workload, while a container may want to
+ * cap it *lower* to bound Chromium's memory footprint. `chromiumOptions.gl` is
+ * intentionally NOT set — the fast value is platform-specific (`swangle` was 2×
+ * slower on macOS), so only set `RENDER_GL` after benchmarking on the target OS.
+ */
+const OFFTHREAD_VIDEO_CACHE_BYTES =
+  Number(process.env.RENDER_OFFTHREAD_CACHE_MB ?? 2048) * 1024 * 1024;
+
+const RENDER_CONCURRENCY = process.env.RENDER_CONCURRENCY
+  ? Number(process.env.RENDER_CONCURRENCY)
+  : undefined;
 
 /**
  * Job data structure
@@ -99,6 +113,9 @@ export const makeRenderQueue = ({
         composition,
         inputProps,
         codec: 'h264',
+        x264Preset: 'veryfast',
+        offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
+        ...(RENDER_CONCURRENCY ? { concurrency: RENDER_CONCURRENCY } : {}),
         onProgress: (progress) => {
           console.info(`[${jobId}] Render progress: ${Math.round(progress.progress * 100)}%`);
           jobs.set(jobId, {
@@ -131,13 +148,7 @@ export const makeRenderQueue = ({
   /**
    * Adds a job to the render queue
    */
-  const queueRender = async ({
-    jobId,
-    data,
-  }: {
-    jobId: string;
-    data: JobData;
-  }) => {
+  const queueRender = async ({ jobId, data }: { jobId: string; data: JobData }) => {
     jobs.set(jobId, {
       status: 'queued',
       data,
