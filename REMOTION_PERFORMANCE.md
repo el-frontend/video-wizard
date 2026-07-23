@@ -286,14 +286,27 @@ was capped by the server serializing every render.
 the container sets **2** to match the worker's dispatch concurrency). Cancelling
 a queued job now also removes it from the pending list.
 
-Two independent knobs, deliberately separate:
+All tuning knobs (every one validated — an invalid value warns and falls back
+rather than silently becoming `NaN`):
 
-| Env                      | Controls                            | Default          | Container |
-| ------------------------ | ----------------------------------- | ---------------- | --------- |
-| `MAX_CONCURRENT_RENDERS` | render **jobs** in parallel         | 1                | 2         |
-| `RENDER_CONCURRENCY`     | Chromium **tabs** within one render | Remotion default | 2         |
+| Env                         | Controls                            | Default          | Container |
+| --------------------------- | ----------------------------------- | ---------------- | --------- |
+| `MAX_CONCURRENT_RENDERS`    | render **jobs** in parallel         | 1                | 2         |
+| `RENDER_CONCURRENCY`        | Chromium **tabs** within one render | Remotion default | 2         |
+| `RENDER_TIMEOUT_MS`         | per-render timeout                  | 300000 (5 min)   | —         |
+| `RENDER_OFFTHREAD_CACHE_MB` | off-thread video cache              | 2048             | —         |
 
-Total Chromium load ≈ product of the two — size both against RAM and `/dev/shm`.
+The first two are deliberately separate: total Chromium load ≈ their product, so
+size both against RAM and `/dev/shm`. The per-render timeout stops a wedged job
+from occupying a pool slot forever — which matters more now that slots are
+finite. Progress logging is also throttled to whole-percent changes, since
+`onProgress` fires far more often than that and concurrent renders interleave.
+
+> Credit: the per-render timeout, env validation, and progress-log throttling
+> were adapted from the earlier draft PR #12, which independently converged on
+> the same pool design. That PR also set `enableMultiProcessOnLinux: true`, which
+> is **not** carried over — it caused the Chromium `/dev/shm` exhaustion that B8
+> hardens against.
 
 **Measured** (3-job burst, `verify-queue.ts`):
 
