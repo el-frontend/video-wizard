@@ -13,12 +13,36 @@ import path from 'node:path';
  * intentionally NOT set — the fast value is platform-specific (`swangle` was 2×
  * slower on macOS), so only set `RENDER_GL` after benchmarking on the target OS.
  */
-const OFFTHREAD_VIDEO_CACHE_BYTES =
-  Number(process.env.RENDER_OFFTHREAD_CACHE_MB ?? 2048) * 1024 * 1024;
+/**
+ * Reads a positive-integer env var. An invalid value warns loudly and falls
+ * back rather than silently rendering with a bad setting — a typo'd
+ * `MAX_CONCURRENT_RENDERS` should not quietly become `NaN`.
+ */
+const positiveIntEnv = <T extends number | undefined>(name: string, fallback: T): number | T => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') {
+    return fallback;
+  }
 
-const RENDER_CONCURRENCY = process.env.RENDER_CONCURRENCY
-  ? Number(process.env.RENDER_CONCURRENCY)
-  : undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    console.warn(
+      `[render-queue] Invalid ${name}="${raw}" (expected a positive integer), using ${
+        fallback ?? "Remotion's default"
+      }`
+    );
+    return fallback;
+  }
+
+  return parsed;
+};
+
+const OFFTHREAD_VIDEO_CACHE_BYTES = positiveIntEnv('RENDER_OFFTHREAD_CACHE_MB', 2048) * 1024 * 1024;
+
+const RENDER_CONCURRENCY = positiveIntEnv('RENDER_CONCURRENCY', undefined);
+
+/** Per-render timeout. Stops a wedged job from occupying a slot forever. */
+const RENDER_TIMEOUT_MS = positiveIntEnv('RENDER_TIMEOUT_MS', 300_000);
 
 /**
  * How many render jobs run in parallel (Phase 2). This is distinct from
@@ -29,9 +53,7 @@ const RENDER_CONCURRENCY = process.env.RENDER_CONCURRENCY
  * Defaults to 1 (the previous strictly-sequential behaviour); the container
  * sets it to 2 to match the worker's dispatch concurrency.
  */
-const MAX_CONCURRENT_RENDERS = process.env.MAX_CONCURRENT_RENDERS
-  ? Math.max(1, Number(process.env.MAX_CONCURRENT_RENDERS))
-  : 1;
+const MAX_CONCURRENT_RENDERS = positiveIntEnv('MAX_CONCURRENT_RENDERS', 1);
 
 /**
  * Job data structure
@@ -123,6 +145,7 @@ export const makeRenderQueue = ({
     }
 
     const { cancel, cancelSignal } = makeCancelSignal();
+    let lastLoggedPercent = -1;
 
     jobs.set(jobId, {
       progress: 0,
@@ -154,9 +177,18 @@ export const makeRenderQueue = ({
         codec: 'h264',
         x264Preset: 'veryfast',
         offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
+        timeoutInMilliseconds: RENDER_TIMEOUT_MS,
         ...(RENDER_CONCURRENCY ? { concurrency: RENDER_CONCURRENCY } : {}),
         onProgress: (progress) => {
-          console.info(`[${jobId}] Render progress: ${Math.round(progress.progress * 100)}%`);
+          // Job state updates on every tick (the client polls it), but only log
+          // when the whole percent changes — onProgress fires far more often
+          // than that, and concurrent renders interleave their output.
+          const percent = Math.round(progress.progress * 100);
+          if (percent !== lastLoggedPercent) {
+            lastLoggedPercent = percent;
+            console.info(`[${jobId}] Render progress: ${percent}%`);
+          }
+
           jobs.set(jobId, {
             progress: progress.progress,
             status: 'in-progress',
