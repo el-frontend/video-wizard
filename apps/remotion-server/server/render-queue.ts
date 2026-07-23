@@ -3,17 +3,6 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 /**
- * Render tuning — see REMOTION_PERFORMANCE.md (issue #6).
- *
- * `x264Preset: 'veryfast'` + a bounded off-thread video cache cut render time
- * ~21% in benchmarks with negligible quality cost. Concurrency is left at
- * Remotion's default unless `RENDER_CONCURRENCY` is set: forcing it higher was
- * neutral-to-worse on this encode-bound workload, while a container may want to
- * cap it *lower* to bound Chromium's memory footprint. `chromiumOptions.gl` is
- * intentionally NOT set — the fast value is platform-specific (`swangle` was 2×
- * slower on macOS), so only set `RENDER_GL` after benchmarking on the target OS.
- */
-/**
  * Reads a positive-integer env var. An invalid value warns loudly and falls
  * back rather than silently rendering with a bad setting — a typo'd
  * `MAX_CONCURRENT_RENDERS` should not quietly become `NaN`.
@@ -37,6 +26,17 @@ const positiveIntEnv = <T extends number | undefined>(name: string, fallback: T)
   return parsed;
 };
 
+/**
+ * Render tuning — see REMOTION_PERFORMANCE.md (issue #6).
+ *
+ * `x264Preset: 'veryfast'` + a bounded off-thread video cache cut render time
+ * ~21% in benchmarks with negligible quality cost. Concurrency is left at
+ * Remotion's default unless `RENDER_CONCURRENCY` is set: forcing it higher was
+ * neutral-to-worse on this encode-bound workload, while a container may want to
+ * cap it *lower* to bound Chromium's memory footprint. `chromiumOptions.gl` is
+ * intentionally NOT set — the fast value is platform-specific (`swangle` was 2×
+ * slower on macOS), so only set `RENDER_GL` after benchmarking on the target OS.
+ */
 const OFFTHREAD_VIDEO_CACHE_BYTES = positiveIntEnv('RENDER_OFFTHREAD_CACHE_MB', 2048) * 1024 * 1024;
 
 const RENDER_CONCURRENCY = positiveIntEnv('RENDER_CONCURRENCY', undefined);
