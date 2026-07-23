@@ -80,6 +80,9 @@ services:
       - video-wizard-network
     ports:
       - '3001:3001'
+    # Chromium (via Remotion) needs a large /dev/shm; Docker's 64MB default
+    # causes "cannot allocate memory" / "disk space low" render failures.
+    shm_size: '2gb'
     env_file:
       - ./apps/remotion-server/.env
     environment:
@@ -87,6 +90,10 @@ services:
       - PORT=3001
       - RENDERS_DIR=./renders
       - PYTHON_ENGINE_URL=http://processing-engine:8000
+      # Cap concurrent Chromium tabs per render to bound memory in the
+      # container (see REMOTION_PERFORMANCE.md). Raise/remove on hosts with
+      # more RAM; leave unset to use Remotion's default (~half the cores).
+      - RENDER_CONCURRENCY=2
     volumes:
       - ./packages/remotion-compositions:/app/packages/remotion-compositions
       - ./apps/remotion-server/server:/app/apps/remotion-server/server
