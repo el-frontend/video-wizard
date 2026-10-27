@@ -10,6 +10,12 @@ Open-source toolkit for AI-powered video content workflows: identify
 viral clips, generate styled subtitles, and render social-ready vertical
 videos. Self-hostable, local-first, no SaaS lock-in.
 
+Video Wizard is a self-hosted alternative to tools like Opus Clip and Submagic. It works as an AI video clipper, an automatic subtitle generator (auto-captions with Whisper) and a short-form video maker for TikTok, Instagram Reels and YouTube Shorts. Built with Next.js, FastAPI and Remotion.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/el-frontend/video-wizard?style=social)](https://github.com/el-frontend/video-wizard/stargazers)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#quick-start-one-command)
+
 > **Status (May 2026):** Subtitle Generator is the most polished flow.
 > Renders run on a real PostgreSQL-backed task queue with retry/backoff,
 > so the UI stays responsive while a worker drains long jobs. Auth is
