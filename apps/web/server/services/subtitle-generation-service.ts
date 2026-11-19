@@ -51,9 +51,9 @@ export interface RenderSubtitlesResult {
 }
 
 export class SubtitleGenerationService {
-  /** URL the server uses to call the Python engine (in-network). */
-  private pythonEngineUrl: string;
-  private remotionServerUrl: string;
+  private readonly pythonEngineUrl: string;
+  private readonly remotionVideoOrigin: string;
+  private readonly remotionServerUrl: string;
 
   constructor() {
     // Prefer the in-network address when running in Docker, fall back to
@@ -62,6 +62,9 @@ export class SubtitleGenerationService {
       process.env.PYTHON_ENGINE_INTERNAL_URL ||
       process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
       'http://localhost:8000';
+    // Remotion resolves video URLs from its own network, including in mixed host/container setups.
+    this.remotionVideoOrigin =
+      process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://processing-engine:8000';
     this.remotionServerUrl = process.env.REMOTION_SERVER_URL || 'http://localhost:3001';
   }
 
@@ -149,7 +152,7 @@ export class SubtitleGenerationService {
     onProgress?: (percent: number) => void | Promise<void>
   ): Promise<RenderSubtitlesResult> {
     try {
-      const videoUrl = getVideoSourceUrl(this.pythonEngineUrl, input.videoPath);
+      const videoUrl = getVideoSourceUrl(this.remotionVideoOrigin, input.videoPath);
       const sourceDurationMs =
         input.sourceDurationMs ?? (await this.probeSourceDurationMs(input.videoPath));
       if (!isSourceDurationMs(sourceDurationMs)) {

@@ -6,6 +6,7 @@ import { Input } from '@workspace/ui/components/input';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { Download, FileText } from 'lucide-react';
 import { useState } from 'react';
+import { mergeSubtitleSegments } from '../lib/legacy-timing';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
 import type { SubtitleSegment } from '../types';
 import { SilenceFillerPanel } from './silence-filler-panel';
@@ -53,14 +54,7 @@ export function SubtitleEditor({
     if (index >= subtitles.length - 1) return;
 
     const updated = [...subtitles];
-    const current = updated[index];
-    const next = updated[index + 1];
-    updated[index] = {
-      ...current,
-      end: next.end,
-      text: `${current.text} ${next.text}`,
-      words: current.words && next.words ? [...current.words, ...next.words] : undefined,
-    };
+    updated[index] = mergeSubtitleSegments(updated[index], updated[index + 1]);
     updated.splice(index + 1, 1);
     onSubtitlesChange(updated);
   };

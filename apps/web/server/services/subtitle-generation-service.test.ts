@@ -105,6 +105,22 @@ describe('subtitle generation service timing', () => {
     );
   });
 
+  it('uses the host engine for probing and the container engine for Remotion', async () => {
+    vi.stubEnv('PYTHON_ENGINE_INTERNAL_URL', undefined);
+    vi.stubEnv('NEXT_PUBLIC_PYTHON_ENGINE_URL', engineUrl);
+    const hostService = new SubtitleGenerationService();
+    const rendering = hostService.renderWithSubtitles({ ...renderInput, subtitles: [] });
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await rendering;
+
+    expect(fetchMock).toHaveBeenCalledWith(`${engineUrl}/video-metadata`, expect.any(Object));
+    expect(getRenderProps()).toMatchObject({
+      videoUrl: 'http://processing-engine:8000/uploads/fixture%20%231.mp4',
+      durationInFrames: 240,
+    });
+  });
+
   it('preserves timestamps in seconds for existing clip render requests', async () => {
     const rendering = service.renderClipWithSubtitles({
       ...renderInput,

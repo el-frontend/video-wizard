@@ -289,7 +289,7 @@ export function SubtitleGeneratorContainer() {
 
                 {sourceDurationMs !== null && (
                   <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">Preview</h3>
+                    <h3 className="text-lg font-semibold">Vista previa</h3>
                     <div
                       className={`${getAspectClass(aspectRatio)} mx-auto w-full max-w-sm overflow-hidden rounded-lg bg-black`}
                     >

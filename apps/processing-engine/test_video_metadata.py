@@ -30,6 +30,29 @@ class VideoMetadataTest(unittest.TestCase):
 
         self.assertEqual(probe_video_duration_ms("uploads/fixture #1.mp4"), 8000)
 
+    def test_measures_webm_without_container_duration_from_packets(self):
+        path = "uploads/live.webm"
+        subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                "color=size=160x90:rate=30:duration=2", "-f", "lavfi", "-i",
+                "anullsrc=sample_rate=48000:duration=2.5", "-c:v", "libvpx-vp9",
+                "-c:a", "libvorbis", "-live", "1", path,
+            ],
+            check=True,
+            timeout=30,
+        )
+        container = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1", path],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(container.stdout.strip(), "N/A")
+        self.assertAlmostEqual(probe_video_duration_ms(path), 2500, delta=35)
+
     def test_rejects_paths_outside_media_directories(self):
         outside = Path("outside.mp4")
         outside.touch()

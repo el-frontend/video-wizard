@@ -231,7 +231,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         throw new Error('Transcription finished but no subtitles were returned');
       }
       if (!isSourceDurationMs(result.sourceDurationMs)) {
-        throw new Error('Transcription finished but no source video duration was returned');
+        throw new Error('La transcripción terminó sin devolver la duración del video de origen');
       }
 
       updateState({
@@ -262,7 +262,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
   const renderVideo = async (brandKit?: BrandKit) => {
     if (!state.uploadedPath || state.sourceDurationMs === null) {
       updateState({
-        error: 'No source video available',
+        error: 'No hay un video de origen disponible',
         currentStep: 'error',
       });
       return;

@@ -4,6 +4,7 @@ import {
   durationFrames,
   fromWhisperSeconds,
   legacyMsToSeconds,
+  mergeSubtitleSegments,
   secondsToLegacyMs,
 } from '@/features/video/lib/legacy-timing';
 import { subtitlesToSrt, subtitlesToVtt } from '@/features/video/lib/subtitle-export';
@@ -52,6 +53,22 @@ describe('legacy subtitle timing boundaries', () => {
 
   it('includes the last partial frame of the source', () => {
     expect(durationFrames(8001, 30)).toBe(241);
+  });
+
+  it('keeps a neighbor’s aligned words after merging and saving alongside edited text', () => {
+    const [edited, aligned] = legacyMsToSeconds([
+      { start: 0, end: 500, text: 'Edited text' },
+      legacyFixture[0],
+    ]);
+
+    const saved = secondsToLegacyMs([mergeSubtitleSegments(edited, aligned)]);
+
+    expect(saved).toEqual([
+      { start: 0, end: 2300, text: 'Edited text Caption', words: legacyFixture[0].words },
+    ]);
+    expect(legacyMsToSeconds(saved)).toEqual([
+      { ...secondsFixture[0], start: 0, text: 'Edited text Caption' },
+    ]);
   });
 
   it('does not display obsolete timed words after the subtitle text is cleaned', () => {

@@ -47,6 +47,19 @@ export function legacyMsToSeconds(input: LegacySubtitleMs[]): SubtitleSegment[] 
   }));
 }
 
+export function mergeSubtitleSegments(
+  first: SubtitleSegmentSeconds,
+  next: SubtitleSegmentSeconds
+): SubtitleSegmentSeconds {
+  const words = [...(first.words ?? []), ...(next.words ?? [])];
+  return {
+    ...first,
+    end: next.end,
+    text: `${first.text} ${next.text}`,
+    words: words.length > 0 ? words : undefined,
+  };
+}
+
 export function isSourceDurationMs(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
