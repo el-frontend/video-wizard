@@ -66,20 +66,17 @@ async function main() {
     printBinding(await bindCodexSessionFile(store, values['session-file']));
     return;
   }
-  const claude = new ClaudeTransport({
-    workspace: store.workspace,
-    exclusiveSession: store.exclusiveSession.bind(store),
-  });
+  const claude = new ClaudeTransport({ store });
   if (extra.length === 0 && command === 'bind' && provider === 'claude') {
-    const session = await claude.startManagedSession(
+    const session = await claude.bindManagedSession(
       'Abre esta conversación gestionada por el companion local de Video Wizard. Responde solo «Sesión vinculada». No uses herramientas ni modifiques proyectos.'
     );
-    if (!session.sessionId || session.status !== 'sent') {
+    if (!session.binding || session.status !== 'sent') {
       console.error(session.notice ?? 'Claude Code no confirmó la nueva sesión.');
       process.exitCode = 1;
       return;
     }
-    printBinding(await store.create('claude', session.sessionId));
+    printBinding(session.binding);
     if (session.notice) console.error(session.notice);
     return;
   }

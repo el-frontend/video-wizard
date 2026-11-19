@@ -63,7 +63,15 @@ export class CodexTransport implements AssistantTransport {
     ];
     const acknowledgement = acknowledgements.length === 1 ? acknowledgements[0] : undefined;
     if (acknowledgement && acknowledgement[2] === binding.sessionId) {
-      const needsResume = /could not resume/i.test(result.stderr) || result.outcome !== 'ok';
+      if (result.outcome !== 'ok') {
+        return {
+          status: 'delivery-unknown',
+          deliveryId: acknowledgement[1],
+          notice:
+            'Codex confirmó la aceptación en cola. No se pudo confirmar la reanudación. Revisa la conversación antes de volver a enviar.',
+        };
+      }
+      const needsResume = /could not resume/i.test(result.stderr);
       return {
         status: 'sent',
         deliveryId: acknowledgement[1],

@@ -24,8 +24,7 @@ async function main() {
   const store = await openLocalBindings();
   let response = '';
   const claude = new ClaudeTransport({
-    workspace: store.workspace,
-    exclusiveSession: store.exclusiveSession.bind(store),
+    store,
     inspectResponse: (result) => {
       response = result;
     },
@@ -38,7 +37,7 @@ async function main() {
     binding = await bindCodexSessionFile(store, values['session-file']);
   } else if (provider === 'claude') {
     bootstrapCode = randomUUID();
-    const bootstrap = await claude.startManagedSession(
+    const bootstrap = await claude.bindManagedSession(
       `Prueba f6-claude-binding. Recuerda este código para el siguiente turno: ${bootstrapCode}. Responde exactamente: Sesión lista. Sin herramientas, cambios de archivos, video ni voz.`
     );
     const recognized = response.trim() === 'Sesión lista.';
@@ -50,11 +49,11 @@ async function main() {
         notice: bootstrap.notice,
       })
     );
-    if (bootstrap.status !== 'sent' || !bootstrap.sessionId || !recognized) {
+    if (bootstrap.status !== 'sent' || !bootstrap.binding || !recognized) {
       process.exitCode = 1;
       return;
     }
-    binding = await store.create('claude', bootstrap.sessionId);
+    binding = bootstrap.binding;
   }
   if (!binding || binding.provider !== provider) throw new Error('Binding required');
 

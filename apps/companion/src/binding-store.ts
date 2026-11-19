@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, mkdir, open, realpath, unlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { BindingSchema, SessionIdSchema, type Binding } from './protocol';
+
+const StoredBindingSchema = BindingSchema.extend({
+  claudeExecution: z.enum(['verified', 'organization-rejected']).optional(),
+});
+type StoredBinding = z.infer<typeof StoredBindingSchema>;
 
 export class SessionBusyError extends Error {}
 
@@ -25,6 +30,18 @@ export class BindingStore {
   }
 
   async create(provider: Binding['provider'], sessionId: string): Promise<Binding> {
+    return this.createBinding(provider, sessionId);
+  }
+
+  async createVerifiedClaudeBinding(sessionId: string): Promise<Binding> {
+    return this.createBinding('claude', sessionId, 'verified');
+  }
+
+  private async createBinding(
+    provider: Binding['provider'],
+    sessionId: string,
+    claudeExecution?: StoredBinding['claudeExecution']
+  ): Promise<Binding> {
     const binding = BindingSchema.parse({
       id: randomUUID(),
       provider,
@@ -32,19 +49,60 @@ export class BindingStore {
       workspace: this.workspace,
       createdAt: new Date().toISOString(),
     });
-    const directory = join(this.directory, 'bindings');
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    const temporary = join(directory, `${binding.id}.tmp`);
-    await writeFile(temporary, JSON.stringify(binding) + '\n', { flag: 'wx', mode: 0o600 });
-    try {
-      await link(temporary, join(directory, `${binding.id}.json`));
-    } finally {
-      await unlink(temporary);
-    }
+    await this.writeBinding({ ...binding, claudeExecution }, false);
     return binding;
   }
 
+  private async writeBinding(binding: StoredBinding, replace: boolean): Promise<void> {
+    const directory = join(this.directory, 'bindings');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const file = join(directory, `${binding.id}.json`);
+    const temporary = join(directory, `${binding.id}.${randomUUID()}.tmp`);
+    const handle = await open(temporary, 'wx', 0o600);
+    try {
+      try {
+        await handle.writeFile(JSON.stringify(binding) + '\n');
+      } finally {
+        await handle.close();
+      }
+      if (replace) await rename(temporary, file);
+      else await link(temporary, file);
+    } finally {
+      await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    }
+  }
+
   async get(id: string): Promise<Binding | null> {
+    const stored = await this.readBinding(id);
+    if (!stored) return null;
+    const { claudeExecution: _claudeExecution, ...binding } = stored;
+    return binding;
+  }
+
+  async getClaudeExecution(binding: Binding): Promise<StoredBinding['claudeExecution']> {
+    return (await this.readClaudeBinding(binding))?.claudeExecution;
+  }
+
+  async recordClaudeOrganizationRejection(binding: Binding): Promise<void> {
+    const stored = await this.readClaudeBinding(binding);
+    if (!stored) throw new Error('Claude binding not found');
+    await this.writeBinding({ ...stored, claudeExecution: 'organization-rejected' }, true);
+  }
+
+  private async readClaudeBinding(binding: Binding) {
+    const stored = await this.readBinding(binding.id);
+    if (
+      stored?.provider === 'claude' &&
+      binding.provider === 'claude' &&
+      binding.workspace === this.workspace &&
+      stored.sessionId === binding.sessionId
+    )
+      return stored;
+  }
+
+  private async readBinding(id: string): Promise<StoredBinding | null> {
     const file = join(this.directory, 'bindings', `${z.uuid().parse(id)}.json`);
     const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
       (error: NodeJS.ErrnoException) => {
@@ -57,7 +115,7 @@ export class BindingStore {
       const stat = await handle.stat();
       if (!stat.isFile() || (stat.mode & 0o077) !== 0)
         throw new Error('Invalid binding permissions');
-      const binding = BindingSchema.parse(JSON.parse(await handle.readFile('utf8')));
+      const binding = StoredBindingSchema.parse(JSON.parse(await handle.readFile('utf8')));
       if (binding.id !== id || binding.workspace !== this.workspace) {
         throw new Error('Binding does not match the requested workspace and ID');
       }

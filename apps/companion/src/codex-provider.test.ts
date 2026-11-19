@@ -107,3 +107,20 @@ it.each([
   });
   expect(run).not.toHaveBeenCalled();
 });
+
+it('retains the confirmed queue ID but marks reactivation uncertain after a timeout', async () => {
+  const run = commandSpy().mockResolvedValueOnce({
+    outcome: 'timeout',
+    stdout: `Queued message delivery-4 for thread ${sessionId}.`,
+    stderr: 'private diagnostic',
+  });
+  const transport = new CodexTransport({ workspace, run });
+  const receipt = await transport.dispatch(binding, envelope);
+  expect(receipt).toMatchObject({
+    status: 'delivery-unknown',
+    deliveryId: 'delivery-4',
+    notice: expect.stringMatching(/cola.*no se pudo confirmar la reanudación/i),
+  });
+  expect(receipt.notice).not.toContain('private');
+  expect(run).toHaveBeenCalledTimes(1);
+});

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SessionBusyError } from './binding-store';
+import { SessionBusyError, type BindingStore } from './binding-store';
 import {
   capabilities,
   invalidDestination,
@@ -12,7 +12,7 @@ import {
   type Binding,
   type DeliveryReceipt,
   type RequestEnvelope,
-  type TransportOptions,
+  type CommandRunner,
 } from './protocol';
 
 const authSchema = z.object({ loggedIn: z.boolean() });
@@ -40,14 +40,20 @@ const organizationRejectionSchema = z.object({
   error: z.literal('oauth_org_not_allowed'),
 });
 
-type ClaudeTransportOptions = TransportOptions & {
-  exclusiveSession: <T>(sessionId: string, action: () => Promise<T>) => Promise<T>;
+const organizationRejectedNotice =
+  'La organización de la sesión OAuth rechazó la ejecución de Claude Code.';
+const verificationRequiredNotice =
+  'Vincula una conversación de Claude Code desde la CLI para verificar su ejecución.';
+
+type ClaudeTransportOptions = {
+  store: BindingStore;
+  run?: CommandRunner;
   inspectResponse?: (response: string) => void;
 };
 
 type ManagedSessionReceipt = {
   status: DeliveryReceipt['status'];
-  sessionId?: string;
+  binding?: Binding;
   notice?: string;
 };
 
@@ -60,31 +66,35 @@ function readEvents<T>(schema: z.ZodType<T>, events: unknown[]): T[] {
 
 export class ClaudeTransport implements AssistantTransport {
   private readonly run;
-  private readonly workspace;
-  private readonly exclusiveSession;
+  private readonly store;
   private readonly inspectResponse;
 
-  constructor({
-    workspace,
-    run = runCommand,
-    exclusiveSession,
-    inspectResponse,
-  }: ClaudeTransportOptions) {
-    this.workspace = workspace;
+  constructor({ store, run = runCommand, inspectResponse }: ClaudeTransportOptions) {
+    this.store = store;
     this.run = run;
-    this.exclusiveSession = exclusiveSession;
     this.inspectResponse = inspectResponse;
   }
 
   async probe(binding: Binding) {
-    if (!matchesBinding(binding, 'claude', this.workspace)) {
+    if (!matchesBinding(binding, 'claude', this.store.workspace)) {
       return capabilities(false, false, false, invalidDestination().notice);
     }
-    return this.checkCli();
+    const cli = await this.checkCli();
+    if (!cli.authenticated) return cli;
+
+    const reason = await this.executionBlock(binding);
+    if (reason) return { ...cli, available: false, canSendToBoundSession: false, reason };
+    return cli;
+  }
+
+  private async executionBlock(binding: Binding) {
+    const evidence = await this.store.getClaudeExecution(binding);
+    if (evidence === 'organization-rejected') return organizationRejectedNotice;
+    if (evidence !== 'verified') return verificationRequiredNotice;
   }
 
   private async checkCli() {
-    const options = { cwd: this.workspace, timeoutMs: 5000 };
+    const options = { cwd: this.store.workspace, timeoutMs: 5000 };
     const help = await this.run('claude', ['--help'], options);
     const supported =
       help.outcome === 'ok' &&
@@ -113,22 +123,32 @@ export class ClaudeTransport implements AssistantTransport {
     );
   }
 
-  async startManagedSession(prompt: string): Promise<ManagedSessionReceipt> {
+  async bindManagedSession(prompt: string): Promise<ManagedSessionReceipt> {
     const { receipt, sessionId } = await this.runTurn(prompt);
     return {
       status: receipt.status,
-      sessionId,
+      ...(sessionId ? { binding: await this.store.createVerifiedClaudeBinding(sessionId) } : {}),
       ...(receipt.notice ? { notice: receipt.notice } : {}),
     };
   }
 
   async dispatch(binding: Binding, envelope: RequestEnvelope): Promise<DeliveryReceipt> {
-    const prompt = promptFor(binding, envelope, 'claude', this.workspace);
+    const prompt = promptFor(binding, envelope, 'claude', this.store.workspace);
     if (!prompt) return invalidDestination();
     try {
-      return await this.exclusiveSession(binding.sessionId, async () => {
-        const { receipt } = await this.runTurn(prompt, binding.sessionId);
-        return receipt;
+      return await this.store.exclusiveSession(binding.sessionId, async () => {
+        const reason = await this.executionBlock(binding);
+        if (reason) return { status: 'failed', notice: reason };
+
+        const { receipt, organizationRejected } = await this.runTurn(prompt, binding.sessionId);
+        if (!organizationRejected) return receipt;
+
+        try {
+          await this.store.recordClaudeOrganizationRejection(binding);
+          return receipt;
+        } catch {
+          return { ...receipt, notice: `${receipt.notice} No se pudo guardar el bloqueo local.` };
+        }
       });
     } catch (error) {
       if (error instanceof SessionBusyError) {
@@ -151,11 +171,12 @@ export class ClaudeTransport implements AssistantTransport {
   ): Promise<{
     receipt: DeliveryReceipt;
     sessionId?: string;
+    organizationRejected?: true;
   }> {
     const args = ['-p', '--verbose', '--output-format', 'stream-json'];
     if (sessionId) args.push('--resume', sessionId);
     const command = await this.run('claude', args, {
-      cwd: this.workspace,
+      cwd: this.store.workspace,
       timeoutMs: 120_000,
       input: prompt + '\n',
     });
@@ -186,24 +207,24 @@ export class ClaudeTransport implements AssistantTransport {
       );
     if (organizationRejected && !result) {
       return {
-        receipt: {
-          status: 'failed',
-          notice:
-            'La organización de la sesión OAuth rechazó la ejecución de Claude Code.' +
-            startupNotice,
-        },
+        organizationRejected: true,
+        receipt: { status: 'failed', notice: organizationRejectedNotice + startupNotice },
       };
     }
     if (
       !startup ||
       !result ||
+      (!sessionId && command.outcome !== 'ok') ||
       startup.session_id !== result.session_id ||
       (sessionId && result.session_id !== sessionId)
     ) {
       return {
         receipt: {
           status: 'delivery-unknown',
-          notice: 'Claude Code no confirmó la respuesta en la sesión vinculada.' + startupNotice,
+          notice:
+            (sessionId
+              ? 'Claude Code no confirmó la respuesta en la sesión vinculada.'
+              : 'Claude Code no confirmó el inicio de la conversación gestionada.') + startupNotice,
         },
       };
     }
