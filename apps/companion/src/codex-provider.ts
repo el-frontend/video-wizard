@@ -63,21 +63,21 @@ export class CodexTransport implements AssistantTransport {
     ];
     const acknowledgement = acknowledgements.length === 1 ? acknowledgements[0] : undefined;
     if (acknowledgement && acknowledgement[2] === binding.sessionId) {
-      if (result.outcome !== 'ok') {
+      const needsResume = /could not resume/i.test(result.stderr);
+      if (result.outcome === 'ok' || (result.outcome === 'error' && needsResume)) {
         return {
-          status: 'delivery-unknown',
+          status: 'sent',
           deliveryId: acknowledgement[1],
-          notice:
-            'Codex confirmó la aceptación en cola. No se pudo confirmar la reanudación. Revisa la conversación antes de volver a enviar.',
+          ...(needsResume
+            ? { notice: 'Enviado. Para procesarlo, debes continuar la conversación vinculada.' }
+            : {}),
         };
       }
-      const needsResume = /could not resume/i.test(result.stderr);
       return {
-        status: 'sent',
+        status: 'delivery-unknown',
         deliveryId: acknowledgement[1],
-        ...(needsResume
-          ? { notice: 'Enviado. Para procesarlo, debes continuar la conversación vinculada.' }
-          : {}),
+        notice:
+          'Codex confirmó la aceptación en cola. No se pudo confirmar la reanudación. Revisa la conversación antes de volver a enviar.',
       };
     }
     if (result.outcome === 'not-started') {

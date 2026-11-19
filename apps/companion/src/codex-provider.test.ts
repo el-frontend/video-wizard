@@ -50,20 +50,23 @@ it('queues one message to the bound thread using separate process arguments', as
   expect(JSON.parse(run.mock.calls[0]![1][4]!.split('\n\n')[1]!)).toEqual(envelope);
 });
 
-it('records the receipt even if the queued session needs manual continuation', async () => {
-  const run = commandSpy().mockResolvedValueOnce(
-    result(
-      `Queued message delivery-4 for thread ${sessionId}.`,
-      'Warning: could not resume thread (internal diagnostic)'
-    )
-  );
-  const transport = new CodexTransport({ workspace, run });
-  expect(await transport.dispatch(binding, envelope)).toEqual({
-    status: 'sent',
-    deliveryId: 'delivery-4',
-    notice: expect.stringContaining('continuar'),
-  });
-});
+it.each(['ok', 'error'] as const)(
+  'records the queue receipt when outcome is %s and the CLI warns that resumption failed',
+  async (outcome) => {
+    const run = commandSpy().mockResolvedValueOnce({
+      outcome,
+      stdout: `Queued message delivery-4 for thread ${sessionId}.`,
+      stderr: 'Warning: could not resume thread (internal diagnostic)',
+    });
+    const transport = new CodexTransport({ workspace, run });
+    expect(await transport.dispatch(binding, envelope)).toEqual({
+      status: 'sent',
+      deliveryId: 'delivery-4',
+      notice: expect.stringContaining('continuar'),
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+  }
+);
 
 it.each([
   { outcome: 'timeout' as const, stdout: '', stderr: 'private diagnostic' },
@@ -108,11 +111,15 @@ it.each([
   expect(run).not.toHaveBeenCalled();
 });
 
-it('retains the confirmed queue ID but marks reactivation uncertain after a timeout', async () => {
+it.each([
+  { outcome: 'timeout' as const, stderr: 'private diagnostic' },
+  { outcome: 'timeout' as const, stderr: 'Warning: could not resume thread (private diagnostic)' },
+  { outcome: 'error' as const, stderr: 'private diagnostic' },
+])('retains the queue ID on $outcome when resumption is uncertain', async ({ outcome, stderr }) => {
   const run = commandSpy().mockResolvedValueOnce({
-    outcome: 'timeout',
+    outcome,
     stdout: `Queued message delivery-4 for thread ${sessionId}.`,
-    stderr: 'private diagnostic',
+    stderr,
   });
   const transport = new CodexTransport({ workspace, run });
   const receipt = await transport.dispatch(binding, envelope);
