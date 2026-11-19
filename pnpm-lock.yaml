@@ -34,6 +34,31 @@ importers:
         specifier: ^2.7.3
         version: 2.7.3
 
+  apps/companion:
+    dependencies:
+      '@workspace/video-project':
+        specifier: workspace:*
+        version: link:../../packages/video-project
+      zod:
+        specifier: ^4.3.5
+        version: 4.3.5
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.28
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@opentelemetry/api@1.9.0)(@types/node@20.19.28)(msw@2.12.7(@types/node@20.19.28)(typescript@5.9.3))(vite@8.3.8(@types/node@20.19.28)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
+
   apps/processing-engine: {}
 
   apps/remotion-server:

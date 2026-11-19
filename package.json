@@ -10,7 +10,8 @@
     "format": "turbo run format",
     "test": "turbo run test",
     "prepare": "husky",
-    "commit": "cz"
+    "commit": "cz",
+    "companion": "pnpm --filter @workspace/companion cli"
   },
   "config": {
     "commitizen": {
