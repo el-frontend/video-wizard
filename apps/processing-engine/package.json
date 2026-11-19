@@ -8,7 +8,9 @@
     "dev": "python3 main.py",
     "start": "uvicorn main:app --host 0.0.0.0 --port 8000",
     "start:reload": "uvicorn main:app --reload --host 0.0.0.0 --port 8000",
-    "test": "python3 example_usage.py",
+    "test": "python3 -m unittest discover -p test_video_metadata.py -v",
+    "test:service": "python3 -m pytest test_service.py",
+    "example": "python3 example_usage.py",
     "clean": "rm -rf __pycache__ uploads/* output/* temp_crop_data/*"
   },
   "keywords": [
