@@ -106,6 +106,9 @@ importers:
       '@workspace/remotion-compositions':
         specifier: workspace:*
         version: link:../../packages/remotion-compositions
+      '@workspace/video-project':
+        specifier: workspace:*
+        version: link:../../packages/video-project
       ai:
         specifier: ^6.0.27
         version: 6.0.27(zod@4.3.5)
