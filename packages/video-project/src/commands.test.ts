@@ -44,7 +44,7 @@ test('replacing a take uses measured duration and matching local cues without a 
   expect(result.scenes[0]!.layers[1]).toMatchObject({
     sourceAudioLayerId: 'speech',
     cues,
-    endMs: 4800,
+    endMs: 4200,
   });
   expect(sceneStartMs(result, 'outro')).toBe(4200);
   expect(result.scenes[1]).toStrictEqual(draft.scenes[1]);
@@ -158,4 +158,84 @@ test('does not throw away measured words when the target has no caption layer', 
       ],
     })
   ).toThrow();
+});
+
+test.each(['keep', 'clear', 'replace'] as const)(
+  'keeps linked caption edits when a take changes (%s cues)',
+  (operation) => {
+    const draft = exampleProject();
+    const captions = draft.scenes[0]!.layers[1]!;
+    if (captions.type !== 'captions') throw Error('fixture');
+    captions.startMs = 300;
+    captions.endAnchor = 'scene-end';
+    const cues = [
+      {
+        id: 'fresh',
+        text: 'Nueva',
+        startMs: 100,
+        endMs: 340,
+        words: [{ text: 'Nueva', startMs: 0, endMs: 200 }],
+      },
+    ];
+    const update = operation === 'keep' ? {} : { cues: operation === 'clear' ? [] : cues };
+    const next = applyCommand(draft, {
+      type: 'replace-take',
+      sceneId: 'intro',
+      layerId: 'speech',
+      assetId: 'voice-2',
+      provider: 'upload',
+      durationMs: 4800,
+      spokenText: 'Hola',
+      ...update,
+    });
+    expect(next.scenes[0]!.layers[1]).toStrictEqual({ ...captions, ...update });
+  }
+);
+
+test.each([5000, 6000, 6200])(
+  'preserves a repairable anchored overflow when extending to %i ms',
+  (durationMs) => {
+    const draft = exampleProject();
+    const layer = draft.scenes[0]!.layers[2]!;
+    layer.startMs = 6000;
+    layer.endMs = 6500;
+    const partial = applyCommand(draft, { type: 'extend-scene', sceneId: 'intro', durationMs });
+    expect(partial.scenes[0]!.layers[2]).toStrictEqual(layer);
+    expect(validateForExport(partial)).toContainEqual(
+      expect.objectContaining({ code: 'layer-overflow', layerId: 'card' })
+    );
+    const repaired = applyCommand(partial, {
+      type: 'extend-scene',
+      sceneId: 'intro',
+      durationMs: 6600,
+    });
+    expect(repaired.scenes[0]!.layers[2]).toMatchObject({ startMs: 6000, endMs: 6600 });
+    expect(validateForExport(repaired).map((d) => d.code)).not.toContain('layer-overflow');
+  }
+);
+
+test.each([
+  ['captions', 'captions'],
+  ['captions', 'card'],
+  ['card', null],
+])('preserves z-indices for a no-op move of %s before %s', (layerId, beforeId) => {
+  const draft = exampleProject();
+  const layers = draft.scenes[0]!.layers;
+  layers[1]!.zIndex = 10;
+  layers[2]!.zIndex = -2;
+  const reordered = applyCommand(draft, {
+    type: 'reorder-layer',
+    sceneId: 'intro',
+    layerId: layerId!,
+    beforeId,
+  });
+  expect(reordered.scenes[0]!.layers).toStrictEqual(layers);
+});
+
+test('keeps an editable anchor unchanged when requesting the current scene duration', () => {
+  const draft = exampleProject();
+  draft.scenes[0]!.layers[2]!.endMs = 3900;
+  expect(
+    applyCommand(draft, { type: 'extend-scene', sceneId: 'intro', durationMs: 4200 })
+  ).toStrictEqual(draft);
 });

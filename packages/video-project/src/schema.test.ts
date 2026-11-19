@@ -13,7 +13,31 @@ test('round-trips words, editable JSON, IDs and exact library versions', () => {
   const draft = exampleProject();
   const roundTripped = parseProject(JSON.parse(JSON.stringify(draft)));
   expect(roundTripped).toStrictEqual(draft);
-  expect(validateForExport(roundTripped)).toEqual([]);
+});
+
+test('export requires resolution for every pinned library entry, including the scene template', () => {
+  const project = exampleProject();
+  project.scenes[0]!.templateRef = { id: 'story', version: 4 };
+  const errors = validateForExport(project);
+  expect(errors).toHaveLength(5);
+  expect(errors.every((d) => d.severity === 'error' && d.code === 'library-missing')).toBe(true);
+  const common = { name: 'Ejemplo', assetIds: [] };
+  const implementation = { engine: 'remotion', manifest: { version: 1, props: {} } };
+  const library = [
+    { ...common, ...project.styleRef, kind: 'style', tokens: {} },
+    { ...common, ...project.brandSnapshot!.ref, kind: 'brand', values: {} },
+    { ...common, ...project.scenes[0]!.templateRef, kind: 'template', ...implementation },
+    { ...common, id: 'sub', version: 3, kind: 'component', ...implementation },
+    {
+      ...common,
+      id: 'card',
+      version: 1,
+      kind: 'component',
+      ...implementation,
+      manifest: { version: 1, props: { headline: { type: 'string', required: true } } },
+    },
+  ].map((entry) => LibraryEntrySchema.parse(entry));
+  expect(validateForExport(project, { library })).toEqual([]);
 });
 
 test.each([
@@ -163,7 +187,7 @@ test('allows captions to reference a project-wide audio track', () => {
   const captions = draft.scenes[0]!.layers[1]!;
   if (captions.type !== 'captions') throw Error('fixture');
   captions.sourceAudioLayerId = 'music-track';
-  expect(validateForExport(draft)).toEqual([]);
+  expect(validateForExport(draft).map((d) => d.code)).not.toContain('audio-layer-missing');
 });
 
 test('retains all JSON object keys and independent nested values across parsing', () => {

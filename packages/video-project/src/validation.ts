@@ -16,7 +16,7 @@ function validProps(props: Record<string, JsonValue>, { manifest }: Component): 
   );
 }
 
-/** With no catalog, only dependencies resolvable from the document itself are checked. */
+/** Every library pin must resolve before export. An omitted catalog resolves no pins. */
 export function validateForExport(
   project: ProjectDraft,
   dependencies: { library?: readonly LibraryEntry[] } = {}
@@ -27,8 +27,7 @@ export function validateForExport(
     diagnostics.push({ severity: 'error', code, message, ...location });
   }
   function reference(ref: LibraryRef, kinds: LibraryEntry['kind'][], location: Location) {
-    if (!dependencies.library) return;
-    const entry = dependencies.library.find(
+    const entry = dependencies.library?.find(
       (e) => e.id === ref.id && e.version === ref.version && kinds.includes(e.kind)
     );
     if (!entry)

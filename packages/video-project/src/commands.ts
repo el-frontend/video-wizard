@@ -89,9 +89,10 @@ function insert<T extends { id: string }>(items: T[], item: T, beforeId?: string
 }
 function move<T extends { id: string }>(items: T[], id: string, beforeId?: string | null) {
   const index = indexOfId(items, id);
-  if (id === beforeId) return;
+  if (id === beforeId || items[index + 1]?.id === (beforeId ?? undefined)) return false;
   const [item] = items.splice(index, 1);
   insert(items, item!, beforeId);
+  return true;
 }
 
 export function applyCommand(project: ProjectDraft, input: ProjectCommand): ProjectDraft {
@@ -122,7 +123,7 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
     }
     case 'reorder-layer': {
       const layers = layersFor(command.sceneId);
-      move(layers, command.layerId, command.beforeId);
+      if (!move(layers, command.layerId, command.beforeId)) break;
       layers.forEach((layer, i) => {
         layer.zIndex = i;
       });
@@ -176,20 +177,18 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
           edited.editorial.narration !== command.spokenText,
       };
       if (!draft.assetIds.includes(command.assetId)) draft.assetIds.push(command.assetId);
+      if (command.cues === undefined) break;
       const linked = edited.layers.filter(
         (candidate): candidate is Extract<Layer, { type: 'captions' }> =>
           candidate.type === 'captions' && candidate.sourceAudioLayerId === layer.id
       );
-      if (command.cues?.length && !linked.length) {
+      if (command.cues.length && !linked.length) {
         throw new RangeError(
           'Se requiere una capa vinculada para guardar los subtítulos de la toma'
         );
       }
       for (const captions of linked) {
-        captions.startMs = layer.startMs;
-        captions.endMs = layer.endMs;
-        captions.endAnchor = 'fixed';
-        captions.cues = command.cues ?? [];
+        captions.cues = command.cues;
       }
       break;
     }
@@ -197,9 +196,10 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
       const edited = get(scenes, command.sceneId);
       if (command.durationMs < edited.durationMs)
         throw new RangeError('La ampliación no puede acortar la escena');
+      if (command.durationMs === edited.durationMs) break;
       edited.durationMs = command.durationMs;
       for (const layer of edited.layers)
-        if (layer.endAnchor === 'scene-end') layer.endMs = edited.durationMs;
+        if (layer.endAnchor === 'scene-end') layer.endMs = Math.max(layer.endMs, edited.durationMs);
       break;
     }
   }
