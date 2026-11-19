@@ -1,0 +1,112 @@
+# Video Wizard · motores y generación Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Generar componentes/videos con asistentes vinculados y terminar MP4 comprobados mediante Remotion o HyperFrames, con trabajos recuperables y resultados identificados.
+
+**Architecture:** Adaptadores consumen snapshots inmutables y comparten manifiestos con sus previews. Código nuevo entra como propuesta validada y versionada; un companion local entrega solicitudes a las conversaciones elegidas. La cola PostgreSQL es dueña del estado durable y los procesos de motor solo ejecutan intentos concretos.
+
+**Tech Stack:** Paquetes existentes de Remotion, HyperFrames CLI fijado inicialmente en 0.8.173 como Motion Studio, GSAP local para HyperFrames, FFmpeg/ffprobe, companion F6 y cola PostgreSQL. No hace falta `@remotion/gsap` para el alcance: animaciones Remotion usan frames; una actualización coordinada futura es otra decisión.
+
+**Spec:** [Diseño aprobado](../specs/2026-11-18-video-wizard-integral-design.md). Leer [contratos](2026-11-18-video-wizard-integral.md), [base](2026-11-18-video-wizard-01-base.md) y [editor](2026-11-18-video-wizard-02-editor.md).
+
+## Global Constraints
+
+Se mantienen las restricciones del plan general. Una solicitud enviada no es generación completada. No se genera voz ni se consume cuota para comprobar conectividad. El perfil privado de Carlos conserva dirección cubana/latina y cierre hablado «Inteligencia artificial al día»; no exportar su voice ID a defaults públicos. Cada render fija proyecto/revisión/dependencias; código de motores distintos no se mezcla. HyperFrames conserva check estricto, snapshots revisados y render antes de declarar un video terminado.
+
+## Review Focus
+
+- Fuente o archivo ausente y texto largo dentro de componentes: R1/R2 dan diagnósticos legibles y no usan sustitutos silenciosos.
+- Código que compila pero importa otro motor o usa tiempo no determinista: R3 lo rechaza antes de aplicar.
+- Entrega incierta/callback repetido y edición manual posterior: R4 no repite efectos ni sobrescribe revisión nueva.
+- Cancelación mientras el motor termina o worker cae: R5 conserva el estado cancelado y aísla artefactos del intento.
+- Preview/export con seek inverso, escenas sin voz y música global: R6 comprueba frames y audio reales de ambos motores.
+
+## Mapa de archivos
+
+`server/`, `features/` y `app/` abreviados en tareas están bajo `apps/web/`; tests vecinos comparten el directorio de su módulo.
+
+- `packages/render-contract/src/{index,snapshot}.ts`: tipos comunes y dependencias resueltas por versión/hash.
+- `packages/remotion-compositions/src/compositions/{project-composition,scene-composition,layer-renderer}.tsx`: composición nueva, sin video fuente ficticio.
+- `apps/remotion-server/server/{project-adapter,preview-builder,registry-builder}.ts`: artefactos propios de Remotion; conservar servicio actual.
+- `packages/hyperframes-compositions/src/{compiler,preview,runtime,media}.ts`: HTML/timelines compartidos por preview/export.
+- `apps/hyperframes-worker/src/{adapter,cli,process}.ts`: ejecutar pin y cancelación, no lógica del editor.
+- `apps/web/server/services/studio/{proposal-service,request-service,export-service}.ts`: estados y transacciones.
+- `apps/web/server/worker/studio-handlers.ts`: ejecución de trabajos nuevos, reutilizando cola existente.
+- `apps/companion/src/`: transporte F6; agregar API local de consumo/callback con alcance limitado.
+
+### Task 1: R1 · Remotion multicapa y preview con el mismo registro
+
+**Files:** Create `packages/render-contract/{package.json,tsconfig.json,src/index.ts,src/snapshot.ts}`, tests vecinos; `packages/remotion-compositions/src/compositions/{project-composition,scene-composition,layer-renderer}.tsx`, `project-composition.test.tsx`; `apps/remotion-server/server/{project-adapter,preview-builder,registry-builder}.ts`, `project-adapter.test.ts`; `apps/web/features/studio-designer/components/remotion-project-preview.tsx`. Modify `packages/remotion-compositions/src/Root.tsx`, `src/index.ts`, `apps/remotion-server/server/index.ts`, `render-queue.ts` y manifests/scripts afectados. Consolidar usos de `apps/web/remotion` mediante exports compartidos, sin copiar composiciones.
+
+**Interfaces:** Produce `EngineAdapter`, `ExportSnapshot`, `ResolvedDependencies` y `PreviewHandle` del plan general. `ResolvedDependencies={assets:Record<string,ResolvedAsset>,libraries:Record<string,LibraryEntry>}`; `ResolvedAsset` contiene hash, metadata y URL/localizador de snapshot. `buildSnapshot(ownerId,record):Promise<ExportSnapshot>` fija versiones/hashes. `ProjectComposition({document,dependencies,registry})` sirve a export y preview. `buildRegistry(snapshot,workspace):Promise<{entry:string,hash:string}>` genera imports exclusivamente de versiones fijadas; registro inicial de componentes seed. Preview entrega handle equivalente por postMessage validado.
+
+- [ ] **1. Escribir tests:** proyecto de dos escenas, clip recortado, texto/component, captions y audio global. A 30 fps/8000 ms son 240 frames; offsets se convierten una vez, palabras permanecen, cue no aparece en end. Snapshot conserva versiones tras publicar v2; recurso/fuente ausente produce diagnóstico que bloquea render. Texto excesivo genera aviso de límites. Registro rechaza entrada del motor contrario.
+- [ ] **2. Rojo:** `pnpm --filter @workspace/remotion-compositions test` y `pnpm --filter remotion-server test -- server/project-adapter.test.ts`; añadir esos scripts reales y sus runners como parte de la tarea.
+- [ ] **3. Implementar:** composición `StudioProject`, secuencias/capas y audio por tiempos F2. Mantener `VideoWithSubtitles` y rutas legadas operativas. Discriminar input de `/renders` entre legado y proyecto, no exigir videoUrl a un video gráfico. Usar versiones exactas alineadas de todos los paquetes Remotion; conservar inicialmente la resolución existente si funciona. Render usa bundler oficial y registro por snapshot. Preview de componentes versionados se compila en página aislada con Player, ProjectComposition y el mismo registro; `preview-builder.ts` puede usar esbuild con React/Remotion deduplicados en ese bundle, sin `eval` ni importar código generado dentro del proceso Next. Los builds comparten composición/registro, no dos implementaciones de layout.
+- [ ] **4. Verde:** tests y types; render corto real y snapshots a 0, 1000 y 7999 ms, seek hacia delante/atrás en preview. Verificar `ffprobe` con 8000 ms ± un frame, dimensiones guardadas y audio. Paquetes del motor deben resolver todos la misma versión exacta; registrar en manifiesto.
+- [ ] **5. Commit:** `feat: render shared studio projects and layered previews with remotion`.
+
+### Task 2: R2 · Adaptador y preview HyperFrames
+
+**Files:** Create `packages/hyperframes-compositions/{package.json,tsconfig.json,src/compiler.ts,src/preview.ts,src/runtime.ts,src/media.ts,src/compiler.test.ts}`, `apps/hyperframes-worker/{package.json,tsconfig.json,src/adapter.ts,src/cli.ts,src/process.ts,src/adapter.test.ts}`, `apps/web/features/studio-designer/components/hyperframes-project-preview.tsx`. Modify resolved style implementations/seed y root scripts. Fuente de referencia: `studio/shared/render.mjs`, `studio/shared/render.test.mjs`, `scripts/hf.mjs` de Motion Studio; no copiar el renderer de noticias como modelo general.
+
+**Interfaces:** `compileProject(snapshot:ExportSnapshot,workspace:string):Promise<PreparedComposition>`, `createPreview(snapshot:ExportSnapshot):Promise<{url:string,manifestHash:string}>`; adaptador implementa R1. Runtime genera root/composiciones/timelines pausadas con el contrato técnico vigente de HyperFrames; los módulos de componentes reciben props, assets y tiempos locales, no estado React del editor. Preview implementa `PreviewHandle` desde el mismo compilador, con reloj de reproducción externo a la composición y medios sincronizados al seek.
+
+- [ ] **1. Escribir tests:** HTML/capas/medios representan el mismo documento de R1; ms→segundos una vez; no hay fetch de composición ni reloj aleatorio. Tres estilos conservan tokens/fuentes/movimiento. Video+audio recortados usan sourceIn correcto; generar dos veces mismo snapshot produce contenido/manifestHash idénticos. Abort mata grupo de proceso y no deja MP4 final.
+- [ ] **2. Rojo:** `pnpm --filter @workspace/hyperframes-compositions test` y `pnpm --filter @workspace/hyperframes-worker test`; fijar esos nombres de paquete y scripts.
+- [ ] **3. Implementar:** leer en ejecución skills técnicas HyperFrames aplicables, generar archivos/recursos locales, adaptar GSAP determinista y check estricto. Mantener pin único 0.8.173 inicialmente; si la instalación exige otro, validar cambio explícito y anotarlo en manifest/fixtures. Confirmar flags soportados con ayuda de ese CLI, reutilizando wrappers de Motion Studio. Materializar audio/video con trim/offset/volumen; si una operación no tiene soporte exacto en el motor, crear derivado FFmpeg interno medido antes de compilar, conservando origen. Iframe solo aloja preview HyperFrames; no se renderiza dentro de Remotion. Verificar source/origin y versión del protocolo postMessage.
+- [ ] **4. Verde:** tests; ejecutar check, snapshots y render del fixture real. Revisar PNG de los tres estilos y seek inverso; contrastar duración, dimensiones, audio y caption a 1000 ms con el documento. No declarar compatibilidad de un pack antes de esta verificación.
+- [ ] **5. Commit:** `feat: add deterministic hyperframes adapter and synchronized preview`.
+
+### Task 3: R3 · Propuestas y componentes generados versionados
+
+**Files:** Create `packages/video-project/src/proposal.ts`, tests; `apps/web/server/services/studio/{proposal-service,component-validation}.ts`, `proposal-service.test.ts`, `component-validation.test.ts`, `apps/web/server/db/schema/studio-proposals.ts`, migración; rutas `app/api/studio/projects/[id]/proposals/route.ts`, `[proposalId]/route.ts`, `[proposalId]/apply/route.ts`; `features/studio-designer/components/proposal-review.tsx`; Modify registries R1/R2 y biblioteca F5.
+
+**Interfaces:** `Proposal = {id,requestId,baseRevision,kind:'component'|'storyboard',engine,files,manifest,commands}`; componentes incluyen `ComponentManifest={schemaVersion:1,engine,entry,propsSchema,dependencies,assetIds,exposedRoles,defaultDurationMs,defaultSize}`. `propsSchema` es JSON Schema restringido a propiedades primitivas, enums, arrays/objetos sin código ejecutable. `ProposalService.stage(ownerId,projectId,input):Promise<{proposalId,diagnostics,previewUrl?}>`, `apply(ownerId,projectId,proposalId,baseRevision):Promise<ProjectRecord>`. Stage no modifica proyecto/biblioteca publicada. Runtime Remotion exporta componente React con props/contexto tipado; HyperFrames exporta fábrica HTML/timeline que el runtime de R2 conecta a su timeline principal; ambos contratos se publican en `packages/video-project/src/component-contract.ts` junto con ejemplos mínimos para asistentes.
+
+- [ ] **1. Escribir tests:** componente válido para cada motor compila, previsualiza y se aplica con nueva referencia inmutable. Error de sintaxis, dependencia/import de otro motor, ruta fuera del bundle, `Date.now()`, random sin semilla, fetch/rAF/timers de animación generan diagnóstico y dejan componente válido anterior intacto. Apply sobre revisión vieja devuelve 409 y no publica versión huérfana como activa. Props nuevas se validan antes de save.
+- [ ] **2. Rojo:** `pnpm --filter web test -- server/services/studio/proposal-service.test.ts server/services/studio/component-validation.test.ts`.
+- [ ] **3. Implementar:** stage→validar archivos/manifiesto/imports→compilar sin scripts de instalación→preview aislado→aprobación/aplicar. Lista de imports inicial: React/Remotion para Remotion; GSAP local y runtime permitido para HyperFrames. No npm install de dependencias arbitrarias propuesto por modelo. Contexto incluye tamaño, duración, estilo, marca, recursos y props; código nuevo no recibe tokens de API ni acceso al store. Las reglas estáticas detectan patrones no deterministas, y los snapshots/seek reales siguen siendo necesarios; no presentar el filtro como sandbox general de código hostil. Guardar en biblioteca es acción explícita/versionada.
+- [ ] **4. Verde:** tests y probar contador/título nuevo en cada motor, modificar una prop desde inspector, guardar versión, usarla en otro proyecto y exportar fixture. Preview y render cargan el mismo hash de módulo.
+- [ ] **5. Commit:** `feat: validate preview and version generated video components`.
+
+### Task 4: R4 · Solicitudes contextuales y generación en las conversaciones vinculadas
+
+**Files:** Create `apps/web/server/db/schema/studio-requests.ts`, migración; `server/services/studio/request-service.ts`, `request-service.integration.test.ts`, `server/prompts/studio/{feedback,component,storyboard,voice}.ts`; rutas companion/requests/status del plan general, `app/api/studio/companion/bind/route.ts` restringida a flujo local; `features/studio-designer/components/{assistant-panel,request-receipt}.tsx`, `features/studio-designer/hooks/use-companion.ts`. Modify `server/config/ai.ts` para inicializar el proveedor legado solo cuando se solicita, companion `src/{index,protocol}.ts`; añadir `api-client.ts`, `request-dispatcher.ts` y tests.
+
+**Interfaces:** `RequestService.create(ownerId,projectId,input:CompanionRequestInput):Promise<CompanionRequest>`, `transition(ownerId,id,{status,note,resultRevision?}):Promise<CompanionRequest>`, `list(ownerId,projectId):Promise<CompanionRequest[]>`. Binding se crea por companion local con autenticación de usuario/pairing local y secreto de callback acotado; IDs de sesión no se aceptan como destino libre de browser. `dispatchPending(requestId):Promise<void>` usa F6 y actualiza recibo sin degradar un estado terminal. El secreto solo lo lee companion/server y no se incrusta en código generado, URLs de recursos ni capturas.
+
+- [ ] **1. Escribir tests:** misma idempotencyKey retorna mismo recibo; enviar motor/escena/capa/segundo/revisión correctos. Un request de otra sesión/propietario no se puede completar. Callback doble y callback antes de ack conservan completed. Timeout deja delivery-unknown sin retransmisión automática; sesión pausada muestra waiting. Cambio manual entre envío y apply fuerza 409. Conector ausente en Claude se informa sin herencia ficticia. Sin OPENAI_API_KEY el estudio y companion arrancan; solo una petición al proveedor legado opcional devuelve su error de configuración.
+- [ ] **2. Rojo:** `pnpm --filter web test -- server/services/studio/request-service.integration.test.ts` y `pnpm --filter @workspace/companion test`.
+- [ ] **3. Implementar:** panel elige proveedor/vínculo, feedback/contexto y recibos; respuestas/aprobaciones en chat vinculado, no bot independiente. Persistir antes de enviar, clave idempotente y transiciones terminales. Los prompts ordenan leer revisión actual, usar única API y marcar resultado; voz entra por D3 con archivo real y captions medidos. Storyboard necesita propuesta revisable antes de aplicar; el flujo de shorts puede pedir sugerencias de rangos al mismo asistente, validadas por D5. Separar pedir voz de disponer de voz: solo importación/probe real confirma generación.
+- [ ] **4. Verde y recorridos reales:** pruebas; desde selección del editor pedir a Codex un componente y a Claude otro, previsualizar/aplicar/guardar y reutilizar. Pedir una modificación de titular y comprobar nueva revisión sin TTS. Realizar una sola toma de voz breve como validación de esta funcionalidad, usando conector ya disponible y perfil aprobado; registrar duración/proveedor/captions, sin claves nuevas ni clonación. Si no hay conector en la sesión elegida, mostrar esa limitación y comprobar upload de audio; la aceptación de generación de voz queda pendiente, no se simula.
+- [ ] **5. Commit:** `feat: connect contextual studio requests to codex and claude sessions`.
+
+### Task 5: R5 · Trabajos durables, cancelación y promoción de artefactos
+
+**Files:** Create `server/services/studio/export-service.ts`, `export-service.integration.test.ts`, `server/worker/studio-handlers.ts`, `studio-handlers.test.ts`, `features/studio-designer/components/export-panel.tsx`, rutas exports/cancel del plan general; Modify `server/services/{queue-service,job-history-service}.ts`, `server/db/schema/jobs.ts` y migración necesaria, `server/worker/{handlers,loop}.ts`, adaptadores R1/R2 y `apps/remotion-server/server/{index,render-queue}.ts` para cancelación consultable. Integrar lista de trabajos existente en vez de crear otra cola durable.
+
+**Interfaces:** `ExportService.enqueue(ownerId,projectId,{baseRevision,idempotencyKey}):Promise<ExportJob>`, `cancel(ownerId,jobId):Promise<ExportJob>`, `get(ownerId,jobId):Promise<ExportJob>`. `ExportJob` incluye `id,revision,engine,status,attemptId,progress,artifacts,error`; estados queued/running/cancelling/cancelled/completed/failed. `runStudioExport(job,{signal,onProgress}):Promise<RenderResult>` opera sobre snapshot guardado. La cola incorpora lease/heartbeat y fencing de intento para que un worker viejo no finalice un intento reclamado por otro.
+
+- [ ] **1. Escribir integración:** enqueue repetido produce un job; draft cambia después de enqueue y snapshot no cambia. Cancelación antes/durante/final de render nunca termina como completed; terminar intento viejo después del nuevo no promociona archivos. Matar worker deja lease recuperable; render puro puede repetir intento con staging nuevo. Generación pagada/entrega incierta no se repite automáticamente. Progreso se guarda por intento y el resultado final referencia revisión/hash exactos.
+- [ ] **2. Rojo:** `pnpm --filter web test -- server/services/studio/export-service.integration.test.ts server/worker/studio-handlers.test.ts`.
+- [ ] **3. Implementar:** schema/job input discriminado, snapshots/deps inmutables y workspaces por job/intento. Pipeline validar→preparar→snapshots→render→ffprobe→promover, con AbortSignal a ambos motores y cancelación persistida. Remotion HTTP devuelve render ID, permite consultar/cancelar ese intento; reinicio del servicio se detecta y el worker vuelve a ejecutar solo render puro. Recuperación con fencing DB, promoción atómica a ruta de job/revisión y sin sobrescribir MP4 de otro proyecto. Para efectos externos sin idempotencia del proveedor, estado incierto requiere reconciliación, no promesa de exactly-once.
+- [ ] **4. Verde:** integración y pruebas reales de cancelar cada motor; reiniciar worker durante render y comprobar recuperación. Editar proyecto mientras exporta: el MP4 anterior queda como exportación de su revisión, no como la actual. Revisar logs/progreso y que no quedan procesos de Chrome/FFmpeg del intento cancelado.
+- [ ] **5. Commit:** `feat: make studio exports durable cancellable and revision safe`.
+
+### Task 6: R6 · Aceptación completa y evidencia de los cuatro cruces
+
+**Files:** Create `apps/web/e2e/{studio-shorts,studio-generation,studio-exports}.spec.ts`, `scripts/verify-studio-media.ts`, `scripts/verify-studio-media.test.ts`, `scripts/studio-doctor.ts`, `docs/verification/studio-integral.md`; Modify README, root package.json (tsx para ejecutar scripts; `studio:doctor` y `studio:verify-media`) y configuración Docker/volúmenes necesaria. `artifacts/studio-qa/` ignorado para videos/capturas/logs; no añadir audio privado al repo.
+
+**Interfaces:** `verifyMedia({path,expected:{durationMs,width,height,hasAudio},fps}):Promise<{ok:boolean,diagnostics:Diagnostic[]}>`; tolerancia de duración un frame más resolución reportada por probe, declarada en informe. Doctor devuelve disponibilidad y versión de servicio/CLI/motor sin decir «autenticado» solo porque existe un binario. Exportación del proyecto incluye manifiesto de dependencias para diagnóstico/reproducción.
+
+- [ ] **1. Escribir aceptación:** Playwright comprueba guardar/reabrir, dos shorts, plantilla editable, estilo/marca independientes, conflicto conservado, propuesta aplicada y recibo real persistido. Tests de verificador rechazan MP4 sin audio esperado, truncado o dimensiones incorrectas. Usar fixtures de vídeo/voz existentes medidos; las pruebas normales no lanzan generación de pago ni mensajes nuevos.
+- [ ] **2. Rojo:** `pnpm --filter web test:e2e -- studio-shorts.spec.ts studio-generation.spec.ts studio-exports.spec.ts`; `pnpm exec tsx --test scripts/verify-studio-media.test.ts` después de crear ese test junto al script. Fallar por capacidades ausentes; un servicio requerido ausente se reporta, no se oculta como pass.
+- [ ] **3. Completar recorridos:** una sesión real de Codex genera un componente y Claude otra versión/componente; ambos se editan por inspector y conservan versiones. Renderizar proyecto Remotion y proyecto HyperFrames separados, ambos con clip, overlay, captions, voz y música/offsets. Revisar capturas a inicio, fin, límites de escena y segundos con texto; seek inverso debe reproducir el mismo estado. Importar demo de noticias con sus tres estilos y comprobar que su cierre hablado sigue aprobado sin regenerarlo por un cambio visual.
+- [ ] **4. Verificar y documentar:** tests de paquetes, `pnpm --filter web typecheck`, `pnpm --filter web build`, lint de archivos modificados y tests E2E. Ejecutar doctor y verificador sobre ambos MP4; revisar audio escuchándolo y snapshots visualmente. El informe relaciona aceptación 1–10 del diseño con pruebas/evidencias, versiones y cualquier limitación real. Reprobar flujos existentes de subtítulos/clip para no romper Video Wizard. No ampliar testing después si todo pasa y no hay cambios/incertidumbre nuevos.
+- [ ] **5. Commit:** `test: verify integrated studio workflows and document local operation`; solo tests/docs/scripts/config, archivos de producto pendientes van en su tarea correspondiente. Entregar enlaces de app, exportaciones y evidencias; si falta un motor/asistente, el objetivo integral sigue incompleto.
+
+## Salida del bloque
+
+La aplicación produce videos finales comprobados con los dos motores elegidos por separado, permite generar/reutilizar componentes desde ambos asistentes y conserva recursos/revisiones entre herramientas. El soporte remoto multiusuario, publicación social, estadísticas y conversión automática de motores siguen fuera del alcance aprobado.
