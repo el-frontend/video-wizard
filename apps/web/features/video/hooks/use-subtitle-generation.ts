@@ -3,16 +3,11 @@
 import { useState } from 'react';
 import type { CaptionTemplate } from '@/remotion/types';
 import type { AspectRatio } from '../lib/aspect-ratios';
+import { isSourceDurationMs, type LegacySubtitleMs } from '../lib/legacy-timing';
 import type { BrandKit } from '../types/brand-kit';
 import { pollJobUntilDone } from '../lib/poll-job';
 import { getPythonEngineUrl, validateVideoFile } from '../lib/utils';
 import { isYouTubeUrl } from '../lib/youtube';
-
-export interface SubtitleSegment {
-  start: number; // milliseconds
-  end: number; // milliseconds
-  text: string;
-}
 
 export type SubtitleGenerationStep =
   | 'idle'
@@ -32,7 +27,8 @@ export interface SubtitleGenerationState {
   aspectRatio: AspectRatio;
   currentStep: SubtitleGenerationStep;
   uploadedPath: string;
-  subtitles: SubtitleSegment[];
+  sourceDurationMs: number | null;
+  subtitles: LegacySubtitleMs[];
   language: string;
   selectedTemplate: CaptionTemplate;
   renderedVideoUrl: string;
@@ -58,6 +54,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
     aspectRatio: '9:16' as AspectRatio,
     currentStep: 'idle',
     uploadedPath: '',
+    sourceDurationMs: null,
     subtitles: [],
     language: 'auto',
     selectedTemplate: 'viral',
@@ -103,7 +100,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
     setState((prev) => ({ ...prev, selectedTemplate: template }));
   };
 
-  const updateSubtitles = (subtitles: SubtitleSegment[]) => {
+  const updateSubtitles = (subtitles: LegacySubtitleMs[]) => {
     setState((prev) => ({ ...prev, subtitles }));
   };
 
@@ -119,6 +116,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       aspectRatio: '9:16' as AspectRatio,
       currentStep: 'idle',
       uploadedPath: '',
+      sourceDurationMs: null,
       subtitles: [],
       language: 'auto',
       selectedTemplate: 'viral',
@@ -178,6 +176,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
 
       updateState({
         uploadedPath: uploadData.path,
+        sourceDurationMs: null,
         progress: `Video ready: ${uploadData.filename}`,
       });
 
@@ -222,7 +221,8 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       }
 
       const result = finished.resultData as {
-        subtitles?: SubtitleSegment[];
+        subtitles?: LegacySubtitleMs[];
+        sourceDurationMs?: number;
         language?: string;
         totalSegments?: number;
       } | null;
@@ -230,9 +230,13 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       if (!result?.subtitles) {
         throw new Error('Transcription finished but no subtitles were returned');
       }
+      if (!isSourceDurationMs(result.sourceDurationMs)) {
+        throw new Error('Transcription finished but no source video duration was returned');
+      }
 
       updateState({
         subtitles: result.subtitles,
+        sourceDurationMs: result.sourceDurationMs,
         language: result.language ?? state.language,
         currentStep: 'editing',
         progress: `Generated ${result.totalSegments ?? result.subtitles.length} subtitle segments`,
@@ -256,9 +260,9 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
    * `jobs` row via `GET /api/jobs/:id`.
    */
   const renderVideo = async (brandKit?: BrandKit) => {
-    if (!state.uploadedPath || state.subtitles.length === 0) {
+    if (!state.uploadedPath || state.sourceDurationMs === null) {
       updateState({
-        error: 'No video or subtitles available',
+        error: 'No source video available',
         currentStep: 'error',
       });
       return;
@@ -276,6 +280,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPath: state.uploadedPath,
+          sourceDurationMs: state.sourceDurationMs,
           subtitles: state.subtitles,
           template: state.selectedTemplate,
           language: state.language,

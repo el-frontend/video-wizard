@@ -1,7 +1,9 @@
-import type { CaptionTemplate } from '@/remotion/types';
 import { clipIntegrationService } from '@/server/services/clip-integration-service';
 import { jobHistoryService } from '@/server/services/job-history-service';
-import { subtitleGenerationService } from '@/server/services/subtitle-generation-service';
+import {
+  subtitleGenerationService,
+  type RenderSubtitlesInput,
+} from '@/server/services/subtitle-generation-service';
 
 import type { Job, JobType } from '@/server/services/job-history-service';
 import type { ClipRenderRequest } from '@/server/types/clip-render';
@@ -23,15 +25,6 @@ class HandlerNotImplementedError extends Error {
   }
 }
 
-interface RenderInput {
-  videoPath: string;
-  subtitles: Array<{ start: number; end: number; text: string }>;
-  template: CaptionTemplate;
-  language: string;
-  aspectRatio: string;
-  brandKit?: unknown;
-}
-
 /**
  * Render handler — the headline use case for the queue. Renders are
  * minutes-long and absolutely should not block API requests.
@@ -40,21 +33,13 @@ interface RenderInput {
  * /jobs page progress bar moves while the render runs.
  */
 const renderHandler: JobHandler = async (job) => {
-  const input = job.inputData as RenderInput | null;
+  const input = job.inputData as RenderSubtitlesInput | null;
   if (!input || !input.videoPath || !Array.isArray(input.subtitles)) {
     throw new Error('Invalid render input: missing videoPath or subtitles');
   }
 
-  return await subtitleGenerationService.renderWithSubtitles(
-    {
-      videoPath: input.videoPath,
-      subtitles: input.subtitles,
-      template: input.template,
-      language: input.language,
-      aspectRatio: input.aspectRatio,
-      brandKit: input.brandKit as never,
-    },
-    (percent) => jobHistoryService.updateProgress(job.id, percent)
+  return await subtitleGenerationService.renderWithSubtitles(input, (percent) =>
+    jobHistoryService.updateProgress(job.id, percent)
   );
 };
 

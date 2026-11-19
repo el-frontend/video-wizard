@@ -12,7 +12,7 @@ import { queueService } from '@/server/services/queue-service';
  * the client polls `GET /api/jobs/:id` to pick up the result.
  *
  * Result shape on completion (in `resultData`):
- *   { subtitles, language, totalSegments, videoDuration }
+ *   { subtitles, language, totalSegments, sourceDurationMs, videoDuration }
  *
  * Request body:
  * - videoPath: string - Path to the uploaded video file

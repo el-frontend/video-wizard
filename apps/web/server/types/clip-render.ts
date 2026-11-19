@@ -27,6 +27,7 @@ export const ClipRenderResponseSchema = z.object({
   output_url: z.string().optional(),
   crop_mode: z.string().optional(),
   duration: z.number().optional(),
+  sourceDurationMs: z.number().positive().nullish(),
   crop_dimensions: z
     .object({
       width: z.number(),

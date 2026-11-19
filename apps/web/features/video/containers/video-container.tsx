@@ -157,6 +157,7 @@ export function VideoContainer() {
         const clipData = finishedClip.resultData as {
           output_url?: string;
           output_path?: string;
+          sourceDurationMs?: number | null;
         } | null;
 
         if (!clipData?.output_url) {
@@ -170,6 +171,11 @@ export function VideoContainer() {
             start: segment.start - clip.start_time,
             end: segment.end - clip.start_time,
             text: segment.text,
+            words: segment.words?.map((word) => ({
+              word: word.word,
+              start: word.start - clip.start_time,
+              end: word.end - clip.start_time,
+            })),
           }));
 
         console.log(`Clip ${i + 1} cropped successfully. Subtitles: ${clipSubtitles.length}`);
@@ -183,6 +189,7 @@ export function VideoContainer() {
                   ...c,
                   videoUrl: clipData.output_url, // Cropped video without subtitles
                   clipPath: clipData.output_path,
+                  sourceDurationMs: clipData.sourceDurationMs ?? undefined,
                   subtitles: clipSubtitles,
                   language: detectedLanguage, // Ensure language is set
                   isLoading: false,
@@ -264,7 +271,7 @@ export function VideoContainer() {
    * This is when we actually call the Remotion server to create the final MP4
    */
   const handleRenderFinal = async (clip: GeneratedClip) => {
-    if (!clip.clipPath || !clip.subtitles || clip.subtitles.length === 0) {
+    if (!clip.clipPath || !clip.subtitles) {
       toast.error('Cannot render: missing clip or subtitles');
       return;
     }
@@ -277,21 +284,14 @@ export function VideoContainer() {
     try {
       console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
 
-      // Remotion expects subtitles in SECONDS, not milliseconds
-      // Keep subtitles in seconds format (they're already in seconds from the processing engine)
-      const formattedSubtitles = clip.subtitles.map((sub) => ({
-        start: sub.start, // Keep in seconds
-        end: sub.end, // Keep in seconds
-        text: sub.text,
-      }));
-
       // Call Remotion server to render final video
       const response = await fetch('/api/render-with-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clipPath: clip.clipPath,
-          subtitles: formattedSubtitles,
+          subtitles: clip.subtitles,
+          sourceDurationMs: clip.sourceDurationMs,
           template: clip.template || 'viral',
           language: clip.language || 'en',
           aspectRatio: clip.aspectRatio || aspectRatio,
@@ -436,6 +436,7 @@ export function VideoContainer() {
                 summary={clip.summary}
                 viralScore={clip.viralScore}
                 duration={clip.duration}
+                sourceDurationMs={clip.sourceDurationMs}
                 videoUrl={clip.videoUrl}
                 renderedVideoUrl={clip.renderedVideoUrl}
                 subtitles={clip.subtitles}
@@ -455,20 +456,23 @@ export function VideoContainer() {
       )}
 
       {/* Edit Modal */}
-      {editingClip && editingClip.videoUrl && editingClip.subtitles && (
-        <ClipEditModal
-          open={!!editingClip}
-          onClose={() => setEditingClip(null)}
-          clipIndex={editingClip.index}
-          clipSummary={editingClip.summary}
-          videoUrl={editingClip.videoUrl}
-          subtitles={editingClip.subtitles}
-          template={editingClip.template || 'viral'}
-          aspectRatio={editingClip.aspectRatio || aspectRatio}
-          brandKit={brandKit ?? undefined}
-          onSave={handleSaveEdit}
-        />
-      )}
+      {editingClip?.videoUrl &&
+        editingClip.subtitles &&
+        editingClip.sourceDurationMs !== undefined && (
+          <ClipEditModal
+            open={!!editingClip}
+            onClose={() => setEditingClip(null)}
+            clipIndex={editingClip.index}
+            clipSummary={editingClip.summary}
+            videoUrl={editingClip.videoUrl}
+            sourceDurationMs={editingClip.sourceDurationMs}
+            subtitles={editingClip.subtitles}
+            template={editingClip.template || 'viral'}
+            aspectRatio={editingClip.aspectRatio || aspectRatio}
+            brandKit={brandKit ?? undefined}
+            onSave={handleSaveEdit}
+          />
+        )}
 
       {currentStep === 'idle' && <VideoHowItWorks />}
     </div>

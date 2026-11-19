@@ -278,7 +278,9 @@ export function cleanFillerWordsFromText(
       // Remove leading/trailing punctuation artifacts
       cleanedText = cleanedText.replace(/^[,.\s]+|[,.\s]+$/g, '').trim();
 
-      return { ...subtitle, text: cleanedText };
+      return cleanedText === subtitle.text
+        ? subtitle
+        : { ...subtitle, text: cleanedText, words: undefined };
     })
     .filter((subtitle) => subtitle.text.length > 0);
 }

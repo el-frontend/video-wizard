@@ -17,6 +17,7 @@ interface ClipCardProps {
   summary: string;
   viralScore: number;
   duration: number;
+  sourceDurationMs?: number;
   videoUrl?: string; // Cropped video (without subtitles)
   renderedVideoUrl?: string; // Final rendered video from Remotion server
   subtitles?: SubtitleSegment[];
@@ -45,6 +46,7 @@ export function ClipCard({
   summary,
   viralScore,
   duration,
+  sourceDurationMs,
   videoUrl,
   renderedVideoUrl,
   subtitles,
@@ -114,10 +116,11 @@ export function ClipCard({
                 Cropping video with face tracking
               </p>
             </div>
-          ) : videoUrl && hasSubtitles ? (
+          ) : videoUrl && subtitles && sourceDurationMs !== undefined ? (
             /* Show Remotion Player for real-time preview */
             <RemotionPreview
               videoUrl={videoUrl}
+              sourceDurationMs={sourceDurationMs}
               subtitles={subtitles}
               template={template}
               language={language}
@@ -189,7 +192,7 @@ export function ClipCard({
         <div className="flex gap-2 w-full">
           <Button
             onClick={onEdit}
-            disabled={isLoading || !videoUrl || isRendering}
+            disabled={isLoading || !videoUrl || sourceDurationMs === undefined || isRendering}
             className="flex-1"
             variant="outline"
           >
@@ -199,7 +202,7 @@ export function ClipCard({
 
           <Button
             onClick={onRenderFinal}
-            disabled={isLoading || !videoUrl || !hasSubtitles || isRendering}
+            disabled={isLoading || !videoUrl || isRendering}
             className="flex-1"
             variant="default"
           >

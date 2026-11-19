@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isSourceDurationMs } from '@/features/video/lib/legacy-timing';
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
 import { jobHistoryService } from '@/server/services/job-history-service';
 import { queueService } from '@/server/services/queue-service';
@@ -14,7 +15,8 @@ import { queueService } from '@/server/services/queue-service';
  *
  * Request body:
  * - videoPath: string
- * - subtitles: Array<{start: number, end: number, text: string}>
+ * - subtitles: Subtitle segments and words in milliseconds
+ * - sourceDurationMs?: Measured source duration in milliseconds
  * - template: CaptionTemplate (default: 'viral')
  * - language: string (default: 'en')
  * - aspectRatio?: '9:16' | '1:1' | '4:5' | '16:9' (default: '9:16')
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
   const {
     videoPath,
     subtitles,
+    sourceDurationMs,
     template = 'viral',
     language = 'en',
     aspectRatio = '9:16',
@@ -52,12 +55,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (sourceDurationMs !== undefined && !isSourceDurationMs(sourceDurationMs)) {
+    return NextResponse.json(
+      { success: false, message: 'sourceDurationMs must be positive' },
+      { status: 400 }
+    );
+  }
+
   const job = await jobHistoryService.create({
     userId: user.id,
     type: 'render',
     inputData: {
       videoPath,
       subtitles,
+      sourceDurationMs,
       template,
       language,
       aspectRatio,

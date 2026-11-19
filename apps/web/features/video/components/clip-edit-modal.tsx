@@ -24,6 +24,7 @@ interface ClipEditModalProps {
   clipIndex: number;
   clipSummary: string;
   videoUrl: string;
+  sourceDurationMs: number;
   subtitles: SubtitleSegment[];
   template: SubtitleTemplate;
   aspectRatio?: AspectRatio;
@@ -46,6 +47,7 @@ export function ClipEditModal({
   clipIndex,
   clipSummary,
   videoUrl,
+  sourceDurationMs,
   subtitles,
   template: initialTemplate,
   aspectRatio = '9:16',
@@ -74,7 +76,7 @@ export function ClipEditModal({
   // Handle subtitle text edit
   const handleSubtitleEdit = (index: number, newText: string) => {
     const updated = [...editedSubtitles];
-    updated[index] = { ...updated[index], text: newText };
+    updated[index] = { ...updated[index], text: newText, words: undefined };
     setEditedSubtitles(updated);
   };
 
@@ -107,6 +109,7 @@ export function ClipEditModal({
             >
               <RemotionPreview
                 videoUrl={videoUrl}
+                sourceDurationMs={sourceDurationMs}
                 subtitles={editedSubtitles}
                 template={selectedTemplate}
                 aspectRatio={aspectRatio}

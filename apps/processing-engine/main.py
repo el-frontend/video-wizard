@@ -18,6 +18,7 @@ from analyzer import VideoAnalyzer
 from renderer import VideoRenderer
 from audio_service import get_audio_service
 from smart_clipper import SmartClipper
+from video_metadata import probe_video_duration_ms
 from config import (
     WHISPER_MODEL,
     USE_OPENAI_API,
@@ -99,6 +100,10 @@ class TranscribeResponse(BaseModel):
     language: str  # Detected language code (e.g., "en", "es")
 
 
+class VideoMetadataRequest(BaseModel):
+    video_path: str
+
+
 class RenderClipRequest(BaseModel):
     video_path: str
     start_time: float
@@ -114,6 +119,7 @@ class RenderClipResponse(BaseModel):
     output_url: Optional[str] = None  # HTTP URL to access the file
     crop_mode: Optional[str] = None
     duration: Optional[float] = None
+    sourceDurationMs: Optional[int] = None
     crop_dimensions: Optional[dict] = None
     file_size: Optional[int] = None
     start_time: Optional[float] = None
@@ -139,6 +145,16 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.post("/video-metadata")
+def video_metadata(request: VideoMetadataRequest):
+    try:
+        return {"sourceDurationMs": probe_video_duration_ms(request.video_path)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/upload")
@@ -414,6 +430,8 @@ async def render_clip(request: RenderClipRequest):
             # Convert local path to HTTP URL
             output_filename = Path(result["output_path"]).name
             result["output_url"] = f"/output/{output_filename}"
+            if not request.output_path:
+                result["sourceDurationMs"] = probe_video_duration_ms(result["output_path"])
         
         logger.info(f"Clip rendering complete: {output_path}")
         

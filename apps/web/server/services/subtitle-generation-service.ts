@@ -4,21 +4,20 @@
  * Handles video transcription and subtitle generation without content analysis
  */
 
-import type { CaptionTemplate } from '@/remotion/types';
-
-export interface SubtitleSegment {
-  start: number; // milliseconds
-  end: number; // milliseconds
-  text: string;
-}
+import {
+  durationFrames,
+  fromWhisperSeconds,
+  isSourceDurationMs,
+  legacyMsToSeconds,
+  type LegacySubtitleMs,
+  type SubtitleSegmentSeconds,
+  type WhisperSegment,
+} from '@/features/video/lib/legacy-timing';
+import { getVideoSourceUrl } from '@/features/video/lib/utils';
+import type { BrandKit, CaptionTemplate, SubtitleSegment } from '@workspace/remotion-compositions';
 
 export interface TranscriptionResult {
-  segments: Array<{
-    start: number;
-    end: number;
-    text: string;
-  }>;
-  text: string;
+  segments: WhisperSegment[];
   language: string;
   segment_count: number;
 }
@@ -29,30 +28,21 @@ export interface SubtitleGenerationInput {
 }
 
 export interface SubtitleGenerationResult {
-  subtitles: SubtitleSegment[];
+  subtitles: LegacySubtitleMs[];
   language: string;
   totalSegments: number;
-  videoDuration: number; // milliseconds
-}
-
-export interface BrandKitInput {
-  logoUrl?: string;
-  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  logoScale?: number;
-  primaryColor?: string;
-  secondaryColor?: string;
-  textColor?: string;
-  backgroundColor?: string;
-  fontFamily?: string;
+  sourceDurationMs: number;
+  videoDuration: number; // Compatibility field, in milliseconds
 }
 
 export interface RenderSubtitlesInput {
   videoPath: string;
-  subtitles: SubtitleSegment[];
+  subtitles: LegacySubtitleMs[];
+  sourceDurationMs?: number;
   template: CaptionTemplate;
   language: string;
   aspectRatio?: string;
-  brandKit?: BrandKitInput;
+  brandKit?: BrandKit;
 }
 
 export interface RenderSubtitlesResult {
@@ -64,8 +54,6 @@ export class SubtitleGenerationService {
   /** URL the server uses to call the Python engine (in-network). */
   private pythonEngineUrl: string;
   private remotionServerUrl: string;
-  /** URL embedded in payloads sent to Remotion (so its renderer can fetch). */
-  private pythonEngineInternalUrl: string;
 
   constructor() {
     // Prefer the in-network address when running in Docker, fall back to
@@ -75,8 +63,6 @@ export class SubtitleGenerationService {
       process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
       'http://localhost:8000';
     this.remotionServerUrl = process.env.REMOTION_SERVER_URL || 'http://localhost:3001';
-    this.pythonEngineInternalUrl =
-      process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://processing-engine:8000';
   }
 
   /**
@@ -84,6 +70,7 @@ export class SubtitleGenerationService {
    */
   async generateSubtitles(input: SubtitleGenerationInput): Promise<SubtitleGenerationResult> {
     try {
+      const sourceDurationMs = await this.probeSourceDurationMs(input.videoPath);
       // Call Python processing engine to transcribe video
       const response = await fetch(`${this.pythonEngineUrl}/transcribe`, {
         method: 'POST',
@@ -104,27 +91,36 @@ export class SubtitleGenerationService {
 
       const transcriptionData: TranscriptionResult = await response.json();
 
-      // Transform segments to milliseconds format
-      const subtitles: SubtitleSegment[] = transcriptionData.segments.map((segment) => ({
-        start: Math.round(segment.start * 1000),
-        end: Math.round(segment.end * 1000),
-        text: segment.text.trim(),
-      }));
-
-      // Calculate video duration from last subtitle
-      const lastSubtitle = subtitles[subtitles.length - 1];
-      const videoDuration = lastSubtitle ? lastSubtitle.end : 0;
-
       return {
-        subtitles,
+        subtitles: fromWhisperSeconds(transcriptionData.segments),
         language: transcriptionData.language || 'en',
         totalSegments: transcriptionData.segment_count,
-        videoDuration,
+        sourceDurationMs,
+        videoDuration: sourceDurationMs,
       };
     } catch (error) {
       console.error('Error generating subtitles:', error);
       throw error;
     }
+  }
+
+  private async probeSourceDurationMs(videoPath: string): Promise<number> {
+    const response = await fetch(`${this.pythonEngineUrl}/video-metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_path: videoPath }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to measure source video duration');
+    }
+
+    const { sourceDurationMs } = await response.json();
+    if (!isSourceDurationMs(sourceDurationMs)) {
+      throw new Error('Invalid source video duration');
+    }
+    return sourceDurationMs;
   }
 
   /**
@@ -134,33 +130,38 @@ export class SubtitleGenerationService {
    * upstream Remotion server reports progress. The worker uses it to keep
    * the user-facing job's progress bar moving while the render runs.
    */
-  async renderWithSubtitles(
+  renderWithSubtitles(
     input: RenderSubtitlesInput,
     onProgress?: (percent: number) => void | Promise<void>
   ): Promise<RenderSubtitlesResult> {
+    return this.render({ ...input, subtitles: legacyMsToSeconds(input.subtitles) }, onProgress);
+  }
+
+  renderClipWithSubtitles(
+    input: Omit<RenderSubtitlesInput, 'subtitles'> & { subtitles: SubtitleSegmentSeconds[] }
+  ): Promise<RenderSubtitlesResult> {
+    const subtitles = input.subtitles.map((subtitle, index) => ({ ...subtitle, id: index + 1 }));
+    return this.render({ ...input, subtitles });
+  }
+
+  private async render(
+    input: Omit<RenderSubtitlesInput, 'subtitles'> & { subtitles: SubtitleSegment[] },
+    onProgress?: (percent: number) => void | Promise<void>
+  ): Promise<RenderSubtitlesResult> {
     try {
-      // Transform subtitles to Remotion format
-      const formattedSubtitles = input.subtitles.map((sub, index) => ({
-        id: index + 1,
-        start: sub.start / 1000, // Convert to seconds
-        end: sub.end / 1000, // Convert to seconds
-        text: sub.text,
-      }));
-
-      // Calculate duration in frames
-      const lastSubtitle = formattedSubtitles[formattedSubtitles.length - 1];
-      const clipDurationMs = lastSubtitle ? lastSubtitle.end * 1000 : 10000;
-      const fps = 30;
-      const durationInFrames = Math.ceil((clipDurationMs / 1000) * fps);
-
-      // Use internal URL for container-to-container communication
-      const vUrl = new URL(`${this.pythonEngineInternalUrl}/${input.videoPath}`).toString();
+      const videoUrl = getVideoSourceUrl(this.pythonEngineUrl, input.videoPath);
+      const sourceDurationMs =
+        input.sourceDurationMs ?? (await this.probeSourceDurationMs(input.videoPath));
+      if (!isSourceDurationMs(sourceDurationMs)) {
+        throw new Error('Invalid source video duration');
+      }
+      const durationInFrames = durationFrames(sourceDurationMs, 30);
 
       const aspectRatio = input.aspectRatio || '9:16';
 
       console.log('Creating render job:', {
-        vUrl,
-        subtitleCount: formattedSubtitles.length,
+        videoUrl,
+        subtitleCount: input.subtitles.length,
         template: input.template,
         language: input.language,
         aspectRatio,
@@ -176,8 +177,8 @@ export class SubtitleGenerationService {
         body: JSON.stringify({
           compositionId: 'VideoWithSubtitles',
           inputProps: {
-            videoUrl: vUrl,
-            subtitles: formattedSubtitles,
+            videoUrl,
+            subtitles: input.subtitles,
             template: input.template,
             language: input.language,
             aspectRatio,
@@ -198,11 +199,11 @@ export class SubtitleGenerationService {
       console.log('Render job created:', jobId);
 
       // Poll for job completion
-      const videoUrl = await this.pollRenderJob(jobId, onProgress);
+      const renderedVideoUrl = await this.pollRenderJob(jobId, onProgress);
 
       return {
         jobId,
-        videoUrl,
+        videoUrl: renderedVideoUrl,
       };
     } catch (error) {
       console.error('Error rendering video with subtitles:', error);

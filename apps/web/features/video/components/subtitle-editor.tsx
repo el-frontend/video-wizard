@@ -6,8 +6,8 @@ import { Input } from '@workspace/ui/components/input';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { Download, FileText } from 'lucide-react';
 import { useState } from 'react';
-import type { SubtitleSegment } from '../hooks/use-subtitle-generation';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
+import type { SubtitleSegment } from '../types';
 import { SilenceFillerPanel } from './silence-filler-panel';
 
 interface SubtitleEditorProps {
@@ -22,12 +22,13 @@ interface SubtitleEditorProps {
  * @returns Formatted time string (e.g., "00:01.50", "01:05.37")
  */
 function formatTime(seconds: number): string {
-  const totalSeconds = Math.floor(seconds);
+  const totalCentiseconds = Math.round(seconds * 100);
+  const totalSeconds = Math.floor(totalCentiseconds / 100);
   const minutes = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
-  const ms = Math.floor((seconds % 1) * 100);
+  const centiseconds = totalCentiseconds % 100;
 
-  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}`;
 }
 
 export function SubtitleEditor({
@@ -39,7 +40,7 @@ export function SubtitleEditor({
 
   const handleTextChange = (index: number, newText: string) => {
     const updated = [...subtitles];
-    updated[index] = { ...updated[index], text: newText };
+    updated[index] = { ...updated[index], text: newText, words: undefined };
     onSubtitlesChange(updated);
   };
 
@@ -52,10 +53,13 @@ export function SubtitleEditor({
     if (index >= subtitles.length - 1) return;
 
     const updated = [...subtitles];
+    const current = updated[index];
+    const next = updated[index + 1];
     updated[index] = {
-      ...updated[index],
-      end: updated[index + 1].end,
-      text: `${updated[index].text} ${updated[index + 1].text}`,
+      ...current,
+      end: next.end,
+      text: `${current.text} ${next.text}`,
+      words: current.words && next.words ? [...current.words, ...next.words] : undefined,
     };
     updated.splice(index + 1, 1);
     onSubtitlesChange(updated);
@@ -99,6 +103,7 @@ export function SubtitleEditor({
         <SilenceFillerPanel
           subtitles={subtitles}
           onSubtitlesChange={onSubtitlesChange}
+          timeScale={1000}
           disabled={disabled}
         />
       )}
