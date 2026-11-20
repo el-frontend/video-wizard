@@ -109,7 +109,7 @@ export const makeRenderQueue = ({
 
   // Bounded concurrent scheduler: up to MAX_CONCURRENT_RENDERS jobs run at
   // once; the rest wait in `pending` until a slot frees up.
-  const pending: string[] = [];
+  const pending: { id: string; run: () => Promise<void> }[] = [];
   let active = 0;
 
   /**
@@ -118,14 +118,15 @@ export const makeRenderQueue = ({
    */
   const pump = () => {
     while (active < MAX_CONCURRENT_RENDERS && pending.length > 0) {
-      const jobId = pending.shift() as string;
+      const task = pending.shift()!;
       active++;
       // processRender records its own failures on the job; the catch is a
       // safety net (e.g. a job cancelled out from under us). Either way, free
       // the slot and pump the next job.
-      void processRender(jobId)
+      void task
+        .run()
         .catch((error) => {
-          console.error(`[${jobId}] Unexpected render error:`, error);
+          console.error(`[${task.id}] Unexpected render error:`, error);
         })
         .finally(() => {
           active--;
@@ -161,6 +162,7 @@ export const makeRenderQueue = ({
 
       // Select the composition with input props
       const composition = await selectComposition({
+        browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE,
         serveUrl,
         id: compositionId,
         inputProps,
@@ -170,6 +172,7 @@ export const makeRenderQueue = ({
 
       // Render the video
       await renderMedia({
+        browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE,
         cancelSignal,
         serveUrl,
         composition,
@@ -226,7 +229,7 @@ export const makeRenderQueue = ({
       data,
       cancel: () => {
         // Drop it from the waiting list so pump() never picks up a cancelled job.
-        const index = pending.indexOf(jobId);
+        const index = pending.findIndex((task) => task.id === jobId);
         if (index !== -1) {
           pending.splice(index, 1);
         }
@@ -234,8 +237,7 @@ export const makeRenderQueue = ({
       },
     });
 
-    pending.push(jobId);
-    pump();
+    schedule(jobId, () => processRender(jobId));
   };
 
   /**
@@ -250,7 +252,13 @@ export const makeRenderQueue = ({
     return jobId;
   }
 
+  function schedule(id: string, run: () => Promise<void>) {
+    pending.push({ id, run });
+    pump();
+  }
+
   return {
+    schedule,
     createJob,
     jobs,
   };

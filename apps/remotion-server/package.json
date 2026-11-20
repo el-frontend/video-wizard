@@ -5,21 +5,33 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch server/index.ts",
-    "start": "node dist/index.js",
+    "start": "tsx server/index.ts",
     "build": "tsc",
-    "remotion:studio": "remotion studio",
-    "remotion:render": "remotion render"
+    "remotion:studio": "remotion studio ../../packages/remotion-compositions/src/entry.ts",
+    "remotion:render": "remotion render ../../packages/remotion-compositions/src/entry.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@remotion/bundler": "^4.0.405",
-    "@remotion/renderer": "^4.0.405",
+    "@remotion/bundler": "4.0.405",
+    "@remotion/renderer": "4.0.405",
     "express": "^4.21.2",
-    "@workspace/remotion-compositions": "workspace:*"
+    "@workspace/remotion-compositions": "workspace:*",
+    "@workspace/render-contract": "workspace:*",
+    "@workspace/video-project": "workspace:*",
+    "@remotion/player": "4.0.405",
+    "remotion": "4.0.405",
+    "esbuild": "0.27.2",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tsx": "^4.19.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^20.17.17",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.12",
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
   }
 }

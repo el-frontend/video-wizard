@@ -122,7 +122,7 @@ async function main() {
   // Cold-start cost: bundle (mirrors index.ts bundling on server startup).
   let t = now();
   const serveUrl = await bundle({
-    entryPoint: path.resolve(__dirname, '../../packages/remotion-compositions/src/index.ts'),
+    entryPoint: path.resolve(__dirname, '../../packages/remotion-compositions/src/entry.ts'),
   });
   const bundleSec = ms(now() - t) / 1000;
   console.log(`Bundle (cold-start, once per server boot): ${bundleSec.toFixed(1)}s`);

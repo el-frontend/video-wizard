@@ -248,7 +248,7 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
 
     expect(await runSeed()).toContain('3 estilos, 9 componentes de subtítulos, 1 marca');
     const styles = await library.list(owner, { kind: 'style' });
-    expect(styles.map(({ id }) => id)).toEqual([
+    expect(styles.filter((style) => style.version === 1).map(({ id }) => id)).toEqual([
       'noticias-elfrontend-web',
       'noticias-liquid-glass',
       'noticias-modern-editorial',
@@ -284,7 +284,12 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
         typography: { display: { fontFamily: 'Bricolage Grotesque' } },
       },
     });
-    const glass = styles[1];
+    const supported = await library.list(owner, { kind: 'style', engine: 'remotion' });
+    expect(supported).toHaveLength(3);
+    expect(supported.every((style) => style.version === 2)).toBe(true);
+    const glass = styles.find(
+      (style) => style.id === 'noticias-liquid-glass' && style.version === 1
+    );
     if (glass?.kind !== 'style') throw new Error('Missing style fixture.');
     expect(glass.engines).toEqual([]);
     expect(glass.tokens).toMatchObject({
@@ -308,7 +313,7 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
 
     expect(await runSeed()).toContain('3 estilos, 9 componentes de subtítulos, 1 marca');
     expect(await library.list(owner, { kind: 'style' })).toEqual(styles);
-    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(13);
+    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(16);
     expect(await fixture.db.$count(studioAssets, eq(studioAssets.ownerId, owner))).toBe(4);
 
     const newOwner = await fixture.createOwner();
@@ -329,10 +334,10 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
     });
     const updated = await library.publish(owner, {
       ...glass,
-      version: 2,
+      version: 3,
       tokens: { colors: { background: '#FFFFFF' } },
     });
-    expect(updated.version).toBe(2);
+    expect(updated.version).toBe(3);
     const reopened = await new ProjectService(fixture.db).get(owner, document.id);
     expect(reopened).toEqual(saved);
     expect(

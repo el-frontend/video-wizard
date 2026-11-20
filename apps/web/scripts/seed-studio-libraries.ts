@@ -55,7 +55,9 @@ async function main() {
     const assetIds = fonts.map(({ assetId }) => assetId);
 
     for (const id of stylePackIds) {
-      await library.publish(owner.id, { ...(await loadStylePack(id)), assetIds, fonts });
+      const archived = { ...(await loadStylePack(id)), assetIds, fonts };
+      await library.publish(owner.id, archived);
+      await library.publish(owner.id, { ...archived, version: 2, engines: ['remotion'] });
     }
 
     for (const preset of RemotionCaptionPresetSchema.options) {

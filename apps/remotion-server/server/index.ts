@@ -3,13 +3,14 @@ import { ensureBrowser } from '@remotion/renderer';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { installStudioRoutes } from './studio-http.js';
 import { makeRenderQueue } from './render-queue.js';
 
-const { 
-  PORT = 3001, 
-  REMOTION_SERVE_URL, 
+const {
+  PORT = 3001,
+  REMOTION_SERVE_URL,
   RENDERS_DIR = './renders',
-  PUBLIC_URL = `http://localhost:${PORT}`
+  PUBLIC_URL = `http://localhost:${PORT}`,
 } = process.env;
 
 /**
@@ -34,12 +35,21 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
 
   // Serve rendered videos
   app.use('/renders', express.static(rendersDir));
-  app.use(express.json());
+  app.use(express.json({ limit: '8mb' }));
+  let studio: ReturnType<typeof installStudioRoutes> | undefined;
+  if (process.env.STUDIO_RENDER_SECRET) {
+    studio = installStudioRoutes(app, {
+      schedule: queue.schedule,
+      secret: process.env.STUDIO_RENDER_SECRET,
+      editorOrigin: process.env.STUDIO_EDITOR_ORIGIN || 'http://localhost:3000',
+      previewOrigin: process.env.STUDIO_PREVIEW_ORIGIN || PUBLIC_URL,
+    });
+  }
 
   /**
    * POST /renders
    * Create a new render job
-   * 
+   *
    * Body:
    * {
    *   "compositionId": "VideoWithSubtitles",
@@ -55,6 +65,10 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
     try {
       const { compositionId, inputProps } = req.body;
 
+      if (compositionId === 'StudioProject') {
+        res.status(404).end();
+        return;
+      }
       if (!compositionId || typeof compositionId !== 'string') {
         res.status(400).json({ message: 'compositionId is required and must be a string' });
         return;
@@ -137,7 +151,7 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  return app;
+  return { app, closeStudio: () => studio?.close() };
 }
 
 /**
@@ -149,7 +163,7 @@ async function main() {
 
   // Ensure browser is installed
   console.info('📦 Ensuring browser is installed...');
-  await ensureBrowser();
+  await ensureBrowser({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE });
 
   // Bundle Remotion compositions or use pre-bundled URL
   let remotionBundleUrl: string;
@@ -160,7 +174,7 @@ async function main() {
   } else {
     console.info('📦 Bundling Remotion compositions...');
     remotionBundleUrl = await bundle({
-      entryPoint: path.resolve('../../packages/remotion-compositions/src/index.ts'),
+      entryPoint: path.resolve('../../packages/remotion-compositions/src/entry.ts'),
       onProgress(progress) {
         console.info(`Bundling progress: ${progress}%`);
       },
@@ -169,13 +183,20 @@ async function main() {
   }
 
   // Setup Express app
-  const app = setupApp({ remotionBundleUrl });
+  const { app, closeStudio } = setupApp({ remotionBundleUrl });
 
   // Start server
-  app.listen(Number(PORT), () => {
+  const server = app.listen(Number(PORT), () => {
     console.info(`✅ Server is running on port ${PORT}`);
     console.info(`📹 Ready to accept render jobs at http://localhost:${PORT}/renders`);
   });
+  const shutdown = () => {
+    server.close(() => {
+      void closeStudio();
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 main().catch((error) => {

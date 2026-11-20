@@ -60,7 +60,7 @@ async function main() {
   const videoServer = await startVideoServer();
 
   const serveUrl = await bundle({
-    entryPoint: path.resolve('../../packages/remotion-compositions/src/index.ts'),
+    entryPoint: path.resolve('../../packages/remotion-compositions/src/entry.ts'),
   });
 
   const queue = makeRenderQueue({

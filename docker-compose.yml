@@ -102,6 +102,7 @@ services:
       - ./packages/remotion-compositions:/app/packages/remotion-compositions
       - ./apps/remotion-server/server:/app/apps/remotion-server/server
       - ./apps/remotion-server/renders:/app/apps/remotion-server/renders
+      - studio_data:/app/.studio-data:ro
       - ./apps/processing-engine/output:/app/processing-engine/output
     depends_on:
       - processing-engine

@@ -14,6 +14,7 @@ import type { BrandKit, CaptionTemplate, SubtitleSegment } from '../types';
 interface CaptionOverlayProps {
   subtitles: SubtitleSegment[];
   currentTime: number;
+  captionOffsetSeconds?: number;
   template: CaptionTemplate;
   language?: string;
   brandKit?: BrandKit;
@@ -29,11 +30,16 @@ interface CaptionOverlayProps {
 export function CaptionOverlay({
   subtitles,
   currentTime,
+  captionOffsetSeconds,
   template,
   language = 'en',
   brandKit,
 }: CaptionOverlayProps) {
-  const { currentWord, currentSegment, isActive } = useActiveSubtitle(subtitles, currentTime);
+  const { currentWord, currentSegment, isActive } = useActiveSubtitle(
+    subtitles,
+    currentTime,
+    captionOffsetSeconds
+  );
 
   // Logo position styles
   const logoPositionStyle = (() => {
