@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AbsoluteFill, Sequence, cancelRender, continueRender, delayRender } from 'remotion';
-import type { ResolvedDependencies } from '@workspace/render-contract';
+import { sceneFrames, type ResolvedDependencies } from '@workspace/render-contract';
 import type { ProjectDraft } from '@workspace/video-project';
 import { LayerRenderer, type ProjectRegistry } from './layer-renderer';
 import { SceneComposition } from './scene-composition';
@@ -52,16 +52,16 @@ export type ProjectCompositionProps = {
 export function ProjectComposition(props: ProjectCompositionProps) {
   const { document, dependencies } = props;
   const { fps } = document.canvas;
-  let elapsed = 0;
+  const boundaries = sceneFrames(document);
   return (
     <AbsoluteFill style={{ backgroundColor: projectAppearance(document, dependencies).background }}>
       <SnapshotFonts dependencies={dependencies} />
-      {document.scenes.map((scene) => {
-        const origin = elapsed;
-        elapsed += scene.durationMs;
+      {document.scenes.map((scene, index) => {
+        const { from, durationInFrames, originMs } = boundaries[index]!;
+        if (!durationInFrames) return null;
         return (
-          <Sequence key={scene.id} {...sequenceFrames(0, origin, elapsed, fps)}>
-            <SceneComposition {...props} scene={scene} origin={origin} />
+          <Sequence key={scene.id} from={from} durationInFrames={durationInFrames}>
+            <SceneComposition {...props} scene={scene} origin={originMs} />
           </Sequence>
         );
       })}

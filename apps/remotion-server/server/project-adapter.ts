@@ -23,19 +23,23 @@ import { assetPath, openAssetFile, resolveStudioDataDir } from '@workspace/rende
 import { buildRegistry, hashBytes, serverModules, verifiedSeed } from './registry-builder.js';
 
 const exec = promisify(execFile);
-export async function fileHash(path: string) {
+export async function fileHash(path: string, signal: AbortSignal) {
   const hash = createHash('sha256');
-  for await (const bytes of createReadStream(path)) hash.update(bytes);
+  signal.throwIfAborted();
+  for await (const bytes of createReadStream(path, { signal })) hash.update(bytes);
+  signal.throwIfAborted();
   return hash.digest('hex');
 }
 export async function stageMedia(
   snapshot: ExportSnapshot,
   directory: string,
-  dataDir = resolveStudioDataDir()
+  dataDir = resolveStudioDataDir(),
+  signal?: AbortSignal
 ) {
   await mkdir(directory, { recursive: true });
   const seen = new Set<string>();
   for (const asset of Object.values(snapshot.dependencies.assets)) {
+    signal?.throwIfAborted();
     if (seen.has(asset.hash)) continue;
     seen.add(asset.hash);
     const path = await assetPath(dataDir, snapshot.ownerId, asset.hash);
@@ -50,7 +54,8 @@ export async function stageMedia(
             callback(null, chunk);
           },
         }),
-        createWriteStream(join(directory, asset.hash), { flags: 'wx', mode: 0o600 })
+        createWriteStream(join(directory, asset.hash), { flags: 'wx', mode: 0o600 }),
+        { signal }
       );
     } finally {
       await file.close();
@@ -66,9 +71,12 @@ export function browserInput(snapshot: ExportSnapshot) {
 async function artifact(
   p: PreparedComposition,
   relativePath: string,
-  kind: Artifact['kind']
+  kind: Artifact['kind'],
+  signal: AbortSignal
 ): Promise<Artifact> {
-  return { kind, relativePath, sha256: await fileHash(join(p.workspace, relativePath)) };
+  const sha256 = await fileHash(join(p.workspace, relativePath), signal);
+  signal.throwIfAborted();
+  return { kind, relativePath, sha256 };
 }
 async function selected(p: PreparedComposition) {
   const { url, close } = await hostRenderBundle(p.entry);
@@ -197,8 +205,9 @@ export class RemotionProjectAdapter implements EngineAdapter {
           output: join(prepared.workspace, relativePath),
           cancelSignal,
         });
-        results.push(await artifact(prepared, relativePath, 'snapshot'));
+        results.push(await artifact(prepared, relativePath, 'snapshot', signal));
       }
+      signal.throwIfAborted();
       return results;
     } finally {
       signal.removeEventListener('abort', cancel);
@@ -250,8 +259,10 @@ export class RemotionProjectAdapter implements EngineAdapter {
       } = JSON.parse(stdout);
       const video = measured.streams.find((stream) => stream.codec_type === 'video');
       if (!video) throw new Error('El archivo generado no contiene video.');
+      const videoArtifact = await artifact(prepared, 'video.mp4', 'video', signal);
+      signal.throwIfAborted();
       return {
-        artifacts: [await artifact(prepared, 'video.mp4', 'video')],
+        artifacts: [videoArtifact],
         width: video.width,
         height: video.height,
         durationMs: Math.round(Number(measured.format.duration) * 1000),

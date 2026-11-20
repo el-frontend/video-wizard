@@ -37,3 +37,5 @@ export interface EngineAdapter {
   render(prepared: PreparedComposition, options: RenderOptions): Promise<RenderResult>;
 }
 export * from './appearance';
+export * from './project-appearance';
+export * from './scene-frames';

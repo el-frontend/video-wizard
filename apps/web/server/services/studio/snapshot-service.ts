@@ -13,7 +13,8 @@ export function snapshotBuilder(
 ) {
   return async function buildSnapshot(
     ownerId: string,
-    record: ProjectRecord
+    record: ProjectRecord,
+    signal?: AbortSignal
   ): Promise<ExportSnapshot> {
     if (record.ownerId !== ownerId) throw new ProjectNotFoundError();
     const snapshot: ExportSnapshot = {
@@ -26,6 +27,7 @@ export function snapshotBuilder(
     };
     const ids = new Set(record.document.assetIds);
     for (const ref of projectPins(record.document)) {
+      signal?.throwIfAborted();
       const key = libraryKey(ref);
       try {
         const entry = await library.get(ownerId, ref);
@@ -48,8 +50,9 @@ export function snapshotBuilder(
         });
       }
     }
-    snapshot.diagnostics.push(...(await assets.verify(ownerId, [...ids])));
+    snapshot.diagnostics.push(...(await assets.verify(ownerId, [...ids], signal)));
     for (const id of ids) {
+      signal?.throwIfAborted();
       try {
         const asset = descriptor.parse(await assets.get(ownerId, id));
         snapshot.dependencies.assets[id] = { ...asset, url: 'media/' + asset.hash };
@@ -57,10 +60,13 @@ export function snapshotBuilder(
         if (!(error instanceof AssetNotFoundError)) throw error;
       }
     }
+    signal?.throwIfAborted();
     return snapshot;
   };
 }
-export async function buildSnapshot(ownerId: string, record: ProjectRecord) {
+let build: ReturnType<typeof snapshotBuilder> | undefined;
+export async function buildSnapshot(ownerId: string, record: ProjectRecord, signal?: AbortSignal) {
   const { db } = await import('@/server/db');
-  return snapshotBuilder(new AssetService(db), new LibraryService(db))(ownerId, record);
+  build ??= snapshotBuilder(new AssetService(db), new LibraryService(db));
+  return build(ownerId, record, signal);
 }

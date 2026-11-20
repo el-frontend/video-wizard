@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PreviewHandle, ProjectDraft } from '@workspace/video-project';
+import type { Diagnostic, PreviewHandle, ProjectDraft } from '@workspace/video-project';
 
 interface Session {
   instance: string;
   origin: string;
   ticket: string;
+  diagnostics?: Diagnostic[];
 }
 interface Props {
   projectId: string;
@@ -23,26 +24,26 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
   const [source, setSource] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
+    const instance = crypto.randomUUID();
+    const url = '/api/studio/projects/' + encodeURIComponent(projectId) + '/preview';
     setSession(null);
     setSource(undefined);
     setError('');
     void (async () => {
       try {
-        const response = await fetch(
-          '/api/studio/projects/' + encodeURIComponent(projectId) + '/preview',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ baseRevision: revision, document }),
-            signal: controller.signal,
-          }
-        );
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baseRevision: revision, document, instance }),
+          signal: controller.signal,
+        });
         const data = await response.json();
         if (!response.ok)
           throw new Error(
             data.diagnostics?.[0]?.message || data.error || 'No se pudo abrir la vista previa.'
           );
         if (
+          data.instance !== instance ||
           new URL(data.origin).origin !== data.origin ||
           data.origin === location.origin ||
           !/^https?:$/.test(new URL(data.origin).protocol)
@@ -54,7 +55,12 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
           setError(cause instanceof Error ? cause.message : 'No se pudo abrir la vista previa.');
       }
     })();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      void fetch(url + '?instance=' + instance, { method: 'DELETE', keepalive: true }).catch(
+        () => {}
+      );
+    };
   }, [projectId, revision, document]);
   useEffect(() => {
     if (!session) return;
@@ -116,16 +122,24 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
     };
   }, [session]);
   if (error) return <p role="alert">{error}</p>;
+  const omitted = session?.diagnostics?.filter((d) => d.code === 'scene-no-frame');
   return source ? (
-    <iframe
-      ref={frame}
-      src={source}
-      title="Vista previa del proyecto"
-      sandbox="allow-scripts allow-same-origin"
-      allow="autoplay"
-      referrerPolicy="no-referrer"
-      style={{ width: '100%', height: '100%', border: 0 }}
-    />
+    <>
+      {omitted?.map((d) => (
+        <p role="status" key={d.sceneId}>
+          {d.message} ({d.sceneId})
+        </p>
+      ))}
+      <iframe
+        ref={frame}
+        src={source}
+        title="Vista previa del proyecto"
+        sandbox="allow-scripts allow-same-origin"
+        allow="autoplay"
+        referrerPolicy="no-referrer"
+        style={{ width: '100%', height: '100%', border: 0 }}
+      />
+    </>
   ) : (
     <p role="status">Preparando la vista previa…</p>
   );

@@ -1,11 +1,16 @@
-import { build } from 'esbuild';
+import { context } from 'esbuild';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExportSnapshot } from '@workspace/render-contract';
 import { buildRegistry, serverModules } from './registry-builder.js';
 import { browserInput } from './project-adapter.js';
 
-export async function buildPreview(snapshot: ExportSnapshot, workspace: string) {
+export async function buildPreview(
+  snapshot: ExportSnapshot,
+  workspace: string,
+  signal: AbortSignal
+) {
+  signal.throwIfAborted();
   const { entry, hash } = await buildRegistry(snapshot, workspace);
   const player = fileURLToPath(new URL('./preview-player.tsx', import.meta.url));
   const source = [
@@ -15,7 +20,8 @@ export async function buildPreview(snapshot: ExportSnapshot, workspace: string) 
       JSON.stringify(JSON.stringify(browserInput(snapshot))) +
       '),registry});',
   ].join('\n');
-  await build({
+  signal.throwIfAborted();
+  const compiler = await context({
     stdin: { contents: source, resolveDir: workspace },
     outfile: join(workspace, 'player.js'),
     bundle: true,
@@ -27,5 +33,17 @@ export async function buildPreview(snapshot: ExportSnapshot, workspace: string) 
     define: { 'process.env.NODE_ENV': '"production"' },
     legalComments: 'none',
   });
-  return { hash };
+  const stop = () => {
+    void compiler.cancel();
+  };
+  signal.addEventListener('abort', stop, { once: true });
+  try {
+    signal.throwIfAborted();
+    await compiler.rebuild();
+    signal.throwIfAborted();
+    return { hash };
+  } finally {
+    signal.removeEventListener('abort', stop);
+    await compiler.dispose();
+  }
 }

@@ -1,11 +1,19 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { createReadStream, watch } from 'node:fs';
+import { assetPath } from '@workspace/render-contract/storage';
+import { mkdir, mkdtemp, readFile, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { buildRegistry, compositionsDirectory, hashBytes } from './registry-builder';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { exampleProject } from '@workspace/video-project/fixtures';
 import { libraryKey, validateSnapshot, type ExportSnapshot } from '@workspace/render-contract';
-import { RemotionProjectAdapter } from './project-adapter';
+import { fileHash, stageMedia, RemotionProjectAdapter } from './project-adapter';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>();
+  return { ...fs, createReadStream: vi.fn(fs.createReadStream) };
+});
 
 const fixture = (): ExportSnapshot => ({
   ownerId: 'owner',
@@ -106,5 +114,64 @@ it('materializes the pinned bytes, keeps distinct versions and rejects foreign o
     await expect(buildRegistry(snapshot, workspace)).rejects.toThrow('incompatible');
   } finally {
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+it('aborts artifact hashing while its file is being read', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'studio-hash-')),
+    path = join(dir, 'large.mp4');
+  try {
+    await writeFile(path, '');
+    await truncate(path, 32 * 1024 * 1024);
+    const controller = new AbortController();
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    let bytesAtAbort = 0;
+    vi.mocked(createReadStream).mockImplementationOnce((...args) => {
+      const stream = fs.createReadStream(...args);
+      stream.once('data', () => {
+        bytesAtAbort = stream.bytesRead;
+        controller.abort();
+      });
+      return stream;
+    });
+    await expect(fileHash(path, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(bytesAtAbort).toBeGreaterThan(0);
+    expect(bytesAtAbort).toBeLessThan(32 * 1024 * 1024);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('interrupts a media copy before the entire original reaches a superseded workspace', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'studio-source-'));
+  const target = join(root, 'preview');
+  const s = fixture(),
+    hash = 'f'.repeat(64),
+    size = 64 * 1024 * 1024;
+  s.ownerId = randomUUID();
+  s.dependencies.assets.clip = {
+    id: 'clip',
+    name: 'clip',
+    hash,
+    mediaType: 'video/mp4',
+    url: 'media/' + hash,
+  };
+  const controller = new AbortController();
+  try {
+    const original = await assetPath(root, s.ownerId, hash, true);
+    await writeFile(original, '');
+    await truncate(original, size);
+    await mkdir(target);
+    const changes = watch(target, () => controller.abort());
+    try {
+      await expect(stageMedia(s, target, root, controller.signal)).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      expect((await stat(join(target, hash))).size).toBeLessThan(size);
+    } finally {
+      changes.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

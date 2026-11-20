@@ -1,28 +1,22 @@
 import {
   validateForExport,
-  type AssetDescriptor,
+  type Layer,
   type Diagnostic,
-  type LibraryEntry,
   type LibraryRef,
   type ProjectDraft,
   type ProjectRecord,
 } from '@workspace/video-project';
 
-export interface ResolvedAsset extends Omit<AssetDescriptor, 'ownerId'> {
-  url: string;
-}
-export interface ResolvedDependencies {
-  assets: Record<string, ResolvedAsset>;
-  libraries: Record<string, LibraryEntry>;
-}
+import { libraryKey, type ResolvedDependencies } from './dependencies';
+import { sceneFrames } from './scene-frames';
+import { projectAppearance } from './project-appearance';
+export * from './dependencies';
+
 export interface ExportSnapshot extends Pick<ProjectRecord, 'ownerId' | 'revision' | 'document'> {
   dependencies: ResolvedDependencies;
   /** Pinned library source bytes. Opaque until validated by the appropriate engine. */
   bundles: Record<string, { sha256: string; base64: string }>;
   diagnostics: Diagnostic[];
-}
-export function libraryKey({ id, version }: LibraryRef): string {
-  return JSON.stringify([id, version]);
 }
 export function projectPins(document: ProjectDraft): LibraryRef[] {
   const refs = [document.styleRef, document.brandSnapshot?.ref];
@@ -77,8 +71,67 @@ export function validateSnapshot(snapshot: ExportSnapshot): Diagnostic[] {
         message: 'Falta el recurso ' + id,
       });
     }
-  for (const scene of document.scenes)
+  const fonts = library.flatMap((entry) => ('fonts' in entry ? (entry.fonts ?? []) : []));
+  function validateMedia(layer: Layer, sceneId?: string) {
+    if (!('assetId' in layer) || !Object.hasOwn(dependencies.assets, layer.assetId)) return;
+    const media = dependencies.assets[layer.assetId];
+    if (!media) return;
+    const location = sceneId === undefined ? { layerId: layer.id } : { layerId: layer.id, sceneId };
+    const compatible =
+      layer.type === 'audio'
+        ? (media.mediaType.startsWith('audio/') && media.hasAudio !== false) ||
+          (media.mediaType.startsWith('video/') && media.hasAudio === true)
+        : media.mediaType.startsWith(layer.type + '/');
+    if (!compatible)
+      diagnostics.push({
+        code: 'media-type',
+        severity: 'error',
+        ...location,
+        message: 'El recurso no es compatible con esta capa de medios.',
+      });
+    if (
+      'sourceInMs' in layer &&
+      media.durationMs !== undefined &&
+      layer.sourceInMs >= media.durationMs
+    ) {
+      diagnostics.push({
+        code: 'source-in-range',
+        severity: 'error',
+        ...location,
+        message: 'El recorte comienza fuera de la duración del recurso.',
+      });
+    }
+  }
+  for (const layer of document.globalAudio) validateMedia(layer);
+  const boundaries = sceneFrames(document);
+  for (const [index, scene] of document.scenes.entries()) {
+    if (boundaries[index]!.durationInFrames === 0)
+      diagnostics.push({
+        severity: 'error',
+        code: 'scene-no-frame',
+        sceneId: scene.id,
+        message: 'La escena no ocupa ningún cuadro a esta frecuencia.',
+      });
     for (const layer of scene.layers) {
+      validateMedia(layer, scene.id);
+      if (layer.type === 'text' || layer.type === 'captions' || layer.type === 'component') {
+        const { family, weight } = projectAppearance(document, dependencies, layer);
+        const registered = fonts.some(
+          (font) =>
+            font.family === family &&
+            weight >= font.weight.min &&
+            weight <= font.weight.max &&
+            dependencies.assets[font.assetId]?.mediaType?.startsWith('font/')
+        );
+        if (family !== 'sans-serif' && !registered)
+          diagnostics.push({
+            severity: 'error',
+            code: 'font-unresolved',
+            sceneId: scene.id,
+            layerId: layer.id,
+            message: 'No se ha fijado la fuente «' + family + '» con peso ' + weight + '.',
+          });
+      }
       if (
         layer.type === 'text' &&
         layer.text.length * 24 * 48 > layer.box.width * layer.box.height
@@ -92,5 +145,6 @@ export function validateSnapshot(snapshot: ExportSnapshot): Diagnostic[] {
         });
       }
     }
+  }
   return diagnostics;
 }

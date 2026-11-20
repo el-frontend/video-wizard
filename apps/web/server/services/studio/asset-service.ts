@@ -70,9 +70,9 @@ function toRecord(asset: StoredAsset): AssetRecord {
   };
 }
 
-async function hashFile(file: FileHandle) {
+async function hashFile(file: FileHandle, signal?: AbortSignal) {
   const hash = createHash('sha256');
-  for await (const chunk of file.createReadStream({ start: 0, autoClose: false }))
+  for await (const chunk of file.createReadStream({ start: 0, autoClose: false, signal }))
     hash.update(chunk);
   return hash.digest('hex');
 }
@@ -252,7 +252,7 @@ export class AssetService {
     return toRecord(await this.find(ownerId, id));
   }
 
-  private async openStoredFile(asset: StoredAsset) {
+  private async openStoredFile(asset: StoredAsset, signal?: AbortSignal) {
     try {
       const path = await assetPath(
         resolveStudioDataDir(this.configuredDataDir),
@@ -266,7 +266,7 @@ export class AssetService {
         if (this.verifiedFiles.get(path) !== fingerprint) {
           // Verify the opened file and discard results if it changed during hashing.
           if (
-            (await hashFile(file)) !== asset.hash ||
+            (await hashFile(file, signal)) !== asset.hash ||
             fileFingerprint(await file.stat({ bigint: true })) !== fingerprint
           ) {
             throw new AssetCorruptError();
@@ -291,8 +291,8 @@ export class AssetService {
     }
   }
 
-  async resolveFile(ownerId: string, id: string): Promise<string> {
-    const { file, path } = await this.openStoredFile(await this.find(ownerId, id));
+  async resolveFile(ownerId: string, id: string, signal?: AbortSignal): Promise<string> {
+    const { file, path } = await this.openStoredFile(await this.find(ownerId, id), signal);
     await file.close();
     return path;
   }
@@ -303,11 +303,12 @@ export class AssetService {
     return { asset: toRecord(asset), file, size };
   }
 
-  async verify(ownerId: string, ids: string[]): Promise<Diagnostic[]> {
+  async verify(ownerId: string, ids: string[], signal?: AbortSignal): Promise<Diagnostic[]> {
     const diagnostics: Diagnostic[] = [];
     for (const id of new Set(ids)) {
       try {
-        await this.resolveFile(ownerId, id);
+        signal?.throwIfAborted();
+        await this.resolveFile(ownerId, id, signal);
       } catch (error) {
         if (!(error instanceof AssetNotFoundError)) throw error;
         diagnostics.push(

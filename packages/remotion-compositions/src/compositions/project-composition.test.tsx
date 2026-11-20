@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import { exampleProject } from '@workspace/video-project/fixtures';
-import { captionAt, projectMetadata, sequenceFrames } from './project-composition';
+import {
+  captionAt,
+  ProjectComposition,
+  projectMetadata,
+  sequenceFrames,
+} from './project-composition';
 
 it('uses the saved canvas and eight seconds for the two-scene composition', () => {
   const project = exampleProject();
@@ -30,4 +35,20 @@ it('keeps word timing local to the cue and excludes the cue end', () => {
     end: 0.9,
   });
   expect(captionAt([cue], 900)).toBeNull();
+});
+
+it('uses the next absolute scene start as the previous scene’s exclusive end', () => {
+  const document = exampleProject();
+  document.scenes[0]!.durationMs = 1017;
+  document.scenes.splice(1, 0, { id: 'subframe', durationMs: 1, layers: [] });
+  document.scenes[2]!.durationMs = 1001;
+  const result = ProjectComposition({
+    document,
+    dependencies: { assets: {}, libraries: {} },
+    registry: {},
+  });
+  const scenes = result.props.children[1];
+  expect(scenes[0].props).toMatchObject({ from: 0, durationInFrames: 30 });
+  expect(scenes[1]).toBeNull();
+  expect(scenes[2].props).toMatchObject({ from: 30, durationInFrames: 31 });
 });

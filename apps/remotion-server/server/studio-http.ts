@@ -23,6 +23,8 @@ interface Session {
   done?: Promise<void>;
   kind: 'preview' | 'render';
 }
+const previewTicketLifetime = 120_000;
+const instanceId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const token = () => randomBytes(32).toString('hex');
 function equal(a: string | undefined, b: string | undefined) {
   const digest = (s: string) => createHash('sha256').update(s).digest();
@@ -43,12 +45,30 @@ export function installStudioRoutes(
   if (editor === origin || !config.secret)
     throw new Error('Configura los orígenes separados y la credencial interna de Studio.');
   const sessions = new Map<string, Session>();
+  // DELETE can arrive before Next finishes resolving the snapshot for POST.
+  const retirements = new Map<string, { instances: Map<string, number>; fullUntil: number }>();
+  function retire(owner: string, project: string, instance: string) {
+    const key = JSON.stringify([owner, project]);
+    const batch = retirements.get(key) ?? { instances: new Map<string, number>(), fullUntil: 0 };
+    const until = Date.now() + previewTicketLifetime;
+    // Bound cancellation records per authenticated project, including repeated early DELETEs.
+    if (batch.instances.size < 2048 || batch.instances.has(instance))
+      batch.instances.set(instance, until);
+    else batch.fullUntil = until;
+    retirements.set(key, batch);
+  }
   const adapter = new RemotionProjectAdapter(config.dataDir);
   const expires = () => Date.now() + 60 * 60 * 1000;
   const collect = setInterval(() => {
+    for (const [key, batch] of retirements) {
+      for (const [instance, expiry] of batch.instances)
+        if (expiry <= Date.now()) batch.instances.delete(instance);
+      if (!batch.instances.size && batch.fullUntil <= Date.now()) retirements.delete(key);
+    }
     for (const [id, session] of sessions)
       if (
-        session.expires <= Date.now() &&
+        (session.expires <= Date.now() ||
+          (session.ticket && (session.ticketExpires ?? 0) <= Date.now())) &&
         session.status !== 'running' &&
         session.status !== 'queued'
       ) {
@@ -82,66 +102,114 @@ export function installStudioRoutes(
       res.status(400).json({ error: 'La instantánea no es válida.' });
       return;
     }
+    const id: string =
+      kind === 'preview' && req.body.instance !== undefined ? req.body.instance : randomUUID();
+    if (typeof id !== 'string' || !instanceId.test(id)) {
+      res.status(400).json({ error: 'La instancia no es válida.' });
+      return;
+    }
+    const key = JSON.stringify([snapshot.ownerId, snapshot.document.id]);
+    const unavailable = () => {
+      const retired = retirements.get(key);
+      return (
+        sessions.has(id) ||
+        (kind === 'preview' &&
+          retired &&
+          Math.max(retired.fullUntil, retired.instances.get(id) ?? 0) > Date.now())
+      );
+    };
+    const abort = new AbortController();
+    const onClose = () => {
+      if (!res.writableFinished) abort.abort();
+    };
+    if (kind === 'preview') res.once('close', onClose);
     let workspace: string | undefined;
+    let session: Session | undefined;
     try {
+      if (unavailable()) {
+        deny(res);
+        return;
+      }
       const diagnostics = await adapter.validate(snapshot);
-      if (diagnostics.some((d) => d.severity === 'error')) {
+      abort.signal.throwIfAborted();
+      if (
+        diagnostics.some(
+          (d) => d.severity === 'error' && (kind === 'render' || d.code !== 'scene-no-frame')
+        )
+      ) {
         res.status(422).json({ diagnostics });
         return;
       }
       workspace = await mkdtemp(join(tmpdir(), 'video-wizard-studio-'));
-      const id = randomUUID();
-      const session: Session = {
+      abort.signal.throwIfAborted();
+      if (unavailable()) {
+        await rm(workspace, { recursive: true, force: true });
+        deny(res);
+        return;
+      }
+      const active: Session = {
         workspace,
         owner: snapshot.ownerId,
         snapshot,
         expires: expires(),
         progress: 0,
-        abort: new AbortController(),
+        abort,
         kind,
         status: 'running',
       };
+      session = active;
+      sessions.set(id, active);
       if (kind === 'preview') {
-        await buildPreview(snapshot, workspace);
-        await stageMedia(snapshot, join(workspace, 'media'), config.dataDir);
+        active.done = (async () => {
+          await buildPreview(snapshot, active.workspace, abort.signal);
+          abort.signal.throwIfAborted();
+          await stageMedia(snapshot, join(active.workspace, 'media'), config.dataDir, abort.signal);
+          abort.signal.throwIfAborted();
+        })();
+        await active.done;
+        abort.signal.throwIfAborted();
         session.status = 'completed';
         session.ticket = token();
-        session.ticketExpires = Date.now() + 120_000;
-        sessions.set(id, session);
+        session.ticketExpires = Date.now() + previewTicketLifetime;
         res
           .set('Cache-Control', 'no-store')
           .json({ instance: id, origin, ticket: session.ticket, diagnostics });
         return;
       }
-      sessions.set(id, session);
-      session.status = 'queued';
+      active.status = 'queued';
       const execute = async () => {
         try {
-          session.abort.signal.throwIfAborted();
-          session.status = 'running';
-          const prepared = await adapter.prepare(snapshot, session.workspace);
+          active.abort.signal.throwIfAborted();
+          active.status = 'running';
+          const prepared = await adapter.prepare(snapshot, active.workspace);
           await adapter.render(prepared, {
-            signal: session.abort.signal,
+            signal: active.abort.signal,
             onProgress: (p) => {
-              session.progress = p;
+              active.progress = p;
             },
           });
-          session.status = 'completed';
+          active.status = 'completed';
         } catch {
-          session.status = 'failed';
+          active.status = 'failed';
         }
-        session.expires = expires();
+        active.expires = expires();
       };
       const run = () => {
-        session.done = execute();
-        return session.done;
+        active.done = execute();
+        return active.done;
       };
       if (config.schedule) config.schedule(id, run);
       else void run();
       res.status(202).json({ jobId: id });
     } catch {
+      if (session && sessions.get(id) === session) sessions.delete(id);
       if (workspace) await rm(workspace, { recursive: true, force: true });
-      res.status(500).json({ error: 'No se pudo preparar el proyecto.' });
+      if (!res.destroyed)
+        res
+          .status(abort.signal.aborted ? 410 : 500)
+          .json({ error: 'No se pudo preparar el proyecto.' });
+    } finally {
+      res.off('close', onClose);
     }
   }
   app.post('/renders', (req, res, next) => {
@@ -151,20 +219,45 @@ export function installStudioRoutes(
   app.post('/studio/previews', (req, res) => {
     void start(req, res, 'preview');
   });
+  app.delete('/studio/previews/:id', async (req, res) => {
+    const id = String(req.params.id),
+      owner = req.get('x-studio-owner'),
+      project = req.get('x-studio-project');
+    const session = sessions.get(id);
+    if (
+      !internal(req) ||
+      !instanceId.test(id) ||
+      !owner ||
+      !project ||
+      (session &&
+        (session.kind !== 'preview' ||
+          session.owner !== owner ||
+          session.snapshot.document.id !== project))
+    ) {
+      deny(res);
+      return;
+    }
+    retire(owner, project, id);
+    if (session) {
+      sessions.delete(id);
+      session.abort.abort();
+      await session.done?.catch(() => {});
+      await rm(session.workspace, { recursive: true, force: true });
+    }
+    res.status(204).end();
+  });
   app.get('/studio/renders/:id', (req, res) => {
     const s = owned(req);
     if (!s || s.kind !== 'render') {
       deny(res);
       return;
     }
-    res
-      .set('Cache-Control', 'no-store')
-      .json({
-        status: s.status,
-        progress: s.progress,
-        revision: s.snapshot.revision,
-        projectId: s.snapshot.document.id,
-      });
+    res.set('Cache-Control', 'no-store').json({
+      status: s.status,
+      progress: s.progress,
+      revision: s.snapshot.revision,
+      projectId: s.snapshot.document.id,
+    });
   });
   app.get('/studio/renders/:id/video', (req, res) => {
     const s = owned(req);
@@ -267,7 +360,7 @@ export function installStudioRoutes(
       await Promise.all(
         closing.map(async (s) => {
           s.abort.abort();
-          await s.done;
+          await s.done?.catch(() => {});
           await rm(s.workspace, { recursive: true, force: true });
         })
       );

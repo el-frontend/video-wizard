@@ -6,7 +6,10 @@ import { ConflictError, ProjectService } from './project-service';
 import { buildSnapshot } from './snapshot-service';
 
 const request = z.strictObject({ baseRevision: IdSchema });
-const previewRequest = request.extend({ document: ProjectDraftSchema.optional() });
+const previewRequest = request.extend({
+  document: ProjectDraftSchema.optional(),
+  instance: z.uuidv4().optional(),
+});
 const projects = new ProjectService(db);
 export class StudioRenderError extends Error {
   constructor(
@@ -16,18 +19,25 @@ export class StudioRenderError extends Error {
     super('No se pudo preparar la vista del proyecto.');
   }
 }
-async function internal(ownerId: string, path: string, body?: unknown) {
+async function internal(
+  ownerId: string,
+  path: string,
+  body?: unknown,
+  options: { signal?: AbortSignal; releaseProject?: string } = {}
+) {
   const secret = process.env.STUDIO_RENDER_SECRET;
   if (!secret) throw new StudioRenderError(503);
   const response = await fetch(
     new URL(path, process.env.REMOTION_SERVER_URL || 'http://localhost:3001'),
     {
-      method: body ? 'POST' : 'GET',
+      method: options.releaseProject ? 'DELETE' : body ? 'POST' : 'GET',
+      signal: options.signal,
       cache: 'no-store',
       redirect: 'error',
       headers: {
         Authorization: 'Bearer ' + secret,
         'X-Studio-Owner': ownerId,
+        ...(options.releaseProject && { 'X-Studio-Project': options.releaseProject }),
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -44,10 +54,12 @@ export async function startStudioView(
   ownerId: string,
   id: string,
   kind: 'preview' | 'render',
-  body: unknown
+  body: unknown,
+  signal?: AbortSignal
 ) {
   const parsed = (kind === 'preview' ? previewRequest : request).safeParse(body);
   if (!parsed.success) throw new ValidationError('La solicitud de revisión no es válida.');
+  signal?.throwIfAborted();
   const record = await projects.get(ownerId, id);
   if (record.revision !== parsed.data.baseRevision) throw new ConflictError(record);
   const draft =
@@ -55,11 +67,22 @@ export async function startStudioView(
   if (draft.id !== id || draft.engine !== record.document.engine || draft.engine !== 'remotion') {
     throw new ValidationError('La vista debe corresponder al proyecto Remotion seleccionado.');
   }
-  const snapshot = await buildSnapshot(ownerId, { ...record, document: draft });
-  return internal(ownerId, kind === 'preview' ? '/studio/previews' : '/renders', {
-    compositionId: 'StudioProject',
-    snapshot,
-  });
+  const snapshot = await buildSnapshot(ownerId, { ...record, document: draft }, signal);
+  return internal(
+    ownerId,
+    kind === 'preview' ? '/studio/previews' : '/renders',
+    {
+      compositionId: 'StudioProject',
+      snapshot,
+      ...('instance' in parsed.data && { instance: parsed.data.instance }),
+    },
+    { signal }
+  );
+}
+export async function releaseStudioPreview(ownerId: string, id: string, instance: string | null) {
+  if (!z.uuidv4().safeParse(instance).success) throw new StudioRenderError(404);
+  await projects.get(ownerId, id);
+  return internal(ownerId, '/studio/previews/' + instance, undefined, { releaseProject: id });
 }
 export async function getStudioRender(ownerId: string, id: string, jobId: string, video: boolean) {
   if (!z.uuid().safeParse(jobId).success) throw new StudioRenderError(404);
