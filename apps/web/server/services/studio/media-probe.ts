@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { open } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 
@@ -8,6 +9,10 @@ import { isFileError } from './asset-paths';
 
 const execute = promisify(execFile);
 const PROBE_TIMEOUT_MS = 30_000;
+const EBML_HEADER_ID = 0x1a45dfa3;
+const EBML_DOC_TYPE_ID = 0x4282;
+const WEBM_VIDEO_CODECS = new Set(['vp8', 'vp9', 'av1']);
+const WEBM_AUDIO_CODECS = new Set(['vorbis', 'opus']);
 const MEDIA_FORMAT = {
   'video/mp4': 'mov',
   'video/quicktime': 'mov',
@@ -44,6 +49,7 @@ type MediaType = keyof typeof MEDIA_FORMAT;
 interface ProbeStream {
   index: number;
   codec_type: string;
+  codec_name?: string;
   width?: number;
   height?: number;
   disposition?: { attached_pic?: number; timed_thumbnails?: number };
@@ -61,6 +67,70 @@ interface MediaMetadata {
 
 export function isProbedMediaType(value: string): value is MediaType {
   return Object.hasOwn(MEDIA_FORMAT, value);
+}
+
+function readEbmlInteger(bytes: Buffer, offset: number, kind: 'id' | 'size') {
+  const first = bytes[offset];
+  if (!first) return undefined;
+  let width = 1;
+  let marker = 0x80;
+  while ((first & marker) === 0) {
+    width += 1;
+    marker >>= 1;
+  }
+  if (offset + width > bytes.length || (kind === 'id' && width > 4)) return undefined;
+
+  let value = kind === 'id' ? first : first & (marker - 1);
+  for (let index = 1; index < width; index++) value = value * 256 + bytes[offset + index]!;
+  if (!Number.isSafeInteger(value) || (kind === 'size' && value === 2 ** (7 * width) - 1)) {
+    return undefined;
+  }
+  return { value, next: offset + width };
+}
+
+async function hasWebmDocType(path: string) {
+  // ffprobe uses one demuxer for both document types. Read the EBML Header (RFC 8794).
+  const file = await open(path, 'r');
+  const bytes = Buffer.alloc(12); // Up to four ID and eight size bytes.
+  try {
+    const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+    if (bytesRead < 5 || bytes.readUInt32BE(0) !== EBML_HEADER_ID) return false;
+    const header = readEbmlInteger(bytes.subarray(0, bytesRead), 4, 'size');
+    const fileSize = (await file.stat()).size;
+    if (!header || !Number.isSafeInteger(fileSize) || header.value > fileSize - header.next) {
+      return false;
+    }
+
+    const end = header.next + header.value;
+    let foundDocType = false;
+    for (let offset = header.next; offset < end; ) {
+      const { bytesRead } = await file.read(bytes, 0, Math.min(bytes.length, end - offset), offset);
+      const chunk = bytes.subarray(0, bytesRead);
+      const id = readEbmlInteger(chunk, 0, 'id');
+      if (!id) return false;
+      const size = readEbmlInteger(chunk, id.next, 'size');
+      if (!size || size.value > end - offset - size.next) return false;
+      const valueStart = offset + size.next;
+      offset = valueStart + size.value;
+      if (id.value !== EBML_DOC_TYPE_ID) continue;
+      if (foundDocType || size.value < 4) return false;
+
+      // EBML strings end at the first NUL, so only a possible terminator is needed.
+      const length = Math.min(5, size.value);
+      const docType = await file.read(bytes, 0, length, valueStart);
+      if (
+        docType.bytesRead !== length ||
+        bytes.toString('latin1', 0, 4) !== 'webm' ||
+        (length === 5 && bytes[4] !== 0)
+      ) {
+        return false;
+      }
+      foundDocType = true;
+    }
+    return foundDocType;
+  } finally {
+    await file.close();
+  }
 }
 
 function seconds(value?: string) {
@@ -120,7 +190,7 @@ export async function mediaProbe(path: string, mediaType?: MediaType): Promise<M
       [
         ...PROBE_ARGS,
         '-show_entries',
-        'stream=index,codec_type,width,height:stream_disposition=attached_pic,timed_thumbnails:format=format_name,duration,start_time',
+        'stream=index,codec_type,codec_name,width,height:stream_disposition=attached_pic,timed_thumbnails:format=format_name,duration,start_time',
         '-of',
         'json',
         '-i',
@@ -146,6 +216,14 @@ export async function mediaProbe(path: string, mediaType?: MediaType): Promise<M
         (mediaType.startsWith('audio/') ? !hasAudio || video : !video))
     ) {
       throw new Error('Declared media type does not match the file');
+    }
+    if (
+      (mediaType === 'audio/webm' || mediaType === 'video/webm') &&
+      (videos.some(({ codec_name }) => !WEBM_VIDEO_CODECS.has(codec_name ?? '')) ||
+        audio.some(({ codec_name }) => !WEBM_AUDIO_CODECS.has(codec_name ?? '')) ||
+        !(await hasWebmDocType(path)))
+    ) {
+      throw new Error('Declared WebM does not have a WebM document type and compatible tracks');
     }
     if (!video && !hasAudio) throw new Error('No audio or video stream');
     const metadata: MediaMetadata = { hasAudio };

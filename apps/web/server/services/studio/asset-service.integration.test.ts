@@ -8,6 +8,7 @@ import {
   rmdir,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -164,13 +165,63 @@ describe('AssetService', () => {
 
   it('detects changed bytes even when length is unchanged', async () => {
     const record = await uploadAudio();
-    await writeFile(await assets.resolveFile(ownerId, record.id), Buffer.alloc(audio.length));
+    const path = await assets.resolveFile(ownerId, record.id);
+    const originalTime = new Date('2020-01-01T00:00:00Z');
+    await utimes(path, originalTime, originalTime);
+    await assets.resolveFile(ownerId, record.id);
+    const original = await preview(record.id, 'bytes=0-9');
+    expect(original.status).toBe(206);
+    expect(Buffer.from(await original.arrayBuffer())).toEqual(audio.subarray(0, 10));
 
+    await writeFile(path, Buffer.alloc(audio.length));
+    await utimes(path, originalTime, originalTime);
+
+    await expect
+      .soft(assets.resolveFile(ownerId, record.id))
+      .rejects.toBeInstanceOf(AssetNotFoundError);
+    for (const range of [undefined, 'bytes=0-9']) {
+      const response = await preview(record.id, range);
+      expect.soft(response.status).toBe(404);
+      await response.body?.cancel();
+    }
     expect(await assets.verify(ownerId, [record.id])).toMatchObject([
       { severity: 'error', code: 'asset-corrupt' },
     ]);
     expect(await assets.get(ownerId, record.id)).toEqual(record);
   });
+
+  it.each(['ffv1', 'libvpx-vp9'])(
+    'rejects Matroska %s declared as WebM before promotion',
+    async (codec) => {
+      const bytes = execFileSync(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=size=16x16:rate=10:duration=1',
+          '-c:v',
+          codec,
+          '-f',
+          'matroska',
+          'pipe:1',
+        ],
+        { timeout: 30000 }
+      );
+
+      await expect(
+        assets.ingest(ownerId, {
+          stream: Readable.from([bytes]),
+          filename: 'presentación.webm',
+          mediaType: 'video/webm',
+        })
+      ).rejects.toThrow(/tipo indicado/i);
+      expect(await readdir(join(process.env.STUDIO_DATA_DIR!, 'assets'))).toEqual(['.incoming']);
+      expect(await readdir(join(process.env.STUDIO_DATA_DIR!, 'assets/.incoming'))).toEqual([]);
+    }
+  );
 
   it('rejects traversal names, malformed uploads and paths that are not asset IDs', async () => {
     const input = {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, type BigIntStats } from 'node:fs';
 import { link, mkdtemp, open, readFile, rm, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -25,6 +25,7 @@ import { isProbedMediaType, mediaProbe } from './media-probe';
 
 const uuid = z.uuid();
 const MAX_JSON_BYTES = 16 * 1024 * 1024;
+const MAX_VERIFIED_ASSETS = 256;
 const FONT_SIGNATURES = new Map([
   ['font/ttf', '\x00\x01\x00\x00'],
   ['font/otf', 'OTTO'],
@@ -71,12 +72,13 @@ function toRecord(asset: StoredAsset): AssetRecord {
 
 async function hashFile(file: FileHandle) {
   const hash = createHash('sha256');
-  try {
-    for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk);
-    return hash.digest('hex');
-  } finally {
-    await file.close();
-  }
+  for await (const chunk of file.createReadStream({ start: 0, autoClose: false }))
+    hash.update(chunk);
+  return hash.digest('hex');
+}
+
+function fileFingerprint(stat: BigIntStats) {
+  return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
 }
 
 async function isFontFile(path: string, mediaType: string, fileSize: number) {
@@ -146,6 +148,8 @@ async function readMetadata(path: string, mediaType: string, size: number) {
 }
 
 export class AssetService {
+  private readonly verifiedFiles = new Map<string, string>();
+
   constructor(
     private readonly db: AssetDb,
     private readonly configuredDataDir?: string
@@ -210,7 +214,11 @@ export class AssetService {
       } catch (error) {
         if (!isFileError(error, 'EEXIST')) throw error;
         const { file } = await openAssetFile(destination);
-        if ((await hashFile(file)) !== hash) throw new AssetCorruptError();
+        try {
+          if ((await hashFile(file)) !== hash) throw new AssetCorruptError();
+        } finally {
+          await file.close();
+        }
       }
 
       const [inserted] = await this.db
@@ -251,12 +259,29 @@ export class AssetService {
         asset.ownerId,
         asset.hash
       );
-      const source = await openAssetFile(path);
-      if (source.size !== asset.sizeBytes) {
-        await source.file.close();
-        throw new AssetCorruptError();
+      const { file, stat } = await openAssetFile(path);
+      try {
+        if (stat.size !== BigInt(asset.sizeBytes)) throw new AssetCorruptError();
+        const fingerprint = fileFingerprint(stat);
+        if (this.verifiedFiles.get(path) !== fingerprint) {
+          // Verify the opened file and discard results if it changed during hashing.
+          if (
+            (await hashFile(file)) !== asset.hash ||
+            fileFingerprint(await file.stat({ bigint: true })) !== fingerprint
+          ) {
+            throw new AssetCorruptError();
+          }
+          this.verifiedFiles.set(path, fingerprint);
+          if (this.verifiedFiles.size > MAX_VERIFIED_ASSETS) {
+            const oldest = this.verifiedFiles.keys().next();
+            if (!oldest.done) this.verifiedFiles.delete(oldest.value);
+          }
+        }
+        return { file, size: asset.sizeBytes, path };
+      } catch (error) {
+        await file.close();
+        throw error;
       }
-      return { ...source, path };
     } catch (error) {
       if (isFileError(error, 'ENOENT')) throw new AssetNotFoundError();
       if (error instanceof UnsafeAssetPathError || isFileError(error, 'ELOOP', 'ENOTDIR')) {
@@ -282,8 +307,7 @@ export class AssetService {
     const diagnostics: Diagnostic[] = [];
     for (const id of new Set(ids)) {
       try {
-        const { asset, file } = await this.openFile(ownerId, id);
-        if ((await hashFile(file)) !== asset.hash) throw new AssetCorruptError();
+        await this.resolveFile(ownerId, id);
       } catch (error) {
         if (!(error instanceof AssetNotFoundError)) throw error;
         diagnostics.push(

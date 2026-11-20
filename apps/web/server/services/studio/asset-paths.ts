@@ -65,9 +65,9 @@ export async function openAssetFile(path: string) {
   if (!(await lstat(path)).isFile()) throw new UnsafeAssetPathError();
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await file.stat();
+    const stat = await file.stat({ bigint: true });
     if (!stat.isFile()) throw new UnsafeAssetPathError();
-    return { file, size: stat.size };
+    return { file, stat };
   } catch (error) {
     await file.close();
     throw error;
