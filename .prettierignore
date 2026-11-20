@@ -44,3 +44,6 @@ yarn.lock
 # Generated files
 *.min.js
 *.min.css
+
+# Byte-preserved Motion Studio specifications
+packages/style-packs/packs/*/frame.md

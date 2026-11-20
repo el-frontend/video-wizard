@@ -224,3 +224,52 @@ test('retains all JSON object keys and independent nested values across parsing'
   );
   expect(result.props.nested).not.toBe(component.props.nested);
 });
+
+test('round-trips a built-in Remotion captions component independently of a visual style', () => {
+  const caption = {
+    id: 'viral',
+    version: 1,
+    name: 'Viral',
+    kind: 'component',
+    engine: 'remotion',
+    assetIds: [],
+    manifest: {
+      version: 1,
+      props: {},
+      builtin: { kind: 'remotion-caption', preset: 'viral' },
+      exposedRoles: ['colors.accent'],
+    },
+  };
+  expect(LibraryEntrySchema.parse(caption)).toEqual(caption);
+  expect(LibraryEntrySchema.safeParse({ ...caption, kind: 'style', tokens: {} }).success).toBe(
+    false
+  );
+  expect(LibraryEntrySchema.safeParse({ ...caption, engine: 'hyperframes' }).success).toBe(false);
+  expect(LibraryEntrySchema.safeParse({ ...caption, kind: 'template' }).success).toBe(false);
+});
+
+test('keeps style capability and font bindings in the public entry without file locators', () => {
+  const font = { assetId: 'font-1', family: 'Geist', weight: { min: 100, max: 900 } };
+  const style = {
+    id: 'liquid-glass',
+    version: 1,
+    name: 'Liquid Glass',
+    kind: 'style',
+    assetIds: ['font-1'],
+    engines: [],
+    exposedRoles: ['colors.accent'],
+    fonts: [font],
+    tokens: { colors: { accent: '#2454A0' } },
+  };
+  expect(LibraryEntrySchema.parse(style)).toEqual(style);
+  expect(LibraryEntrySchema.safeParse({ ...style, assetIds: [] }).success).toBe(false);
+  expect(
+    LibraryEntrySchema.safeParse({ ...style, fonts: [{ ...font, locator: '/tmp/font' }] }).success
+  ).toBe(false);
+  expect(
+    LibraryEntrySchema.safeParse({
+      ...style,
+      fonts: [{ ...font, weight: { min: 900, max: 100 } }],
+    }).success
+  ).toBe(false);
+});
