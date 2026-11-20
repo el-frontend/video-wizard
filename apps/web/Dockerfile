@@ -4,6 +4,9 @@
 # out of the box.
 FROM node:lts-bookworm
 
+# Studio measures uploaded media locally before making it available.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # pnpm via corepack (matches remotion-server)
 RUN corepack enable && corepack prepare pnpm@latest --activate
 

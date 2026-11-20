@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import {
+  AssetDescriptorSchema,
   AssetRecordSchema,
   CompanionRequestSchema,
   LibraryEntrySchema,
@@ -162,6 +163,25 @@ test('asset metadata uses a confined store key and does not invent measurements'
   for (const locator of ['../escape', '/tmp/file', 'https://x/a', 'a/../b', 'a\\b']) {
     expect(AssetRecordSchema.safeParse({ ...asset, locator }).success).toBe(false);
   }
+});
+
+test('asset descriptors carry measured metadata and reject an internal locator', () => {
+  const descriptor = {
+    id: 'a',
+    ownerId: 'u',
+    hash: 'a'.repeat(64),
+    name: 'grabación.mp4',
+    mediaType: 'video/mp4',
+    durationMs: 3900,
+    width: 640,
+    height: 360,
+    hasAudio: false,
+  };
+  expect(AssetDescriptorSchema.parse(descriptor)).toStrictEqual(descriptor);
+  expect(AssetDescriptorSchema.safeParse({ ...descriptor, locator: 'assets/abc' }).success).toBe(
+    false
+  );
+  expect(AssetDescriptorSchema.safeParse({ ...descriptor, durationMs: 39.5 }).success).toBe(false);
 });
 
 test('keeps assistant delivery states separate from completion and binds selection to the request', () => {

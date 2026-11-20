@@ -79,7 +79,7 @@ Autenticación de Video Wizard para navegador; companion enlazado mediante token
 | POST `/api/studio/projects/:id/duplicate` | `{baseRevision,engine?}` | Copia; incompatibilidades explícitas si cambia motor |
 | GET/POST `/api/studio/libraries/:kind` | Entry/consulta | Versiones y compatibilidad |
 | GET `/api/studio/libraries/:kind/:id/:version` | — | Entrada inmutable |
-| POST `/api/studio/assets` | Multipart archivo | `AssetRecord` medido |
+| POST `/api/studio/assets` | Bytes del archivo, `Content-Type`, `X-Studio-Filename` | `201` con `AssetDescriptor` medido |
 | GET `/api/studio/assets/:id` | Range admitido | Archivo autorizado |
 | POST `/api/studio/imports` | `{kind:'motion-studio'|'legacy-job',sourceId}` | Proyecto nuevo y diagnóstico |
 | POST `/api/studio/shorts` | `{assetId,ranges,engine,canvas}` | Proyectos de clips con rangos originales |
@@ -92,6 +92,8 @@ Autenticación de Video Wizard para navegador; companion enlazado mediante token
 | POST `/api/studio/projects/:id/proposals/:proposalId/apply` | `{baseRevision}` | Nueva revisión o 409 |
 | POST `/api/studio/projects/:id/exports` | `{baseRevision,idempotencyKey}` | Trabajo sobre snapshot inmutable |
 | POST `/api/studio/exports/:id/cancel` | — | Cancelación persistida |
+
+La subida de recursos envía el archivo como cuerpo binario y codifica su nombre con `encodeURIComponent` en `X-Studio-Filename`. El servidor conserva el locator en `AssetRecord` y devuelve el descriptor público en `data`.
 
 D4 añade instanciación de plantilla al servicio de proyecto; R3 añade consulta de propuesta y sus diagnósticos al mismo namespace. Para aplicar cambios ordinarios desde el chat sigue disponible PUT con revisión base; el paso de propuesta es obligatorio para código nuevo y storyboards, no para cambiar un titular solicitado.
 

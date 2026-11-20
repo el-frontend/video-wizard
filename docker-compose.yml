@@ -10,6 +10,7 @@ volumes:
   web_next_cache:
   worker_node_modules:
   worker_app_node_modules:
+  studio_data:
 
 services:
   # PostgreSQL Database
@@ -127,6 +128,7 @@ services:
       - web_node_modules:/app/node_modules
       - web_app_node_modules:/app/apps/web/node_modules
       - web_next_cache:/app/apps/web/.next
+      - studio_data:/app/.studio-data
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -152,6 +154,7 @@ services:
       - ./packages:/app/packages
       - worker_node_modules:/app/node_modules
       - worker_app_node_modules:/app/apps/web/node_modules
+      - studio_data:/app/.studio-data
     depends_on:
       migrate:
         condition: service_completed_successfully
