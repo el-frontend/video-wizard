@@ -4,6 +4,7 @@ import {
   AssetRecordSchema,
   CompanionRequestSchema,
   LibraryEntrySchema,
+  LibraryRefSchema,
   ProjectRecordSchema,
   parseProject,
   validateForExport,
@@ -272,4 +273,21 @@ test('keeps style capability and font bindings in the public entry without file 
       fonts: [{ ...font, weight: { min: 900, max: 100 } }],
     }).success
   ).toBe(false);
+});
+
+test.each(['alias\ud800', 'alias\udc00', 'alias\u0000', '.', '..'])(
+  'rejects a library ID that cannot round-trip through storage and routing (%j)',
+  (id) => {
+    const ref = { id, version: 1 };
+    const entry = { ...ref, kind: 'brand', name: 'Marca', assetIds: [], values: {} };
+    expect(LibraryRefSchema.safeParse(ref).success).toBe(false);
+    expect(LibraryEntrySchema.safeParse(entry).success).toBe(false);
+  }
+);
+
+test('preserves supplementary Unicode and the replacement character in library IDs', () => {
+  const ref = { id: 'editorial-🎬-\ufffd', version: 1 };
+  const entry = { ...ref, kind: 'brand', name: 'Marca', assetIds: [], values: {} };
+  expect(LibraryRefSchema.parse(ref)).toEqual(ref);
+  expect(LibraryEntrySchema.parse(entry)).toEqual(entry);
 });

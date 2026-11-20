@@ -49,7 +49,7 @@ function versionKey(ownerId: string, { id, version }: LibraryRef) {
 
 function validRef(ref: LibraryRef) {
   const parsed = LibraryRefSchema.safeParse({ id: ref.id, version: ref.version });
-  if (!parsed.success || parsed.data.id.includes('\0')) throw new LibraryNotFoundError();
+  if (!parsed.success) throw new LibraryNotFoundError();
   return parsed.data;
 }
 
@@ -91,7 +91,7 @@ export class LibraryService {
 
   async publish(ownerId: string, entry: LibraryEntry, bundle?: Uint8Array): Promise<LibraryEntry> {
     const parsed = LibraryEntrySchema.safeParse(entry);
-    if (!parsed.success || parsed.data.id.includes('\0')) {
+    if (!parsed.success) {
       throw new ValidationError('La entrada de biblioteca no es válida.');
     }
     entry = parsed.data;

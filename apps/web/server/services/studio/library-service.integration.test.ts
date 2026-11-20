@@ -184,8 +184,17 @@ describe('LibraryService with PostgreSQL and the local store', () => {
     await expect(library.get(owner, builtin)).rejects.toBeInstanceOf(LibraryNotFoundError);
   });
 
+  it('keeps ill-formed library IDs from aliasing a replacement character in PostgreSQL', async () => {
+    const malformed = { ...component, id: 'alias\ud800' };
+    const replacement = { ...component, id: 'alias\ufffd' };
+    await expect(library.publish(owner, replacement)).resolves.toEqual(replacement);
+    await expect(library.get(owner, malformed)).rejects.toBeInstanceOf(LibraryNotFoundError);
+    await expect(library.publish(owner, malformed)).rejects.toBeInstanceOf(ValidationError);
+    await expect(library.get(owner, replacement)).resolves.toEqual(replacement);
+  });
+
   it('round-trips valid JSON escapes through publish, retry, get and filtering', async () => {
-    const entry = { ...component, id: 'escaped-name', name: 'Nombre\u0000' };
+    const entry = { ...component, id: 'escaped-name', name: 'Nombre\u0000\ud800' };
     expect(await library.publish(owner, entry)).toEqual(entry);
     expect(await library.publish(owner, entry)).toEqual(entry);
     expect(await library.get(owner, entry)).toEqual(entry);
@@ -330,6 +339,48 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
       await new LibraryService(fixture.db, dataDir).get(owner, reopened.document.styleRef!)
     ).toEqual(glass);
   }, 30_000);
+
+  it.each([
+    ['.', '/api/studio/libraries/component/1'],
+    ['..', '/api/studio/libraries/1'],
+  ])('rejects a dot ID (%s) removed by URL construction', async (id, normalizedPath) => {
+    const owner = await fixture.createOwner();
+    const { POST } = await import('@/app/api/studio/libraries/[kind]/route');
+    const url = 'http://localhost/api/studio/libraries/component';
+    asOwner(owner);
+
+    expect(new URL(`${url}/${encodeURIComponent(id)}/1`).pathname).toBe(normalizedPath);
+    expect(new URL(`${url}/${id.replaceAll('.', '%2e')}/1`).pathname).toBe(normalizedPath);
+    const response = await POST(
+      new Request(url, { method: 'POST', body: JSON.stringify({ ...component, id }) }),
+      { params: Promise.resolve({ kind: 'component' }) }
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it('round-trips a supplementary Unicode ID through the public URL and PostgreSQL', async () => {
+    const owner = await fixture.createOwner();
+    const { POST } = await import('@/app/api/studio/libraries/[kind]/route');
+    const { GET } = await import('@/app/api/studio/libraries/[kind]/[id]/[version]/route');
+    const url = 'http://localhost/api/studio/libraries/component';
+    const entry = { ...component, id: 'editorial-🎬' };
+    asOwner(owner);
+
+    const created = await POST(new Request(url, { method: 'POST', body: JSON.stringify(entry) }), {
+      params: Promise.resolve({ kind: entry.kind }),
+    });
+    expect(created.status).toBe(201);
+
+    const request = new Request(new URL(`${url}/${encodeURIComponent(entry.id)}/${entry.version}`));
+    const [kind, id, version] = new URL(request.url).pathname.split('/').slice(-3);
+    expect(kind).toBe('component');
+    expect(id).toBe('editorial-%F0%9F%8E%AC');
+    expect(version).toBe('1');
+    const reopened = await GET(request, {
+      params: Promise.resolve({ kind: kind!, id: decodeURIComponent(id!), version: version! }),
+    });
+    expect(await reopened.json()).toEqual({ success: true, data: entry });
+  });
 
   it('serves owner-scoped metadata and rejects mismatched kinds and version conflicts', async () => {
     const owner = await fixture.createOwner();

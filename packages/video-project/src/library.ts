@@ -30,7 +30,14 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 );
 export const JsonObjectSchema = dictionary(JsonValueSchema);
 
-export const LibraryRefSchema = z.strictObject({ id: IdSchema, version: z.int().positive() });
+// A library ID must round-trip as a PostgreSQL text key and one encoded URL segment.
+export const LibraryIdSchema = IdSchema.refine(
+  (id) => id !== '.' && id !== '..' && !id.includes('\0') && !/[\uD800-\uDFFF]/u.test(id)
+);
+export const LibraryRefSchema = z.strictObject({
+  id: LibraryIdSchema,
+  version: z.int().positive(),
+});
 export type LibraryRef = z.infer<typeof LibraryRefSchema>;
 export const BrandSnapshotSchema = z.strictObject({
   ref: LibraryRefSchema,
