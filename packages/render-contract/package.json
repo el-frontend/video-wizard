@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "vitest": "^4.1.12",
+    "@workspace/style-packs": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "typescript": "^5",
     "@types/node": "^20"

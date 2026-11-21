@@ -1,4 +1,8 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
+import { loadStylePack, stylePackFonts } from '@workspace/style-packs';
+import type { Layer, LibraryEntry } from '@workspace/video-project';
 import { exampleProject } from '@workspace/video-project/fixtures';
 import {
   projectPins,
@@ -74,6 +78,84 @@ it('validates the resolved font family and weight for each text layer', () => {
   delete layer.overrides;
   expect(validateSnapshot(snapshot)).toEqual([]);
 });
+
+it('requires the actual weight of the pinned Viral preset for captions and components', async () => {
+  const snapshot = fixture();
+  const { document, dependencies } = snapshot;
+  const fonts = await Promise.all(
+    stylePackFonts.map(async ({ family, filename, source, weight }) => {
+      const hash = createHash('sha256')
+        .update(await readFile(source))
+        .digest('hex');
+      dependencies.assets[filename] = { ...asset(filename, 'font/woff2'), hash };
+      return { family, assetId: filename, weight };
+    })
+  );
+  const style: LibraryEntry = {
+    ...(await loadStylePack('noticias-modern-editorial')),
+    version: 2,
+    engines: ['remotion'],
+    assetIds: fonts.map(({ assetId }) => assetId),
+    fonts,
+  };
+  const preset: LibraryEntry = {
+    kind: 'component',
+    id: 'viral',
+    version: 1,
+    name: 'Viral',
+    assetIds: [],
+    engine: 'remotion',
+    manifest: { version: 1, props: {}, builtin: { kind: 'remotion-caption', preset: 'viral' } },
+  };
+  document.styleRef = { id: style.id, version: style.version };
+  dependencies.libraries = { [libraryKey(style)]: style, [libraryKey(preset)]: preset };
+  const presetRef = { id: preset.id, version: preset.version };
+  const timing = {
+    startMs: 0,
+    endMs: 3000,
+    endAnchor: 'fixed' as const,
+    visible: true,
+    zIndex: 1,
+    box: { x: 0, y: 0, width: 1080, height: 1920 },
+  };
+  const captions: Extract<Layer, { type: 'captions' }> = {
+    ...timing,
+    id: 'captions',
+    type: 'captions',
+    templateRef: presetRef,
+    cues: [{ id: 'cue', startMs: 0, endMs: 2000, text: 'Hola' }],
+  };
+  const component: Extract<Layer, { type: 'component' }> = {
+    ...timing,
+    id: 'component',
+    type: 'component',
+    componentRef: presetRef,
+    props: {},
+  };
+  document.scenes[0]!.layers.push(captions, component);
+  expect(validateSnapshot(snapshot)).toEqual(
+    ['captions', 'component'].map((layerId) => ({
+      code: 'font-unresolved',
+      severity: 'error',
+      sceneId: 'outro',
+      layerId,
+      message: 'No se ha fijado la fuente «Archivo Black» con peso 900.',
+    }))
+  );
+
+  // The heading still uses Archivo Black 400 while the preset can use Geist 900.
+  captions.overrides = { typography: { display: { fontFamily: 'Geist' } } };
+  component.overrides = captions.overrides;
+  expect(validateSnapshot(snapshot)).toEqual([]);
+
+  delete captions.templateRef;
+  delete captions.overrides;
+  expect(validateSnapshot(snapshot)).toEqual([]);
+
+  component.overrides = { typography: { display: { fontFamily: 'sans-serif' } } };
+  expect(validateSnapshot(snapshot)).toEqual([]);
+});
+
 it('validates media kind, measured entry time and global audio without trimming the editorial tail', () => {
   const s = fixture(),
     scene = s.document.scenes[0]!,

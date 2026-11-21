@@ -335,6 +335,9 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.28
+      '@workspace/style-packs':
+        specifier: workspace:*
+        version: link:../style-packs
       '@workspace/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config

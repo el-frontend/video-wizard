@@ -3,24 +3,17 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { type ExportSnapshot, libraryKey } from '@workspace/render-contract';
+import {
+  type ExportSnapshot,
+  libraryKey,
+  remotionCaptionPresets,
+} from '@workspace/render-contract';
 import type { LibraryEntry } from '@workspace/video-project';
 
 const require = createRequire(import.meta.url);
 export const compositionsDirectory = dirname(require.resolve('@workspace/remotion-compositions'));
 export const serverModules = resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules');
 const archive = resolve(compositionsDirectory, '../studio-presets/v1');
-const exportsByPreset = {
-  default: 'DefaultTemplate',
-  viral: 'ViralTemplate',
-  minimal: 'MinimalTemplate',
-  modern: 'ModernTemplate',
-  highlight: 'HighlightTemplate',
-  colorshift: 'ColorShiftTemplate',
-  hormozi: 'HormoziTemplate',
-  mrbeast: 'MrBeastTemplate',
-  mrbeastemoji: 'MrBeastEmojiTemplate',
-};
 export const hashBytes = (bytes: string | Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
 
@@ -34,7 +27,7 @@ export async function verifiedSeed(
     Object.keys(entry.manifest.props).length
   )
     throw new Error('Componente incompatible con el registro Remotion.');
-  const name = exportsByPreset[entry.manifest.builtin.preset];
+  const { source: name } = remotionCaptionPresets[entry.manifest.builtin.preset];
   const pin = snapshot.bundles[libraryKey(entry)];
   if (!pin) throw new Error('Falta el código del componente fijado.');
   const bytes = Buffer.from(pin.base64, 'base64');

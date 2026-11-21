@@ -38,4 +38,5 @@ export interface EngineAdapter {
 }
 export * from './appearance';
 export * from './project-appearance';
+export * from './remotion-caption-presets';
 export * from './scene-frames';

@@ -1,5 +1,6 @@
 import { libraryKey, type ResolvedDependencies } from './dependencies';
 import { resolveAppearance } from './appearance';
+import { remotionCaptionPresets } from './remotion-caption-presets';
 import type { JsonValue, Layer, ProjectDraft } from '@workspace/video-project';
 
 const defaults = {
@@ -27,6 +28,7 @@ export function projectAppearance(
         ? layer.templateRef
         : undefined;
   const implementation = ref && dependencies.libraries[libraryKey(ref)];
+  const builtin = implementation?.kind === 'component' && implementation.manifest.builtin;
   const componentDefaults =
     implementation && 'manifest' in implementation && implementation.manifest.exposedRoles
       ? { ...defaults, exposedRoles: implementation.manifest.exposedRoles }
@@ -39,6 +41,7 @@ export function projectAppearance(
   });
   const colors = fields(tokens.colors),
     display = fields(fields(tokens.typography).display);
+  const displayWeight = typeof display.weight === 'number' ? display.weight : 700;
   const color = (value: JsonValue | undefined, fallback: string) =>
     typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback;
   return {
@@ -48,7 +51,7 @@ export function projectAppearance(
     foreground: color(colors.foreground, '#FFFFFF'),
     accent: color(colors.accent, '#FFFFFF'),
     family: typeof display.fontFamily === 'string' ? display.fontFamily : 'sans-serif',
-    weight: typeof display.weight === 'number' ? display.weight : 700,
+    weight: builtin ? remotionCaptionPresets[builtin.preset].weight : displayWeight,
     size: ((typeof display.cqw === 'number' ? display.cqw : 6) * document.canvas.width) / 100,
     lineHeight: typeof display.lineHeight === 'number' ? display.lineHeight : 1.15,
   };
