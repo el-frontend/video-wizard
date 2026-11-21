@@ -4,12 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { ArrowLeft, Check, ListVideo, Redo2, Save, Undo2 } from 'lucide-react';
-import type { PreviewHandle, ProjectRecord } from '@workspace/video-project';
+import { ArrowLeft, Check, Redo2, Save, Undo2 } from 'lucide-react';
+import type { PreviewHandle, ProjectRecord, ProjectCommand } from '@workspace/video-project';
 import { sceneStartMs } from '@workspace/video-project';
 import { engineName, timeLabel } from '@/features/studio-projects/project-labels';
 import { useProjectSession } from '../hooks/use-project-session';
 import { guardProjectHistory, studioNavigation } from '../hooks/project-navigation';
+import { SceneSequence } from './scene-sequence';
+import { LayerList } from './layer-list';
+import { LayerInspector } from './layer-inspector';
+import { CanvasControls } from './canvas-controls';
+import { NumberField } from './number-field';
+import { checkLayerRange } from '../lib/editor-commands';
+import { useEditorDependencies } from '../hooks/use-editor-dependencies';
 import { PreviewPanel } from './preview-panel';
 
 const statusLabels = {
@@ -62,6 +69,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     retainDraft,
     discardRetained,
   } = session;
+  const dependencies = useEditorDependencies(draft);
   const projectId = initial.document.id;
   const router = useRouter();
   const handle = useRef<PreviewHandle | null>(null);
@@ -186,11 +194,36 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
       </section>
     );
   const canSave = ['dirty', 'error', 'saving'].includes(session.status);
-  function seek(timeMs: number, sceneId = selection.sceneId) {
-    const next = { sceneId, layerId: null, captionId: null, timeMs };
+  const scene = draft.scenes.find((item) => item.id === selection.sceneId) ?? draft.scenes[0];
+  const layer = scene?.layers.find((item) => item.id === selection.layerId);
+  function seek(
+    timeMs: number,
+    sceneId: string | null = scene?.id ?? null,
+    layerId: string | null = selection.layerId
+  ) {
+    const next = { sceneId, layerId, captionId: null, timeMs };
     selectionRef.current = next;
     select(next);
     handle.current?.seek(timeMs);
+  }
+  function command(action: ProjectCommand) {
+    const updated = session.dispatch(action);
+    if (!updated || !draft) return;
+    if (action.type === 'add-scene') {
+      seek(sceneStartMs(updated, action.scene.id), action.scene.id, null);
+    } else if (action.type === 'add-layer' || action.type === 'remove-layer') {
+      seek(selection.timeMs, action.sceneId, action.type === 'add-layer' ? action.layer.id : null);
+    } else if (action.type === 'remove-scene') {
+      const index = draft.scenes.findIndex((item) => item.id === action.sceneId);
+      const target = updated.scenes[index] ?? updated.scenes[index - 1];
+      seek(target ? sceneStartMs(updated, target.id) : 0, target?.id ?? null, null);
+    } else if (action.type === 'reorder-scene' && scene) {
+      const local = Math.max(
+        0,
+        Math.min(scene.durationMs - 1, selection.timeMs - sceneStartMs(draft, scene.id))
+      );
+      seek(sceneStartMs(updated, scene.id) + local, scene.id, selection.layerId);
+    }
   }
   return (
     <section lang="es" className="studio-workspace">
@@ -278,6 +311,49 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             />
             <span>{timeLabel(draft.durationMs)}</span>
           </div>
+          <div className="edit-tracks">
+            <SceneSequence
+              scenes={draft.scenes}
+              selectedId={scene?.id ?? null}
+              onSelect={(id) => seek(sceneStartMs(draft, id), id, null)}
+              onCommand={command}
+            />
+            {scene && (
+              <div>
+                <LayerList
+                  key={JSON.stringify([draft.id, scene.id])}
+                  scene={scene}
+                  canvas={draft.canvas}
+                  selectedId={selection.layerId}
+                  assets={dependencies.assets}
+                  onSelect={(id) => seek(selection.timeMs, scene.id, id)}
+                  onCommand={command}
+                />
+                <details className="edit-section">
+                  <summary>Duración de la escena</summary>
+                  <NumberField
+                    key={scene.id}
+                    label="Ampliar hasta (ms)"
+                    min={scene.durationMs}
+                    value={scene.durationMs}
+                    onCommit={(durationMs) => {
+                      for (const item of scene.layers) {
+                        if (item.endAnchor === 'scene-end' && 'sourceInMs' in item) {
+                          const issue = checkLayerRange(
+                            item,
+                            { endMs: Math.max(durationMs, item.endMs) },
+                            dependencies.asset(item.assetId)?.durationMs
+                          );
+                          if (issue) return issue;
+                        }
+                      }
+                      command({ type: 'extend-scene', sceneId: scene.id, durationMs });
+                    }}
+                  />
+                </details>
+              </div>
+            )}
+          </div>
         </div>
         <aside className="designer-details">
           <h2>Proyecto</h2>
@@ -285,42 +361,21 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             title={draft.title}
             onTitle={(title) => session.dispatch({ type: 'set-title', title })}
           />
-          <dl className="canvas-details">
-            <div>
-              <dt>Lienzo</dt>
-              <dd>
-                {draft.canvas.width} × {draft.canvas.height}
-              </dd>
-            </div>
-            <div>
-              <dt>Frecuencia</dt>
-              <dd>{draft.canvas.fps} fps</dd>
-            </div>
-          </dl>
-          <section className="scene-list">
-            <h2>
-              <ListVideo size={19} />
-              Escenas
-            </h2>
-            {draft.scenes.length ? (
-              <ol>
-                {draft.scenes.map((scene, index) => (
-                  <li key={scene.id}>
-                    <button
-                      type="button"
-                      aria-pressed={selection.sceneId === scene.id}
-                      onClick={() => seek(sceneStartMs(draft, scene.id), scene.id)}
-                    >
-                      <span>{scene.editorial?.headline || 'Escena ' + (index + 1)}</span>
-                      <small>{timeLabel(scene.durationMs)}</small>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p>Sin escenas.</p>
-            )}
-          </section>
+          <CanvasControls canvas={draft.canvas} onCommand={command} />
+          {layer && scene && (
+            <LayerInspector
+              key={layer.id}
+              sceneId={scene.id}
+              sceneDuration={scene.durationMs}
+              layer={layer}
+              canvas={draft.canvas}
+              asset={'assetId' in layer ? dependencies.asset(layer.assetId) : undefined}
+              manifest={
+                layer.type === 'component' ? dependencies.manifest(layer.componentRef) : undefined
+              }
+              onCommand={command}
+            />
+          )}
         </aside>
       </div>
     </section>

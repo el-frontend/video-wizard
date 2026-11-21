@@ -100,12 +100,25 @@ function createSession(id: string, initial?: ProjectRecord) {
   }
   function edited(draft: ProjectDraft) {
     stopTimer();
+    const selected = state.selection;
+    const scene = draft.scenes.find((item) => item.id === selected.sceneId);
+    const selection = {
+      ...selected,
+      sceneId: scene?.id ?? null,
+      layerId:
+        scene?.layers.some((layer) => layer.id === selected.layerId) ||
+        (!selected.sceneId && draft.globalAudio.some((layer) => layer.id === selected.layerId))
+          ? selected.layerId
+          : null,
+      timeMs: Math.max(0, Math.min(selected.timeMs, draft.durationMs - 1)),
+    };
+    if (selection.layerId !== selected.layerId) selection.captionId = null;
     if (!state.conflict && !flight && draft === state.saved?.document) {
-      update({ draft, status: 'saved', error: '' });
+      update({ draft, selection, status: 'saved', error: '' });
       return;
     }
     const status = state.conflict ? 'conflict' : flight ? 'saving' : 'dirty';
-    update({ draft, status, error: '' });
+    update({ draft, selection, status, error: '' });
     if (!state.conflict)
       timer = setTimeout(() => {
         timer = undefined;
@@ -121,6 +134,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       past.push(previous);
       future.length = 0;
       edited(next);
+      return next;
     } catch {
       update({ error: 'No se pudo aplicar el cambio al documento.' });
     }

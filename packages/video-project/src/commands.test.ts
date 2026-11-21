@@ -249,3 +249,28 @@ test('renaming changes only the title and rejects a blank edit', () => {
   expect(() => applyCommand(original, { type: 'set-title', title: '   ' })).toThrow();
   expect(original.title).toBe('Dos escenas');
 });
+
+test('canvas changes retain stored geometry and reject zero dimensions', () => {
+  const draft = exampleProject();
+  const canvas = { width: 1920, height: 1080, fps: 24 };
+  expect(applyCommand(draft, { type: 'set-canvas', canvas })).toStrictEqual({ ...draft, canvas });
+  expect(() =>
+    applyCommand(draft, { type: 'set-canvas', canvas: { ...canvas, width: 0 } })
+  ).toThrow();
+});
+
+test('stacks an existing layer by its effective z-index and registers inserted media', () => {
+  const draft = exampleProject();
+  draft.scenes[0]!.layers[0]!.zIndex = 9;
+  const moved = applyCommand(draft, {
+    type: 'reorder-layer',
+    sceneId: 'intro',
+    layerId: 'speech',
+    beforeId: 'card',
+    order: 'z-index',
+  });
+  expect(moved.scenes[0]!.layers.map((l) => l.id)).toEqual(['captions', 'speech', 'card']);
+  const layer = { ...draft.globalAudio[0]!, id: 'recording', assetId: 'new-audio' };
+  const added = applyCommand(draft, { type: 'add-layer', sceneId: 'outro', layer });
+  expect(added.assetIds).toEqual([...draft.assetIds, 'new-audio']);
+});

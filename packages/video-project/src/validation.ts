@@ -1,10 +1,12 @@
-import type { JsonValue, LibraryEntry, LibraryRef } from './library';
+import type { JsonValue, LibraryEntry, LibraryManifest, LibraryRef } from './library';
 import type { Diagnostic, Layer, ProjectDraft } from './schema';
 
 type Location = Pick<Diagnostic, 'sceneId' | 'layerId'>;
-type Component = Extract<LibraryEntry, { kind: 'component' }>;
 
-function validProps(props: Record<string, JsonValue>, { manifest }: Component): boolean {
+export function validComponentProps(
+  props: Record<string, JsonValue>,
+  manifest: LibraryManifest
+): boolean {
   return (
     Object.entries(manifest.props).every(
       ([key, field]) => !field.required || Object.hasOwn(props, key)
@@ -60,7 +62,7 @@ export function validateForExport(
         error('layer-overflow', 'La capa termina fuera de la escena', location);
       if (layer.type === 'component') {
         const entry = reference(layer.componentRef, ['component'], location);
-        if (entry?.kind === 'component' && !validProps(layer.props, entry))
+        if (entry?.kind === 'component' && !validComponentProps(layer.props, entry.manifest))
           error(
             'component-props',
             'Las propiedades no coinciden con el manifiesto del componente',

@@ -8,6 +8,7 @@ import {
 } from './library';
 import {
   BoxSchema,
+  CanvasSchema,
   CaptionCueSchema,
   FocalPointSchema,
   LayerSchema,
@@ -44,13 +45,19 @@ const patch = z
   .partial();
 
 export const ProjectCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('set-canvas'), canvas: CanvasSchema }),
   z.strictObject({ type: z.literal('set-title'), title: IdSchema }),
   z.strictObject({ type: z.literal('add-scene'), scene: SceneSchema, ...sibling }),
   z.strictObject({ type: z.literal('remove-scene'), ...scene }),
   z.strictObject({ type: z.literal('reorder-scene'), ...scene, ...sibling }),
   z.strictObject({ type: z.literal('add-layer'), ...scope, layer: LayerSchema, ...sibling }),
   z.strictObject({ type: z.literal('remove-layer'), ...target }),
-  z.strictObject({ type: z.literal('reorder-layer'), ...target, ...sibling }),
+  z.strictObject({
+    type: z.literal('reorder-layer'),
+    ...target,
+    ...sibling,
+    order: z.literal('z-index').optional(),
+  }),
   z.strictObject({ type: z.literal('update-layer'), ...target, patch }),
   z.strictObject({
     type: z.literal('set-captions'),
@@ -105,6 +112,9 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
     return sceneId === null ? draft.globalAudio : get(scenes, sceneId).layers;
   }
   switch (command.type) {
+    case 'set-canvas':
+      draft.canvas = command.canvas;
+      break;
     case 'set-title':
       draft.title = command.title;
       break;
@@ -119,6 +129,8 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
       break;
     case 'add-layer':
       insert(layersFor(command.sceneId), command.layer, command.beforeId);
+      if ('assetId' in command.layer && !draft.assetIds.includes(command.layer.assetId))
+        draft.assetIds.push(command.layer.assetId);
       break;
     case 'remove-layer': {
       const layers = layersFor(command.sceneId);
@@ -127,7 +139,9 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
     }
     case 'reorder-layer': {
       const layers = layersFor(command.sceneId);
-      if (!move(layers, command.layerId, command.beforeId)) break;
+      const ordered = command.order ? [...layers].sort((a, b) => a.zIndex - b.zIndex) : layers;
+      if (!move(ordered, command.layerId, command.beforeId)) break;
+      if (ordered !== layers) layers.splice(0, layers.length, ...ordered);
       layers.forEach((layer, i) => {
         layer.zIndex = i;
       });

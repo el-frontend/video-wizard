@@ -108,17 +108,19 @@ export const SceneSchema = z.strictObject({
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
+export const CanvasSchema = z.strictObject({
+  width: z.int().positive(),
+  height: z.int().positive(),
+  fps: z.number().positive(),
+});
+
 export const ProjectDraftSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     id: IdSchema,
     title: IdSchema,
     engine: EngineIdSchema,
-    canvas: z.strictObject({
-      width: z.int().positive(),
-      height: z.int().positive(),
-      fps: z.number().positive(),
-    }),
+    canvas: CanvasSchema,
     durationMs: MillisecondsSchema,
     scenes: z.array(SceneSchema),
     globalAudio: z.array(GlobalAudioLayerSchema),
