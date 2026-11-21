@@ -2,6 +2,7 @@
 
 import {
   Film,
+  Scissors,
   Layers3,
   LayoutTemplate,
   Palette,
@@ -36,6 +37,7 @@ const navItems: NavItem[] = [
     href: '/projects',
     icon: PanelsTopLeft,
   },
+  { title: 'Shorts', href: '/shorts', icon: Scissors },
   { title: 'Plantillas', href: '/templates', icon: LayoutTemplate },
   { title: 'Estilos', href: '/styles', icon: Palette },
   { title: 'Marcas', href: '/brands', icon: Stamp },

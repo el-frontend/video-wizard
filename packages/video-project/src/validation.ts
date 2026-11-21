@@ -41,6 +41,12 @@ export function validateForExport(
   function media(layer: Layer, location: Location) {
     if ('assetId' in layer && !assets.has(layer.assetId))
       error('asset-missing', 'Falta el recurso ' + layer.assetId, location);
+    if (
+      layer.type === 'video' &&
+      layer.playbackVariant &&
+      !assets.has(layer.playbackVariant.assetId)
+    )
+      error('asset-missing', 'Falta el archivo del recorte procesado.', location);
     if (layer.type === 'audio' && layer.take?.stale)
       diagnostics.push({
         severity: 'warning',

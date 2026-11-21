@@ -232,3 +232,53 @@ it('gives adjacent scenes one shared cut and diagnoses a scene with no displayab
     expect.objectContaining({ code: 'scene-no-frame', severity: 'error', sceneId: '1' })
   );
 });
+
+it('plays processed media on the local clock and requires an explicit return to the original outside coverage', async () => {
+  const { videoPlayback } = await import('./video-playback');
+  const { applyCommand } = await import('@workspace/video-project');
+  const s = fixture();
+  const scene = s.document.scenes[0]!;
+  const layer = {
+    type: 'video' as const,
+    id: 'v',
+    startMs: 0,
+    endMs: 2000,
+    visible: true,
+    endAnchor: 'fixed' as const,
+    zIndex: 0,
+    box: { x: 0, y: 0, width: 100, height: 100 },
+    fit: 'cover' as const,
+    focalPoint: { x: 0.5, y: 0.5 },
+    assetId: 'original',
+    sourceInMs: 5700,
+    volume: 1,
+    playbackVariant: {
+      kind: 'processed-crop' as const,
+      assetId: 'derived',
+      jobId: '365be7a1-dd0e-4cd8-99a1-b2f1b200d3e2',
+      sourceStartMs: 5000,
+      sourceEndMs: 12000,
+    },
+  };
+  s.document.assetIds = ['original', 'derived'];
+  scene.layers = [layer];
+  Object.assign(s.dependencies.assets, {
+    original: { ...asset('original', 'video/mp4'), durationMs: 24000, hasAudio: true },
+    derived: { ...asset('derived', 'video/mp4'), durationMs: 7000, hasAudio: true },
+  });
+  expect(validateSnapshot(s)).toEqual([]);
+  expect(videoPlayback(layer)).toEqual({ assetId: 'derived', sourceInMs: 700 });
+  layer.sourceInMs = 11000;
+  expect(() => videoPlayback(layer)).toThrow(/original/);
+  expect(validateSnapshot(s)).toContainEqual(expect.objectContaining({ code: 'crop-coverage' }));
+  const restored = applyCommand(s.document, {
+    type: 'use-original-video',
+    sceneId: scene.id,
+    layerId: layer.id,
+  });
+  const v = restored.scenes[0]!.layers[0]!;
+  if (v.type !== 'video') throw Error('fixture');
+  expect(videoPlayback(v)).toEqual({ assetId: 'original', sourceInMs: 11000 });
+  expect(restored.assetIds).toEqual(['original']);
+  expect(s.document.assetIds).toContain('derived');
+});

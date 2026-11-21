@@ -73,6 +73,16 @@ export const GlobalAudioLayerSchema = z
   .strictObject({ ...audio, endAnchor: z.literal('fixed') })
   .refine(nonemptyRange, rangeIssue);
 export type AudioLayer = z.infer<typeof AudioLayerSchema>;
+export const PlaybackVariantSchema = z
+  .strictObject({
+    kind: z.literal('processed-crop'),
+    assetId: IdSchema,
+    jobId: z.uuid(),
+    sourceStartMs: MillisecondsSchema,
+    sourceEndMs: MillisecondsSchema,
+  })
+  .refine((v) => v.sourceStartMs < v.sourceEndMs);
+export type PlaybackVariant = z.infer<typeof PlaybackVariantSchema>;
 export const LayerSchema = z
   .discriminatedUnion('type', [
     z.strictObject(audio),
@@ -82,6 +92,7 @@ export const LayerSchema = z
       type: z.literal('video'),
       fit: z.enum(['cover', 'contain']),
       focalPoint: FocalPointSchema,
+      playbackVariant: PlaybackVariantSchema.optional(),
     }),
     z.strictObject({ ...visual, type: z.literal('image'), assetId: IdSchema }),
     z.strictObject({ ...visual, type: z.literal('text'), text: z.string() }),

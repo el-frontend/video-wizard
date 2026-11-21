@@ -4,6 +4,7 @@
  * Type definitions for the video processing feature
  */
 
+import type { CaptionCue } from '@workspace/video-project';
 import type { ContentAnalysis } from '@/server/types/content-analysis';
 import type { AspectRatio } from '../lib/aspect-ratios';
 import type { SubtitleSegmentSeconds } from '../lib/legacy-timing';
@@ -23,8 +24,7 @@ export interface TranscriptSegment extends SubtitleSegmentSeconds {
 }
 
 export interface TranscriptionResult {
-  video_path: string;
-  audio_path?: string;
+  cues: CaptionCue[];
   segments: TranscriptSegment[];
   full_text: string;
   segment_count: number;
@@ -49,7 +49,7 @@ export interface VideoProcessingState {
   inputMode: VideoInputMode;
   aspectRatio: AspectRatio;
   currentStep: ProcessingStep;
-  uploadedPath: string;
+  sourceAssetId: string;
   transcription: TranscriptionResult | null;
   analysis: ContentAnalysis | null;
   language: string; // Detected language code
@@ -89,6 +89,8 @@ export type SubtitleTemplate =
  * Generated video clip with loading state
  */
 export interface GeneratedClip {
+  jobId?: string;
+  clipCaptions?: CaptionCue[];
   index: number;
   summary: string;
   viralScore: number;

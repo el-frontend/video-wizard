@@ -27,6 +27,8 @@ interface ClipCardProps {
   brandKit?: BrandKit;
   isLoading: boolean;
   isRendering?: boolean;
+  onOpenDesigner?: () => void;
+  openingDesigner?: boolean;
   onEdit: () => void;
   onTemplateChange: (template: SubtitleTemplate) => void;
   onRenderFinal: () => void;
@@ -56,6 +58,8 @@ export function ClipCard({
   brandKit,
   isLoading,
   isRendering,
+  onOpenDesigner,
+  openingDesigner,
   onEdit,
   onTemplateChange,
   onRenderFinal,
@@ -224,6 +228,18 @@ export function ClipCard({
             )}
           </Button>
         </div>
+
+        {onOpenDesigner && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={openingDesigner}
+            onClick={onOpenDesigner}
+          >
+            Abrir en diseñador
+          </Button>
+        )}
 
         {/* Download Button (if rendered) */}
         {renderedVideoUrl && !isRendering && (

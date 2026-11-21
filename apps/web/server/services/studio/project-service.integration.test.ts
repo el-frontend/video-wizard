@@ -61,6 +61,17 @@ describe('ProjectService with PostgreSQL', () => {
     });
   });
 
+  it('rolls back the entire prepared project batch and history when the second insert fails', async () => {
+    const first = { ...exampleProject(), id: randomUUID() };
+    await expect(service.createFromDocuments(owner, [first, first])).rejects.toThrow();
+    await expect(service.get(owner, first.id)).rejects.toThrow(ProjectNotFoundError);
+    const history = await fixture.db
+      .select()
+      .from(studioProjectRevisions)
+      .where(eq(studioProjectRevisions.projectId, first.id));
+    expect(history).toEqual([]);
+  });
+
   it('commits one competing save and reports the winning document to the other writer', async () => {
     const created = await create();
     const variants = ['Titular editado a mano', 'Propuesta del asistente'].map((headline) => {

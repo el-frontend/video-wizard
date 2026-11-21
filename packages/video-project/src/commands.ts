@@ -59,6 +59,7 @@ export const ProjectCommandSchema = z.discriminatedUnion('type', [
     order: z.literal('z-index').optional(),
   }),
   z.strictObject({ type: z.literal('update-layer'), ...target, patch }),
+  z.strictObject({ type: z.literal('use-original-video'), ...scene, layerId: IdSchema }),
   z.strictObject({
     type: z.literal('set-captions'),
     ...scene,
@@ -154,6 +155,12 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
       insert(layersFor(command.sceneId), command.layer, command.beforeId);
       if ('assetId' in command.layer && !draft.assetIds.includes(command.layer.assetId))
         draft.assetIds.push(command.layer.assetId);
+      if (
+        command.layer.type === 'video' &&
+        command.layer.playbackVariant &&
+        !draft.assetIds.includes(command.layer.playbackVariant.assetId)
+      )
+        draft.assetIds.push(command.layer.playbackVariant.assetId);
       break;
     case 'remove-layer': {
       const layers = layersFor(command.sceneId);
@@ -168,6 +175,23 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
       layers.forEach((layer, i) => {
         layer.zIndex = i;
       });
+      break;
+    }
+    case 'use-original-video': {
+      const layer = get(get(scenes, command.sceneId).layers, command.layerId);
+      if (layer.type !== 'video') throw new RangeError('Se requiere una capa de video.');
+      const previous = layer.playbackVariant?.assetId;
+      delete layer.playbackVariant;
+      const layers = [...draft.globalAudio, ...scenes.flatMap((s) => s.layers)];
+      if (
+        previous &&
+        !layers.some(
+          (l) =>
+            ('assetId' in l && l.assetId === previous) ||
+            (l.type === 'video' && l.playbackVariant?.assetId === previous)
+        )
+      )
+        draft.assetIds = draft.assetIds.filter((id) => id !== previous);
       break;
     }
     case 'update-layer': {

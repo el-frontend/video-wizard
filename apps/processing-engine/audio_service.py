@@ -241,7 +241,8 @@ class AudioService:
             audio_path,
             language=language,
             task=task,
-            verbose=False
+            verbose=False,
+            word_timestamps=True
         )
 
         # Get detected language
@@ -250,12 +251,18 @@ class AudioService:
         # Format output as structured JSON
         segments = []
         for idx, segment in enumerate(result["segments"]):
-            segments.append({
+            item = {
                 "id": idx,
-                "start": round(segment["start"], 2),
-                "end": round(segment["end"], 2),
+                "start": segment["start"],
+                "end": segment["end"],
                 "text": segment["text"].strip()
-            })
+            }
+            if segment.get("words"):
+                item["words"] = [
+                    {"word": word["word"], "start": word["start"], "end": word["end"]}
+                    for word in segment["words"]
+                ]
+            segments.append(item)
 
         logger.info(f"Local transcription complete. Generated {len(segments)} segments. Language: {detected_language}")
         return segments, detected_language

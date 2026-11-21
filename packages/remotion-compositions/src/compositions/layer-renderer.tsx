@@ -2,6 +2,7 @@ import type { ComponentType, CSSProperties } from 'react';
 import { Audio, Img, OffthreadVideo, useCurrentFrame } from 'remotion';
 import {
   contrastRatio,
+  videoPlayback,
   layerSampleMs,
   libraryKey,
   type ResolvedDependencies,
@@ -31,8 +32,9 @@ export function LayerRenderer({
 }: LayerRendererProps) {
   const frame = useCurrentFrame();
   const { fps } = document.canvas;
-  const src = 'assetId' in layer ? dependencies.assets[layer.assetId]?.url : undefined;
-  const trimBefore = 'sourceInMs' in layer ? Math.floor((layer.sourceInMs * fps) / 1000) : 0;
+  const media = layer.type === 'video' ? videoPlayback(layer) : layer;
+  const src = 'assetId' in media ? dependencies.assets[media.assetId]?.url : undefined;
+  const trimBefore = 'sourceInMs' in media ? Math.floor((media.sourceInMs * fps) / 1000) : 0;
   if (layer.type === 'audio')
     return src ? <Audio src={src} volume={layer.volume} trimBefore={trimBefore} /> : null;
 

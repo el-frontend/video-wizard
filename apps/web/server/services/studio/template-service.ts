@@ -25,6 +25,7 @@ import {
 import { ValidationError } from '@/server/lib/utils';
 import { AssetNotFoundError, type AssetService } from './asset-service';
 import { LibraryNotFoundError, type LibraryService } from './library-service';
+import { cropDiagnostics } from './short-provenance';
 import { ConflictError, type ProjectService } from './project-service';
 
 const instanceInput = z.strictObject({
@@ -210,7 +211,7 @@ export class TemplateService {
       document: doc,
       dependencies,
       bundles: {},
-      diagnostics: [],
+      diagnostics: await cropDiagnostics(owner, doc),
     });
     diagnostics.push(...projectAppearance(doc, dependencies).diagnostics);
     for (const scene of doc.scenes)
@@ -246,7 +247,7 @@ export class TemplateService {
     await this.materialize(owner, template);
     return this.library.publish(owner, template);
   }
-  async instantiate(owner: string, data: unknown) {
+  async prepare(owner: string, data: unknown) {
     const parsed = instanceInput.safeParse(data);
     if (!parsed.success) invalid('La solicitud de instancia no es válida.');
     const input = parsed.data,
@@ -255,7 +256,10 @@ export class TemplateService {
     const doc = await this.materialize(owner, template, input);
     renewIds(doc);
     for (const scene of doc.scenes) scene.templateRef = input.templateRef;
-    return this.projects.createFromDocument(owner, doc);
+    return doc;
+  }
+  async instantiate(owner: string, data: unknown) {
+    return this.projects.createFromDocument(owner, await this.prepare(owner, data));
   }
   async fromProject(owner: string, id: string, data: unknown) {
     const parsed = publishInput.safeParse(data);

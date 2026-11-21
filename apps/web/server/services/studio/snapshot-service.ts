@@ -3,6 +3,7 @@ import { libraryKey, projectPins, type ExportSnapshot } from '@workspace/render-
 import { AssetDescriptorSchema, type ProjectRecord } from '@workspace/video-project';
 import { AssetNotFoundError, AssetService } from './asset-service';
 import { LibraryBundleError, LibraryNotFoundError, LibraryService } from './library-service';
+import { cropDiagnostics } from './short-provenance';
 import { ProjectNotFoundError } from './project-service';
 
 const descriptor = AssetDescriptorSchema.omit({ ownerId: true }).strip();
@@ -25,6 +26,7 @@ export function snapshotBuilder(
       diagnostics: [],
       dependencies: { assets: Object.create(null), libraries: Object.create(null) },
     };
+    snapshot.diagnostics.push(...(await cropDiagnostics(ownerId, record.document)));
     const ids = new Set(record.document.assetIds);
     for (const ref of projectPins(record.document)) {
       signal?.throwIfAborted();

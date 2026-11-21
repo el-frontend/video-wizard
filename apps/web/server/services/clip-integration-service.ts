@@ -1,4 +1,6 @@
-import { logger } from '@/server/lib/utils';
+import { TranscriptionResponseSchema } from '@/server/types/clip-render';
+import { extractVideoId } from '@/features/video/lib/youtube';
+import { ValidationError, logger } from '@/server/lib/utils';
 import type {
   ClipRenderRequest,
   ClipRenderResponse,
@@ -106,7 +108,7 @@ export class ClipIntegrationService {
         throw new Error(error.detail || 'Transcription failed');
       }
 
-      const result = await response.json();
+      const result = TranscriptionResponseSchema.parse(await response.json());
 
       logger.info('Transcription complete', {
         segment_count: result.segment_count,
@@ -155,6 +157,43 @@ export class ClipIntegrationService {
     } catch (error) {
       logger.error('Video upload failed', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to upload video');
+    }
+  }
+
+  async openProcessedCrop(filename: string) {
+    if (!/^[0-9a-f-]{36}\.mp4$/.test(filename)) throw Error('Invalid internal output name');
+    const response = await fetch(this.baseUrl + '/output/' + filename, { redirect: 'error' });
+    if (!response.ok || !response.body) throw Error('No se pudo leer el recorte procesado.');
+    return response.body;
+  }
+
+  async downloadYouTube(url: string) {
+    const id = extractVideoId(url);
+    if (!id) throw new ValidationError('Introduce un enlace de video de YouTube válido.');
+    try {
+      const response = await fetch(this.baseUrl + '/download-youtube', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        redirect: 'error',
+        body: JSON.stringify({ url: 'https://www.youtube.com/watch?v=' + id }),
+      });
+      if (!response.ok) throw Error('Download failed: ' + response.status);
+      const { filename, path } = await response.json();
+      if (
+        typeof filename !== 'string' ||
+        !filename.startsWith('yt_' + id + '_') ||
+        !/^yt_[A-Za-z0-9_-]{11}_[a-f0-9]{8}\.mp4$/.test(filename) ||
+        path !== 'uploads/' + filename
+      )
+        throw Error('Unexpected download receipt');
+      const file = await fetch(this.baseUrl + '/uploads/' + filename, { redirect: 'error' });
+      if (!file.ok || !file.body) throw Error('Downloaded source is missing');
+      return { filename, stream: file.body, mediaType: 'video/mp4' };
+    } catch (cause) {
+      logger.error('YouTube source download failed', cause);
+      throw new ValidationError(
+        'No se pudo descargar el video de YouTube. Reintenta o carga el archivo original.'
+      );
     }
   }
 

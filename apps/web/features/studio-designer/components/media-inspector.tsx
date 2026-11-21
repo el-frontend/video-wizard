@@ -28,6 +28,19 @@ export function MediaInspector({
             ? 'Recurso no disponible.'
             : 'Cargando recurso…'}
       </p>
+      {layer.type === 'video' && layer.playbackVariant && (
+        <div className="edit-note">
+          Recorte procesado · {layer.playbackVariant.sourceStartMs}–
+          {layer.playbackVariant.sourceEndMs} ms
+          <button
+            type="button"
+            className="edit-button"
+            onClick={() => onCommand({ type: 'use-original-video', sceneId, layerId: layer.id })}
+          >
+            Usar video original
+          </button>
+        </div>
+      )}
       <div className="edit-grid">
         {'sourceInMs' in layer && (
           <>

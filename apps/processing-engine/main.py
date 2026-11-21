@@ -180,6 +180,8 @@ async def upload_video(file: UploadFile = File(...)):
             "message": "File uploaded successfully"
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
@@ -209,6 +211,8 @@ async def analyze_video(request: AnalyzeRequest):
         
         return AnalyzeResponse(**result)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
@@ -323,6 +327,8 @@ async def transcribe_video(request: TranscribeRequest):
         
         return TranscribeResponse(**result)
     
+    except HTTPException:
+        raise
     except FileNotFoundError as e:
         logger.error(f"File not found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
@@ -437,6 +443,8 @@ async def render_clip(request: RenderClipRequest):
         
         return RenderClipResponse(**result)
     
+    except HTTPException:
+        raise
     except FileNotFoundError as e:
         logger.error(f"File not found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))

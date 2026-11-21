@@ -6,7 +6,7 @@ import {
 } from '@/server/services/subtitle-generation-service';
 
 import type { Job, JobType } from '@/server/services/job-history-service';
-import type { ClipRenderRequest } from '@/server/types/clip-render';
+import { OwnedClipInputSchema, type ClipRenderRequest } from '@/server/types/clip-render';
 
 /**
  * A job handler reads its work payload from `job.inputData` and returns
@@ -71,6 +71,12 @@ const transcriptionHandler: JobHandler = async (job) => {
  * it on the job result.
  */
 const clipCreationHandler: JobHandler = async (job) => {
+  const owned = OwnedClipInputSchema.safeParse(job.inputData);
+  if (owned.success) {
+    const { shortSource } = await import('@/server/services/studio/shorts');
+    const result = await shortSource.renderClip(job.userId, owned.data);
+    return { ...result, output_url: clipIntegrationService.getVideoUrl(result.output_url!) };
+  }
   const input = job.inputData as ClipRenderRequest | null;
   if (!input || !input.video_path) {
     throw new Error('Invalid clip_creation input: missing video_path');

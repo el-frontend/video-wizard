@@ -40,3 +40,5 @@ export * from './appearance';
 export * from './project-appearance';
 export * from './remotion-caption-presets';
 export * from './scene-frames';
+
+export * from './video-playback';

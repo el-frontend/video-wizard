@@ -45,13 +45,15 @@ export const ClipRenderResponseSchema = z.object({
  */
 export const TranscriptionResponseSchema = z.object({
   video_path: z.string(),
-  audio_path: z.string().optional(),
+  audio_path: z.string().nullish(),
+  language: z.string().optional(),
   segments: z.array(
     z.object({
       id: z.number(),
       start: z.number(),
       end: z.number(),
       text: z.string(),
+      words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).optional(),
     })
   ),
   full_text: z.string(),
@@ -62,3 +64,13 @@ export const TranscriptionResponseSchema = z.object({
 export type ClipRenderRequest = z.infer<typeof ClipRenderRequestSchema>;
 export type ClipRenderResponse = z.infer<typeof ClipRenderResponseSchema>;
 export type TranscriptionResponse = z.infer<typeof TranscriptionResponseSchema>;
+
+export const OwnedClipInputSchema = z
+  .strictObject({
+    sourceAssetId: z.uuid(),
+    startMs: z.int().nonnegative(),
+    endMs: z.int().positive(),
+    crop_mode: ClipRenderRequestSchema.shape.crop_mode,
+    aspect_ratio: ClipRenderRequestSchema.shape.aspect_ratio,
+  })
+  .refine((r) => r.endMs > r.startMs);

@@ -1,43 +1,24 @@
-/**
- * YouTube URL Validation Utilities
- *
- * Validates and extracts video IDs from YouTube URLs.
- * Supports standard watch URLs, short URLs, and Shorts URLs.
- */
-
-const YOUTUBE_PATTERNS = [
-  // https://www.youtube.com/watch?v=VIDEO_ID
-  /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
-  // https://youtu.be/VIDEO_ID
-  /(?:https?:\/\/)?youtu\.be\/([a-zA-Z0-9_-]{11})/,
-  // https://www.youtube.com/shorts/VIDEO_ID
-  /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-  // https://www.youtube.com/embed/VIDEO_ID
-  /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-  // https://www.youtube.com/v/VIDEO_ID
-  /(?:https?:\/\/)?(?:www\.)?youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,
-];
-
-/**
- * Checks if a string is a valid YouTube URL
- */
-export function isYouTubeUrl(url: string): boolean {
-  const trimmed = url.trim();
-  if (!trimmed) return false;
-  return YOUTUBE_PATTERNS.some((pattern) => pattern.test(trimmed));
-}
-
-/**
- * Extracts the video ID from a YouTube URL
- * Returns null if the URL is not a valid YouTube URL
- */
-export function extractVideoId(url: string): string | null {
-  const trimmed = url.trim();
-  for (const pattern of YOUTUBE_PATTERNS) {
-    const match = trimmed.match(pattern);
-    if (match?.[1]) {
-      return match[1];
-    }
+/** Accept supported YouTube hosts and video pages, including links pasted without a scheme. */
+export function extractVideoId(input: string): string | null {
+  const value = input.trim();
+  let url: URL;
+  try {
+    url = new URL(/^[\w+.-]+:/.test(value) ? value : 'https://' + value);
+  } catch {
+    return null;
   }
-  return null;
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port)
+    return null;
+  let id: string | null;
+  if (url.hostname === 'youtu.be') id = url.pathname.match(/^\/([\w-]+)\/?$/)?.[1] ?? null;
+  else if (['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) {
+    id =
+      url.pathname === '/watch'
+        ? url.searchParams.get('v')
+        : (url.pathname.match(/^\/(?:shorts|embed|v)\/([\w-]+)\/?$/)?.[1] ?? null);
+  } else return null;
+  return id && /^[\w-]{11}$/.test(id) ? id : null;
+}
+export function isYouTubeUrl(input: string): boolean {
+  return extractVideoId(input) !== null;
 }

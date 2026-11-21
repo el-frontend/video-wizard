@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
-import { logger } from '@/server/lib/utils';
 import { jobHistoryService } from '@/server/services/job-history-service';
 import { queueService } from '@/server/services/queue-service';
-import { ClipRenderRequestSchema } from '@/server/types/clip-render';
+import { AssetNotFoundError } from '@/server/services/studio/asset-service';
+import { ValidationError } from '@/server/lib/utils';
+import { shortSource } from '@/server/services/studio/shorts';
+import { OwnedClipInputSchema, ClipRenderRequestSchema } from '@/server/types/clip-render';
 
 /**
  * POST /api/create-clip
@@ -28,8 +30,16 @@ export async function POST(request: NextRequest) {
   let validatedData;
   try {
     const body = await request.json();
-    validatedData = ClipRenderRequestSchema.parse(body);
+    if (body && typeof body === 'object' && 'sourceAssetId' in body) {
+      validatedData = OwnedClipInputSchema.parse(body);
+      await shortSource.validateClip(user.id, validatedData);
+    } else validatedData = ClipRenderRequestSchema.parse(body);
   } catch (error) {
+    if (error instanceof ValidationError || error instanceof AssetNotFoundError)
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: error instanceof ValidationError ? 400 : 404 }
+      );
     if (error instanceof Error && error.name === 'ZodError') {
       return NextResponse.json(
         { success: false, message: 'Invalid request data', errors: error },
@@ -38,11 +48,6 @@ export async function POST(request: NextRequest) {
     }
     throw error;
   }
-
-  logger.info('Create clip request queued', {
-    start_time: validatedData.start_time,
-    end_time: validatedData.end_time,
-  });
 
   const job = await jobHistoryService.create({
     userId: user.id,

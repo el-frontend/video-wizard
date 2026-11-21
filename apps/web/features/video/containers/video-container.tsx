@@ -15,6 +15,10 @@ import {
 } from '@/features/video';
 import { useBrandKit } from '@/features/video/hooks/use-brand-kit';
 import { pollJobUntilDone } from '@/features/video/lib/poll-job';
+import { sliceCaptions, sourceCues, toLegacySeconds } from '@/features/studio-shorts/lib/timing';
+import { openClipJob } from '@/features/studio-shorts/lib/api';
+import { getDimensions } from '../lib/aspect-ratios';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -31,6 +35,8 @@ import { toast } from 'sonner';
  * 5. When ready, click "Render Final" → sends to Remotion server for final render
  */
 export function VideoContainer() {
+  const router = useRouter();
+  const [openingJob, setOpeningJob] = useState<string>();
   const [generatedClips, setGeneratedClips] = useState<GeneratedClip[]>([]);
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipGenerationProgress, setClipGenerationProgress] = useState({ current: 0, total: 0 });
@@ -48,7 +54,6 @@ export function VideoContainer() {
     language,
     error,
     progress,
-    uploadedPath,
     setFile,
     setYoutubeUrl,
     setInputMode,
@@ -56,9 +61,9 @@ export function VideoContainer() {
     processVideo,
     resetState,
   } = useVideoProcessing({
-    onComplete: (data, _uploadedPath, _transcription) => {
+    onComplete: (data, assetId, _transcription) => {
       console.log('Analysis completed:', data);
-      handleGenerateClips(data, _uploadedPath, _transcription);
+      handleGenerateClips(data, assetId, _transcription);
     },
     onError: (err) => {
       console.error('Processing error:', err);
@@ -71,19 +76,19 @@ export function VideoContainer() {
    */
   const handleGenerateClips = async (
     analysisData: typeof analysis,
-    videoPath: string,
+    sourceAssetId: string,
     transcriptionData: typeof transcription
   ) => {
     console.log('handleGenerateClips called', {
       analysisData,
-      videoPath,
+      sourceAssetId,
       transcriptionData,
     });
 
-    if (!analysisData || !videoPath || !transcriptionData) {
+    if (!analysisData || !sourceAssetId || !transcriptionData) {
       console.error('Missing required data for clip generation', {
         hasAnalysis: !!analysisData,
-        hasUploadedPath: !!videoPath,
+        hasUploadedPath: !!sourceAssetId,
         hasTranscription: !!transcriptionData,
       });
       return;
@@ -131,9 +136,9 @@ export function VideoContainer() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            video_path: videoPath,
-            start_time: clip.start_time,
-            end_time: clip.end_time,
+            sourceAssetId,
+            startMs: Math.round(clip.start_time * 1000),
+            endMs: Math.round(clip.end_time * 1000),
             crop_mode: 'dynamic',
             aspect_ratio: aspectRatio,
           }),
@@ -165,18 +170,11 @@ export function VideoContainer() {
         }
 
         // Step 2: Filter and adjust subtitles from original transcription
-        const clipSubtitles: SubtitleSegment[] = transcriptionData.segments
-          .filter((segment) => segment.start >= clip.start_time && segment.end <= clip.end_time)
-          .map((segment) => ({
-            start: segment.start - clip.start_time,
-            end: segment.end - clip.start_time,
-            text: segment.text,
-            words: segment.words?.map((word) => ({
-              word: word.word,
-              start: word.start - clip.start_time,
-              end: word.end - clip.start_time,
-            })),
-          }));
+        const clipCaptions = sliceCaptions(transcriptionData.cues, {
+          startMs: Math.round(clip.start_time * 1000),
+          endMs: Math.round(clip.end_time * 1000),
+        });
+        const clipSubtitles = toLegacySeconds(clipCaptions);
 
         console.log(`Clip ${i + 1} cropped successfully. Subtitles: ${clipSubtitles.length}`);
 
@@ -187,6 +185,8 @@ export function VideoContainer() {
             idx === i
               ? {
                   ...c,
+                  jobId: clipQueued.data.jobId,
+                  clipCaptions,
                   videoUrl: clipData.output_url, // Cropped video without subtitles
                   clipPath: clipData.output_path,
                   sourceDurationMs: clipData.sourceDurationMs ?? undefined,
@@ -249,6 +249,10 @@ export function VideoContainer() {
             ? {
                 ...c,
                 subtitles: editedSubtitles,
+                clipCaptions: sourceCues(
+                  editedSubtitles,
+                  Math.round(c.endTime * 1000) - Math.round(c.startTime * 1000)
+                ),
                 template,
               }
             : c
@@ -446,6 +450,29 @@ export function VideoContainer() {
                 brandKit={brandKit ?? undefined}
                 isLoading={clip.isLoading}
                 isRendering={clip.isRendering}
+                openingDesigner={!!openingJob}
+                onOpenDesigner={
+                  clip.jobId
+                    ? async () => {
+                        if (openingJob || !clip.jobId) return;
+                        setOpeningJob(clip.jobId);
+                        try {
+                          const project = await openClipJob(
+                            clip.jobId,
+                            { ...getDimensions(clip.aspectRatio ?? aspectRatio), fps: 30 },
+                            clip.clipCaptions ?? []
+                          );
+                          router.push('/designer/' + project.document.id);
+                        } catch (cause) {
+                          toast.error(
+                            cause instanceof Error ? cause.message : 'No se pudo abrir el clip.'
+                          );
+                        } finally {
+                          setOpeningJob(undefined);
+                        }
+                      }
+                    : undefined
+                }
                 onEdit={() => handleEditClip(clip)}
                 onTemplateChange={(template) => handleTemplateChange(clip.index, template)}
                 onRenderFinal={() => handleRenderFinal(clip)}

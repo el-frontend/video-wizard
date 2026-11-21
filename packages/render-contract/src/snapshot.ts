@@ -9,6 +9,7 @@ import {
 } from '@workspace/video-project';
 
 import { libraryKey, type ResolvedDependencies } from './dependencies';
+import { videoPlayback } from './video-playback';
 import { sceneFrames } from './scene-frames';
 import { projectAppearance } from './project-appearance';
 export * from './dependencies';
@@ -78,6 +79,29 @@ export function validateSnapshot(snapshot: ExportSnapshot): Diagnostic[] {
     const media = dependencies.assets[layer.assetId];
     if (!media) return;
     const location = sceneId === undefined ? { layerId: layer.id } : { layerId: layer.id, sceneId };
+    if (layer.type === 'video' && layer.playbackVariant) {
+      const variant = layer.playbackVariant;
+      const derived = dependencies.assets[variant.assetId];
+      try {
+        videoPlayback(layer);
+        if (
+          !derived?.mediaType.startsWith('video/') ||
+          derived.durationMs === undefined ||
+          derived.durationMs < variant.sourceEndMs - variant.sourceStartMs ||
+          !media.durationMs ||
+          variant.sourceEndMs > media.durationMs ||
+          (media.hasAudio && !derived.hasAudio)
+        )
+          throw Error('El recorte procesado no cubre el video o su audio. Usa el video original.');
+      } catch (cause) {
+        diagnostics.push({
+          code: 'crop-coverage',
+          severity: 'error',
+          ...location,
+          message: (cause as Error).message,
+        });
+      }
+    }
     const compatible =
       layer.type === 'audio'
         ? (media.mediaType.startsWith('audio/') && media.hasAudio !== false) ||

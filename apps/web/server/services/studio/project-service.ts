@@ -203,12 +203,20 @@ export class ProjectService {
   }
 
   async createFromDocument(ownerId: string, input: ProjectDraft): Promise<ProjectRecord> {
-    const document = parseInput(
-      ProjectDraftSchema,
-      input,
-      'El documento de la plantilla no es válido.'
+    const [record] = await this.createFromDocuments(ownerId, [input]);
+    return record!;
+  }
+
+  async createFromDocuments(ownerId: string, inputs: ProjectDraft[]): Promise<ProjectRecord[]> {
+    const documents = inputs.map((input) =>
+      parseInput(ProjectDraftSchema, input, 'El documento del proyecto no es válido.')
     );
-    return this.db.transaction((tx) => insertProject(tx, ownerId, document, 'create'));
+    return this.db.transaction(async (tx) => {
+      const records: ProjectRecord[] = [];
+      for (const document of documents)
+        records.push(await insertProject(tx, ownerId, document, 'create'));
+      return records;
+    });
   }
 
   async get(ownerId: string, id: string): Promise<ProjectRecord> {

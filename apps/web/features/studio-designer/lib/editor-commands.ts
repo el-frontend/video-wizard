@@ -43,6 +43,13 @@ export function checkLayerRange(layer: Layer, patch: LayerPatch, durationMs?: nu
   if ('sourceInMs' in layer) {
     if (durationMs === undefined) return 'Falta la duración medida de la fuente.';
     const offset = patch.sourceInMs ?? layer.sourceInMs;
+    if (
+      layer.type === 'video' &&
+      layer.playbackVariant &&
+      (offset < layer.playbackVariant.sourceStartMs ||
+        offset + end - start > layer.playbackVariant.sourceEndMs)
+    )
+      return 'El tramo queda fuera del recorte procesado. Usa el video original o ajusta el intervalo.';
     if (!Number.isSafeInteger(offset) || offset < 0 || offset + end - start > durationMs)
       return 'El tramo debe caber en la duración medida de la fuente.';
   }
@@ -75,7 +82,7 @@ export function titleLayer(scene: Scene, canvas: Canvas): Layer {
   };
 }
 
-export function captionLayer(scene: Scene, canvas: Canvas): Layer {
+export function captionLayer(scene: Scene, canvas: Canvas): Extract<Layer, { type: 'captions' }> {
   return {
     ...baseLayer(scene),
     type: 'captions',
