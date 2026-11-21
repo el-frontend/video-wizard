@@ -19,23 +19,26 @@ export function normalizedCaptionText(text: string) {
   return literalCaptionText(text).replace(/\p{P}/gu, '');
 }
 
-// Each searchable character points back to the original textarea selection offsets.
-function spanFinder(graphemes: Intl.SegmentData[], normalize: (text: string) => string) {
-  let searchable = '';
+function spanFinder(text: string, graphemes: Intl.Segments, normalize: (text: string) => string) {
+  // Case depends on surrounding letters. Search the whole normalized text and use each
+  // grapheme's normalized UTF-16 length only to map matches back to the textarea.
+  const searchable = normalize(text);
   const offsets: { start: number; end: number }[] = [];
   for (const { segment, index } of graphemes) {
-    const value = normalize(segment);
-    searchable += value;
+    const length = normalize(segment).length;
     const span = { start: index, end: index + segment.length };
-    for (let i = 0; i < value.length; i++) offsets.push(span);
+    for (let i = 0; i < length; i++) offsets.push(span);
   }
   let cursor = 0;
   return (word: string, after: number) => {
     if (!word) return undefined;
     while (cursor < offsets.length && offsets[cursor]!.start < after) cursor++;
-    const at = searchable.indexOf(word, cursor);
-    if (at < 0) return undefined;
-    return { start: offsets[at]!.start, end: offsets[at + word.length - 1]!.end };
+    // Word boundaries in the transcript can change which case form the whole cue uses.
+    const pattern = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+    pattern.lastIndex = cursor;
+    const match = pattern.exec(searchable);
+    if (!match) return undefined;
+    return { start: offsets[match.index]!.start, end: offsets[pattern.lastIndex - 1]!.end };
   };
 }
 
@@ -43,24 +46,22 @@ function splitWordSpans(cue: CaptionCue, cut: number) {
   const left: CaptionWord[] = [],
     right: CaptionWord[] = [];
   if (!cue.words?.length) return { left, right };
-  const graphemes = Array.from(
-    new Intl.Segmenter('es', { granularity: 'grapheme' }).segment(cue.text)
-  );
-  const findLexical = spanFinder(graphemes, normalizedCaptionText);
-  const findLiteral = spanFinder(graphemes, literalCaptionText);
+  const graphemes = new Intl.Segmenter('es', { granularity: 'grapheme' }).segment(cue.text);
+  const findLexical = spanFinder(cue.text, graphemes, normalizedCaptionText);
+  const findLiteral = spanFinder(cue.text, graphemes, literalCaptionText);
   let after = 0;
   for (const word of cue.words) {
     const token = normalizedCaptionText(word.text),
       literal = literalCaptionText(word.text);
     const lexicalSpan = findLexical(token, after);
     const literalSpan = literal !== token ? findLiteral(literal, after) : undefined;
-    // Consume punctuation included in a measured spelling when both matches refer to that occurrence.
-    const span =
-      literalSpan && (!lexicalSpan || literalSpan.start <= lexicalSpan.start)
-        ? literalSpan
-        : lexicalSpan;
+    // A punctuation-only measurement has its own literal extent.
+    const span = lexicalSpan ?? literalSpan;
     if (!span) continue;
     after = span.end;
+    // Consume punctuation attached to this occurrence before locating the next measurement.
+    if (literalSpan && literalSpan.start <= span.start && span.end <= literalSpan.end)
+      after = literalSpan.end;
     if (span.end <= cut) left.push(word);
     else if (span.start >= cut) right.push(word);
   }

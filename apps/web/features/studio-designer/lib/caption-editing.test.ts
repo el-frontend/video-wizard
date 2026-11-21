@@ -98,6 +98,31 @@ it('splits measured words across a display-case and punctuation boundary without
     ['mundo', [{ text: 'mundo', startMs: 60, endMs: 350 }]],
   ]);
 });
+it.each([
+  ['hola, mundo', 'hola,', 'mundo', 'hola', ', mundo'],
+  ['ΒΛΕΠΩ ΦΩΣ', 'ΒΛΕΠΩ', 'ΦΩΣ', 'ΒΛΕΠΩ', 'ΦΩΣ'],
+  ['Ο.Σ', 'Ο', 'Σ', 'Ο.', 'Σ'],
+])(
+  'preserves both measurements when splitting %s at their shared time boundary',
+  (text, firstWord, secondWord, leftText, rightText) => {
+    const words = [
+      { text: firstWord, startMs: 0, endMs: 200 },
+      { text: secondWord, startMs: 200, endMs: 400 },
+    ];
+    const [left, right] = editCaptions([{ id: 'measured', text, startMs: 0, endMs: 400, words }], {
+      type: 'split',
+      id: 'measured',
+      newId: 'after',
+      atMs: 200,
+      textIndex: text.indexOf(rightText),
+    });
+    expect(left).toMatchObject({ text: leftText, words: [words[0]] });
+    expect(right).toMatchObject({
+      text: rightText,
+      words: [{ text: secondWord, startMs: 0, endMs: 200 }],
+    });
+  }
+);
 it('keeps a measured percent sign on its textual side with exact split-local times', () => {
   const percent = {
     id: 'percent',
