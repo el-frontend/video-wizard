@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { studioNavigation } from '@/features/studio-designer/hooks/project-navigation';
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, Clapperboard, FolderOpen, Plus } from 'lucide-react';
 import type { EngineId, ProjectPage, ProjectSummary } from '@workspace/video-project';
@@ -9,9 +10,19 @@ import { useProjects } from '../hooks/use-projects';
 import { engineName } from '../project-labels';
 
 function ProjectRow({ item }: { item: ProjectSummary }) {
+  const href = '/designer/' + encodeURIComponent(item.id);
   return (
     <li>
-      <Link href={'/designer/' + encodeURIComponent(item.id)} className="project-row">
+      <Link
+        href={href}
+        className="project-row"
+        onNavigate={(event) => {
+          if (!studioNavigation()) {
+            event.preventDefault();
+            location.assign(href);
+          }
+        }}
+      >
         <span className="project-symbol" aria-hidden="true">
           <Clapperboard size={20} />
         </span>

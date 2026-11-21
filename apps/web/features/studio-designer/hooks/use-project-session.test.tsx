@@ -196,3 +196,30 @@ it('returns to saved when an edit is undone before the debounce', async () => {
   expect(request).toHaveBeenCalledTimes(1);
   expect(result.current.canRedo).toBe(true);
 });
+
+it('keeps the 409 record when an older focus read finishes after the rejected write', async () => {
+  const result = await open();
+  const older = deferred();
+  request.mockReturnValueOnce(older.promise);
+  act(() => {
+    window.dispatchEvent(new Event('focus'));
+  });
+  expect(request).toHaveBeenCalledTimes(2);
+  request.mockResolvedValueOnce(
+    Response.json(
+      { success: false, error: 'Conflicto', current: record('R3', 'Revisión actual') },
+      { status: 409 }
+    )
+  );
+  act(() => result.current.dispatch({ type: 'set-title', title: 'Borrador local' }));
+  await tick(500);
+  expect(result.current.conflict?.revision).toBe('R3');
+  await act(async () => {
+    older.resolve(ok(record('R2', 'Lectura antigua')));
+  });
+  expect(result.current.conflict?.revision).toBe('R3');
+  expect(result.current.draft?.title).toBe('Borrador local');
+  expect(result.current.status).toBe('conflict');
+  await tick(1000);
+  expect(request).toHaveBeenCalledTimes(3);
+});

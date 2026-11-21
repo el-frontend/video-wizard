@@ -8,6 +8,7 @@ import type { PreviewHandle, ProjectRecord } from '@workspace/video-project';
 import { sceneStartMs } from '@workspace/video-project';
 import { engineName, timeLabel } from '@/features/studio-projects/project-labels';
 import { useProjectSession } from '../hooks/use-project-session';
+import { guardProjectHistory, studioNavigation } from '../hooks/project-navigation';
 import { PreviewPanel } from './preview-panel';
 
 const statusLabels = {
@@ -48,7 +49,7 @@ function TitleField({ title, onTitle }: { title: string; onTitle: (title: string
 
 export function Designer({ initial }: { initial: ProjectRecord }) {
   const session = useProjectSession(initial.document.id, initial);
-  const { draft, saved, selection, select, save, undo, redo } = session;
+  const { draft, saved, selection, select, save, undo, redo, hasUnsavedChanges } = session;
   const router = useRouter();
   const handle = useRef<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
@@ -91,9 +92,23 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     return () => window.removeEventListener('keydown', shortcuts);
   }, [save, undo, redo]);
   useEffect(() => {
-    if (!draft || (draft === saved?.document && session.status === 'saved')) return;
+    const navigation = studioNavigation();
+    async function mayLeave() {
+      try {
+        await save();
+        return true;
+      } catch {
+        return window.confirm(
+          'El borrador tiene cambios sin guardar. ¿Quieres salir y descartarlos?'
+        );
+      }
+    }
+    const removeHistoryGuard = navigation
+      ? guardProjectHistory(navigation, hasUnsavedChanges, mayLeave)
+      : undefined;
     function followAfterSave(event: MouseEvent) {
       if (
+        (!hasUnsavedChanges() && navigation) ||
         event.defaultPrevented ||
         event.button !== 0 ||
         event.metaKey ||
@@ -113,18 +128,23 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
       event.preventDefault();
       event.stopPropagation();
       const destination = link.pathname + link.search + link.hash;
-      void save()
-        .then(() => router.push(destination))
-        .catch(() => {
-          if (
-            window.confirm('El borrador tiene cambios sin guardar. ¿Quieres salir y descartarlos?')
-          )
-            router.push(destination);
-        });
+      if (!navigation) {
+        // A full document navigation lets beforeunload handle a failed save once.
+        void save()
+          .catch(() => {})
+          .then(() => location.assign(destination));
+        return;
+      }
+      void mayLeave().then((allowed) => {
+        if (allowed) router.push(destination);
+      });
     }
     document.addEventListener('click', followAfterSave, true);
-    return () => document.removeEventListener('click', followAfterSave, true);
-  }, [draft, saved, session.status, save, router]);
+    return () => {
+      removeHistoryGuard?.();
+      document.removeEventListener('click', followAfterSave, true);
+    };
+  }, [hasUnsavedChanges, save, router]);
   if (!draft || !saved)
     return (
       <section lang="es" className="studio-workspace">

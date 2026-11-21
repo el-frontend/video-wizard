@@ -164,6 +164,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     if (!state.saved || !state.draft)
       return Promise.reject(new Error('El proyecto aún no está disponible.'));
     if (state.draft === state.saved.document) return Promise.resolve();
+    read?.abort();
     update({ status: 'saving', error: '' });
     flight = write(state.saved, state.draft);
     return flight;
@@ -182,9 +183,13 @@ function createSession(id: string, initial?: ProjectRecord) {
       stopTimer();
     } while (state.saved && state.draft !== state.saved.document);
   }
+  function hasUnsavedChanges() {
+    return !!state.draft && (state.draft !== state.saved?.document || !!flight || !!state.conflict);
+  }
   function start() {
     active = true;
-    if (!state.saved) void refresh();
+    // App Router can restore an older server payload on Back or Forward.
+    void refresh();
     const onFocus = () => {
       void refresh();
     };
@@ -193,7 +198,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     }, pollInterval);
     window.addEventListener('focus', onFocus);
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (state.draft && state.draft !== state.saved?.document) event.preventDefault();
+      if (hasUnsavedChanges()) event.preventDefault();
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
@@ -217,6 +222,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     },
     actions: {
       dispatch,
+      hasUnsavedChanges,
       select: (selection: EditorSelection) => update({ selection }),
       undo: () => move(past, future),
       redo: () => move(future, past),

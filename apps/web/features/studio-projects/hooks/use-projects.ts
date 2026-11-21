@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EngineId, ProjectPage, ProjectRecord } from '@workspace/video-project';
+import { studioNavigation } from '@/features/studio-designer/hooks/project-navigation';
 import { projectRequest, projectsUrl } from '../project-api';
 
 export function useProjects(initial: ProjectPage) {
@@ -11,9 +12,24 @@ export function useProjects(initial: ProjectPage) {
   const [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const router = useRouter();
-  useEffect(() => () => controller.current?.abort(), []);
+  const revalidation = useRef<AbortController | null>(null);
+  useEffect(() => {
+    // Back can remount this page with a cached server response from before an edit.
+    const request = new AbortController();
+    revalidation.current = request;
+    void projectRequest<ProjectPage>(projectsUrl, { signal: request.signal })
+      .then((latest) => {
+        if (!request.signal.aborted) setPage(latest);
+      })
+      .catch(() => {});
+    return () => {
+      request.abort();
+      controller.current?.abort();
+    };
+  }, []);
   async function run(kind: 'create' | 'list', action: (signal: AbortSignal) => Promise<void>) {
     if (controller.current) return;
+    revalidation.current?.abort();
     const request = new AbortController();
     controller.current = request;
     setBusy(kind);
@@ -36,7 +52,10 @@ export function useProjects(initial: ProjectPage) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, engine }),
       });
-      if (!signal.aborted) router.push('/designer/' + encodeURIComponent(record.document.id));
+      if (signal.aborted) return;
+      const href = '/designer/' + encodeURIComponent(record.document.id);
+      if (studioNavigation()) router.push(href);
+      else location.assign(href);
     });
   }
   function more() {
