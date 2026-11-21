@@ -100,7 +100,8 @@ function assignSlot(
   }
   if (type !== 'string') invalid('Este destino requiere un valor de texto.');
   if (target.field === 'asset' && 'assetId' in layer) {
-    if (typeof value === 'string') {
+    if (typeof value === 'string' && value !== layer.assetId) {
+      if (layer.type === 'audio') delete layer.take;
       layer.assetId = value;
       if (!document.assetIds.includes(value)) document.assetIds.push(value);
     }

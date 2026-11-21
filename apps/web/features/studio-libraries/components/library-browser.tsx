@@ -67,9 +67,10 @@ function ComponentEditor({
   );
 }
 export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initialId?: string }) {
+  const [generation, setGeneration] = useState(0);
   const [engine, setEngine] = useState<EngineId | ''>(''),
-    library = useLibrary(kind, engine || undefined),
-    unfiltered = useLibrary(kind, undefined, !!engine),
+    library = useLibrary(kind, engine || undefined, { generation }),
+    unfiltered = useLibrary(kind, undefined, { enabled: !!engine, generation }),
     all = engine ? unfiltered : library;
   const [selection, setSelection] = useState(initialId ?? ''),
     [version, setVersion] = useState<number | null>(null),
@@ -86,7 +87,10 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
   const selected = creating
     ? undefined
     : (versions.find((e) => e.version === version) ?? versions[0]);
-  const verifiedTemplates = useLibrary('template', 'remotion', kind === 'template' && !engine);
+  const verifiedTemplates = useLibrary('template', 'remotion', {
+    enabled: kind === 'template' && !engine,
+    generation,
+  });
   const canInstantiate =
     selected?.kind === 'template' &&
     supportsStudioEngine(selected, selected.engine) &&
@@ -102,8 +106,7 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
     setError('');
     try {
       await post('/api/studio/catalog', {});
-      library.reload();
-      if (engine) all.reload();
+      setGeneration((n) => n + 1);
       setCreating(false);
       setNotice('Catálogo inicial instalado.');
     } catch (cause) {
@@ -122,8 +125,7 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
       setSelection(row.id);
       setVersion(row.version);
       setNotice(row.name + ' · v' + row.version + ' publicada.');
-      library.reload();
-      if (engine) all.reload();
+      setGeneration((n) => n + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo publicar la edición.');
     } finally {

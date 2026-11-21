@@ -147,6 +147,61 @@ describe('editable templates', () => {
     ).toBeUndefined();
     expect(layer.cues[0]!.words).toHaveLength(1);
   });
+  it.each(['scene', 'global'] as const)(
+    'drops the old take only when its %s track switches audio assets',
+    async (placement) => {
+      const { service, template } = setup();
+      const structure = template.structure!,
+        scene = structure.scenes[0]!;
+      const take = {
+        provider: 'archivo',
+        spokenText: 'Edición anterior',
+        durationMs: 4000,
+        stale: false,
+      };
+      const timing = { startMs: 250, endMs: 3250, sourceInMs: 120, endAnchor: 'fixed' as const };
+      const audio = {
+        type: 'audio' as const,
+        id: 'voz',
+        assetId: 'original',
+        volume: 0.7,
+        ...timing,
+        visible: true,
+        zIndex: 1,
+        take,
+      };
+      if (placement === 'global') structure.globalAudio.push(audio);
+      else scene.layers.push(audio);
+      template.assetIds = ['original'];
+      template.manifest.props.voz = { type: 'string' };
+      structure.slots.voz = {
+        field: 'asset',
+        sceneId: placement === 'global' ? null : scene.id,
+        layerId: audio.id,
+      };
+      async function instance(content: Record<string, string>) {
+        const { document } = await service.instantiate('owner', {
+          templateRef: { id: template.id, version: 1 },
+          engine: 'remotion',
+          content,
+        });
+        expect(document.scenes[0]!.durationMs).toBe(scene.durationMs);
+        return placement === 'global'
+          ? document.globalAudio[0]!
+          : document.scenes[0]!.layers.find((l) => l.type === 'audio')!;
+      }
+      expect(await instance({})).toMatchObject({ ...timing, assetId: 'original', take });
+      expect(await instance({ voz: 'original' })).toMatchObject({
+        ...timing,
+        assetId: 'original',
+        take,
+      });
+      const replaced = await instance({ voz: 'nueva' });
+      expect(replaced).toMatchObject({ ...timing, assetId: 'nueva' });
+      expect(replaced.take).toBeUndefined();
+      expect(audio.take).toEqual(take);
+    }
+  );
   it('checks substituted media, legacy metadata, undeclared targets and pinned implementations before insert', async () => {
     const { service, template, insert, library } = setup();
     const structure = template.structure!,

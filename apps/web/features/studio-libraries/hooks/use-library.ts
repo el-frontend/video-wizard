@@ -25,34 +25,40 @@ export function post<T>(url: string, data: unknown) {
     body: JSON.stringify(data),
   });
 }
-export function useLibrary(kind: LibraryKind, engine?: EngineId, enabled = true) {
-  const [generation, setGeneration] = useState(0);
+export function useLibrary(
+  kind: LibraryKind,
+  engine?: EngineId,
+  { enabled = true, generation = 0 }: { enabled?: boolean; generation?: number } = {}
+) {
   const url = '/api/studio/libraries/' + kind + (engine ? '?verified=1&engine=' + engine : '');
-  const [result, setResult] = useState<{ url: string; entries: LibraryEntry[]; error?: string }>();
+  const [result, setResult] = useState<{
+    url: string;
+    generation: number;
+    entries: LibraryEntry[];
+    error?: string;
+  }>();
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     projectRequest<unknown>(url, { signal: controller.signal })
       .then((rows) => LibraryEntrySchema.array().parse(rows))
       .then((entries) => {
-        if (!controller.signal.aborted) setResult({ url, entries });
+        if (!controller.signal.aborted) setResult({ url, generation, entries });
       })
       .catch((cause) => {
         if (!controller.signal.aborted)
           setResult({
             url,
+            generation,
             entries: [],
             error: cause instanceof Error ? cause.message : 'No se pudo leer la biblioteca.',
           });
       });
     return () => controller.abort();
   }, [url, generation, enabled]);
-  return {
-    entries: result?.url === url ? result.entries : [],
-    loading: result?.url !== url,
-    error: result?.url === url ? result.error : undefined,
-    reload: () => setGeneration((n) => n + 1),
-  };
+  const current =
+    enabled && result?.url === url && result.generation === generation ? result : undefined;
+  return { entries: current?.entries ?? [], loading: enabled && !current, error: current?.error };
 }
 export function useAssetPage(media?: string) {
   const [items, setItems] = useState<AssetDescriptor[]>([]),
