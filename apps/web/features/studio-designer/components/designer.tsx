@@ -78,7 +78,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     selectionRef.current = selection;
   }, [selection]);
   useLayoutEffect(() => {
-    if (handle && selectionRef.current.timeMs) handle.seek(selectionRef.current.timeMs);
+    handle?.seek(selectionRef.current.timeMs);
   }, [handle]);
   const onTimeChange = useCallback(
     (timeMs: number) => {

@@ -86,3 +86,53 @@ it('keeps the requested scene time across obsolete frame events, including undo 
   act(() => shorter.queuedTime(4960));
   expect(position.value).toBe('4960');
 });
+
+it('restores zero on the same paused Player when removing a scene is immediately undone', async () => {
+  vi.useFakeTimers();
+  try {
+    const document: ProjectDraft = {
+      ...exampleProject(),
+      scenes: [
+        { id: 'first', durationMs: 5000, layers: [] },
+        { id: 'second', durationMs: 5000, layers: [] },
+      ],
+      globalAudio: [],
+      assetIds: [],
+      durationMs: 10000,
+    };
+    const initial: ProjectRecord = {
+      ownerId: 'owner',
+      revision: 'r1',
+      updatedAt: '2026-11-21T00:00:00Z',
+      document,
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ success: true, data: initial }))
+    );
+    render(<Designer initial={initial} />);
+    await act(async () => {});
+    const paused = transport();
+    let playerTime = 0;
+    paused.handle.seek = vi.fn((ms) => {
+      playerTime = ms;
+    });
+    act(() => player.onReady(paused.handle));
+    const position = screen.getByRole('slider', {
+      name: 'Posición de reproducción',
+    }) as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: /Escena 2/ }));
+    fireEvent.change(position, { target: { value: '7000' } });
+    expect(playerTime).toBe(7000);
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar escena' }));
+    expect(position.value).toBe('0');
+    expect(playerTime).toBe(7000);
+    fireEvent.click(screen.getByRole('button', { name: 'Deshacer' }));
+    expect(player.document).toBe(document);
+    expect(position.disabled).toBe(false);
+    expect(position.value).toBe('0');
+    expect(playerTime).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
