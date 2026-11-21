@@ -11,10 +11,11 @@ export function checkCue(cue: CaptionCue) {
     throw new RangeError('Comprueba el texto, el intervalo y los tiempos de las palabras.');
 }
 
-export function normalizedCaptionText(text: string) {
+export function normalizedCaptionText(text: string, measuredSigns = '') {
   return text
     .normalize('NFC')
-    .replace(/[\s\p{P}]+/gu, '')
+    .replace(/\s+/gu, '')
+    .replace(/\p{P}/gu, (sign) => (measuredSigns.includes(sign) ? sign : ''))
     .toLocaleLowerCase('es');
 }
 
@@ -22,14 +23,14 @@ function sliceWords(
   cue: CaptionCue,
   startMs: number,
   endMs: number,
-  textRange?: { from: number; to: number }
+  textRange?: { from: number; to: number; measuredSigns: string }
 ) {
-  const display = textRange ? normalizedCaptionText(cue.text) : '';
+  const display = textRange ? normalizedCaptionText(cue.text, textRange.measuredSigns) : '';
   let cursor = 0;
   const words: CaptionWord[] = [];
   for (const word of cue.words ?? []) {
     if (textRange) {
-      const token = normalizedCaptionText(word.text);
+      const token = normalizedCaptionText(word.text, textRange.measuredSigns);
       if (!token) continue;
       const position = display.indexOf(token, cursor);
       if (position < 0) continue;
@@ -78,19 +79,24 @@ export function editCaptions(cues: CaptionCue[], edit: CaptionEdit): CaptionCue[
         throw new RangeError('Sitúa el cabezal dentro del subtítulo.');
       if (next.some((c) => c.id === edit.newId))
         throw new RangeError('El identificador de subtítulo ya existe.');
-      const cut = normalizedCaptionText(cue.text.slice(0, edit.textIndex)).length;
+      // Standalone measured signs occupy a position in the same text used to locate the cut.
+      const measuredSigns = (cue.words ?? [])
+        .filter((word) => !normalizedCaptionText(word.text))
+        .map((word) => word.text)
+        .join('');
+      const cut = normalizedCaptionText(cue.text.slice(0, edit.textIndex), measuredSigns).length;
       const left = {
         ...cue,
         text: cue.text.slice(0, edit.textIndex).trimEnd(),
         endMs: edit.atMs,
-        words: sliceWords(cue, cue.startMs, edit.atMs, { from: 0, to: cut }),
+        words: sliceWords(cue, cue.startMs, edit.atMs, { from: 0, to: cut, measuredSigns }),
       };
       const right = {
         ...cue,
         id: edit.newId,
         text: cue.text.slice(edit.textIndex).trimStart(),
         startMs: edit.atMs,
-        words: sliceWords(cue, edit.atMs, cue.endMs, { from: cut, to: Infinity }),
+        words: sliceWords(cue, edit.atMs, cue.endMs, { from: cut, to: Infinity, measuredSigns }),
       };
       if (!left.text.trim() || !right.text.trim())
         throw new RangeError('Coloca el cursor entre los dos fragmentos de texto.');

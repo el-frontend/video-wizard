@@ -98,3 +98,38 @@ it('splits measured words across a display-case and punctuation boundary without
     ['mundo', [{ text: 'mundo', startMs: 60, endMs: 350 }]],
   ]);
 });
+it('keeps a measured percent sign on its textual side with exact split-local times', () => {
+  const percent = {
+    id: 'percent',
+    startMs: 0,
+    endMs: 1000,
+    text: '50 % hoy',
+    words: [
+      { text: '50', startMs: 0, endMs: 200 },
+      { text: '%', startMs: 200, endMs: 400 },
+      { text: 'hoy', startMs: 600, endMs: 900 },
+    ],
+  };
+  const split = (atMs: number, textIndex: number) =>
+    editCaptions([percent], { type: 'split', id: percent.id, newId: 'after', atMs, textIndex });
+  const [before, after] = split(500, 5);
+  expect(before?.text).toBe('50 %');
+  expect(before?.words).toEqual(percent.words.slice(0, 2));
+  expect(after?.words).toEqual([{ text: 'hoy', startMs: 100, endMs: 400 }]);
+  const [number, sign] = split(200, 3);
+  expect(number?.words).toEqual([percent.words[0]]);
+  expect(sign?.words).toEqual([
+    { text: '%', startMs: 0, endMs: 200 },
+    { text: 'hoy', startMs: 400, endMs: 700 },
+  ]);
+  const attached = editCaptions([{ ...percent, text: '50% hoy' }], {
+    type: 'split',
+    id: percent.id,
+    newId: 'after',
+    atMs: 500,
+    textIndex: 4,
+  });
+  expect(attached[0]?.words).toEqual(percent.words.slice(0, 2));
+  // A mismatched temporal and textual cut must not assign the sign to the wrong side.
+  expect(split(500, 3)[0]?.words).toEqual([percent.words[0]]);
+});
