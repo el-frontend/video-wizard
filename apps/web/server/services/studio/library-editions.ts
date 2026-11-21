@@ -11,7 +11,7 @@ import {
 } from '@workspace/video-project';
 import { ValidationError } from '@/server/lib/utils';
 import type { LibraryService } from './library-service';
-import { captionSource } from './catalog-source';
+import { builtinSource } from './catalog-source';
 const color = z.string().regex(/^#[a-f0-9]{6}$/i);
 const tokens = z.strictObject({
   colors: z.strictObject({ background: color, foreground: color, accent: color, surface: color }),
@@ -49,7 +49,7 @@ export async function publishEdition(library: LibraryService, owner: string, dat
     return library.publish(
       owner,
       { ...source, id, version, name },
-      await captionSource(source.manifest.builtin!.preset)
+      await builtinSource(source.manifest.builtin!)
     );
   }
   const parsed = styleInput.safeParse(data);
@@ -63,7 +63,7 @@ export async function publishEdition(library: LibraryService, owner: string, dat
     ...rest,
     tokens: appearance,
     assetIds: [...new Set(rest.fonts.map((f) => f.assetId))],
-    engines: ['remotion'],
+    engines: ['remotion', 'hyperframes'],
     exposedRoles: rest.exposedRoles ?? ['colors.accent', 'typography.display.fontFamily'],
   });
   if (!candidate.success || candidate.data.kind !== 'style')

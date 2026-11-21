@@ -11,7 +11,8 @@
     "test": "turbo run test",
     "prepare": "husky",
     "commit": "cz",
-    "companion": "pnpm --filter @workspace/companion cli"
+    "companion": "pnpm --filter @workspace/companion cli",
+    "test:hyperframes": "pnpm --filter @workspace/hyperframes-worker test --mode native && pnpm --filter remotion-server test --mode native server/native-preview-acceptance.test.mjs"
   },
   "config": {
     "commitizen": {

@@ -43,10 +43,10 @@ export const LibraryManifestSchema = z.strictObject({
   props: dictionary(property),
   exposedRoles: z.array(AppearanceRoleSchema).optional(),
   builtin: z
-    .strictObject({
-      kind: z.literal('remotion-caption'),
-      preset: RemotionCaptionPresetSchema,
-    })
+    .discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('remotion-caption'), preset: RemotionCaptionPresetSchema }),
+      z.strictObject({ kind: z.literal('hyperframes-caption'), preset: z.literal('default') }),
+    ])
     .optional(),
 });
 export type LibraryManifest = z.infer<typeof LibraryManifestSchema>;
@@ -121,12 +121,12 @@ export const LibraryEntrySchema = z
     if (
       'manifest' in value &&
       value.manifest.builtin &&
-      (value.kind !== 'component' || value.engine !== 'remotion')
+      (value.kind !== 'component' || value.manifest.builtin.kind !== value.engine + '-caption')
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['manifest', 'builtin'],
-        message: 'Expected a Remotion component.',
+        message: 'El componente y su fábrica deben usar el mismo motor.',
       });
     }
     if (
@@ -163,11 +163,13 @@ export function styleFamily(entry: EntryOf<'style'>): StyleFamily | undefined {
 }
 export function supportsStudioEngine(entry: LibraryEntry, engine: EngineId) {
   if (entry.kind === 'brand') return true;
-  if (engine !== 'remotion') return false;
   if (entry.kind === 'style') return !!styleFamily(entry) && !!entry.engines?.includes(engine);
   if (entry.engine !== engine) return false;
   if (entry.kind === 'component')
-    return !!entry.manifest.builtin && !Object.keys(entry.manifest.props).length;
+    return (
+      entry.manifest.builtin?.kind === engine + '-caption' &&
+      !Object.keys(entry.manifest.props).length
+    );
   return !!entry.structure;
 }
 export const AssetRecordSchema = z.strictObject({

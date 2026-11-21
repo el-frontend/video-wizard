@@ -4,12 +4,8 @@ import { bundle } from '@remotion/bundler';
 import { makeCancelSignal, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { execFile } from 'node:child_process';
 import { bundlePublicPath, hostRenderBundle } from './render-bundle-host.js';
-import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import {
   layerSampleMs,
@@ -22,50 +18,11 @@ import {
   type PreparedComposition,
   type RenderOptions,
 } from '@workspace/render-contract';
-import { assetPath, openAssetFile, resolveStudioDataDir } from '@workspace/render-contract/storage';
+import { fileHash, stageMedia } from '@workspace/render-contract/storage';
 import { buildRegistry, hashBytes, serverModules, verifiedSeed } from './registry-builder.js';
 
 const exec = promisify(execFile);
-export async function fileHash(path: string, signal: AbortSignal) {
-  const hash = createHash('sha256');
-  signal.throwIfAborted();
-  for await (const bytes of createReadStream(path, { signal })) hash.update(bytes);
-  signal.throwIfAborted();
-  return hash.digest('hex');
-}
-export async function stageMedia(
-  snapshot: ExportSnapshot,
-  directory: string,
-  dataDir = resolveStudioDataDir(),
-  signal?: AbortSignal
-) {
-  await mkdir(directory, { recursive: true });
-  const seen = new Set<string>();
-  for (const asset of Object.values(snapshot.dependencies.assets)) {
-    signal?.throwIfAborted();
-    if (seen.has(asset.hash)) continue;
-    seen.add(asset.hash);
-    const path = await assetPath(dataDir, snapshot.ownerId, asset.hash);
-    const { file } = await openAssetFile(path);
-    const hash = createHash('sha256');
-    try {
-      await pipeline(
-        file.createReadStream(),
-        new Transform({
-          transform(chunk: Buffer, _encoding, callback) {
-            hash.update(chunk);
-            callback(null, chunk);
-          },
-        }),
-        createWriteStream(join(directory, asset.hash), { flags: 'wx', mode: 0o600 }),
-        { signal }
-      );
-    } finally {
-      await file.close();
-    }
-    if (hash.digest('hex') !== asset.hash) throw new Error('El contenido del recurso ha cambiado.');
-  }
-}
+export { fileHash, stageMedia } from '@workspace/render-contract/storage';
 export function browserInput(snapshot: ExportSnapshot) {
   const dependencies = structuredClone(snapshot.dependencies);
   for (const asset of Object.values(dependencies.assets)) asset.url = 'media/' + asset.hash;

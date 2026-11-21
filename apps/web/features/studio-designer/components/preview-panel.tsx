@@ -13,6 +13,10 @@ const Player = dynamic(
   }
 );
 
+const NativePlayer = dynamic(
+  () => import('./hyperframes-project-preview').then((m) => m.HyperframesProjectPreview),
+  { ssr: false }
+);
 interface PreviewProps {
   projectId: string;
   revision: string;
@@ -41,7 +45,8 @@ function FramePlayer({
       onReady(null);
     };
   }, [active, handle, onReady, onTimeChange]);
-  return <Player {...props} onReady={setHandle} />;
+  const EnginePlayer = props.document.engine === 'hyperframes' ? NativePlayer : Player;
+  return <EnginePlayer {...props} onReady={setHandle} />;
 }
 
 function DraftPlayer({ document, revision, ...props }: PreviewProps) {
@@ -74,18 +79,13 @@ export function PreviewPanel({
   onReady,
 }: PreviewProps) {
   const empty = document.durationMs === 0;
-  const unavailable = document.engine === 'hyperframes';
   return (
     <div className="studio-stage" aria-label="Vista previa">
-      {empty || unavailable ? (
+      {empty ? (
         <div className="stage-note">
           <MonitorPlay aria-hidden="true" size={34} />
-          <h3>{empty ? 'Proyecto vacío' : 'Vista previa no disponible'}</h3>
-          <p>
-            {unavailable
-              ? 'La vista previa de HyperFrames aún no está disponible.'
-              : 'La vista previa aparecerá cuando el proyecto tenga contenido.'}
-          </p>
+          <h3>Proyecto vacío</h3>
+          <p>La vista previa aparecerá cuando el proyecto tenga contenido.</p>
         </div>
       ) : (
         <DraftPlayer

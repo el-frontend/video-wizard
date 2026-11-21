@@ -64,8 +64,8 @@ export async function startStudioView(
   if (record.revision !== parsed.data.baseRevision) throw new ConflictError(record);
   const draft =
     'document' in parsed.data ? ProjectDraftSchema.parse(parsed.data.document) : record.document;
-  if (draft.id !== id || draft.engine !== record.document.engine || draft.engine !== 'remotion') {
-    throw new ValidationError('La vista debe corresponder al proyecto Remotion seleccionado.');
+  if (draft.id !== id || draft.engine !== record.document.engine) {
+    throw new ValidationError('La vista debe corresponder al proyecto seleccionado.');
   }
   const snapshot = await buildSnapshot(ownerId, { ...record, document: draft }, signal);
   return internal(

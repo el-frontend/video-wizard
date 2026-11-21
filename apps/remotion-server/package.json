@@ -24,7 +24,9 @@
     "esbuild": "0.27.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "@workspace/hyperframes-worker": "workspace:*",
+    "@workspace/hyperframes-compositions": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

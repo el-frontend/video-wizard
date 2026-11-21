@@ -148,7 +148,7 @@ export class TemplateService {
     input?: z.infer<typeof instanceInput>
   ) {
     const doc = structureDocument(template);
-    if (doc.engine !== 'remotion' || (input && doc.engine !== input.engine))
+    if (!supportsStudioEngine(template, doc.engine) || (input && doc.engine !== input.engine))
       invalid('La plantilla no tiene implementación para este motor.');
     if (input?.styleRef !== undefined) doc.styleRef = input.styleRef;
     if (input?.brandRef) {

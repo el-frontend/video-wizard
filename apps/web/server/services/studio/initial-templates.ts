@@ -1,4 +1,4 @@
-import type { EntryOf, Layer, Scene } from '@workspace/video-project';
+import type { EngineId, EntryOf, Layer, Scene } from '@workspace/video-project';
 
 const durationMs = 4000;
 const canvas = { width: 1080, height: 1920, fps: 30 };
@@ -25,22 +25,22 @@ function headline(id: string, text: string): Scene {
     ],
   };
 }
-export function initialTemplates(): EntryOf<'template'>[] {
+export function initialTemplates(engine: EngineId = 'remotion'): EntryOf<'template'>[] {
   const captions: Layer = {
     ...common,
     id: 'subtitulos',
     type: 'captions',
     box: { x: 0, y: 0, width: canvas.width, height: canvas.height },
-    templateRef: { id: 'minimal', version: 1 },
+    templateRef: { id: engine === 'hyperframes' ? 'subtitulo-hyperframes' : 'minimal', version: 1 },
     cues: [{ id: 'apertura', startMs: 0, endMs: durationMs, text: 'Una historia empieza aquí.' }],
   };
   return [
     {
       kind: 'template',
       id: 'short-con-subtitulos',
-      version: 1,
+      version: engine === 'remotion' ? 1 : 2,
       name: 'Short con subtítulos',
-      engine: 'remotion',
+      engine,
       assetIds: [],
       manifest: { version: 1, props: { subtitulo: { type: 'string' } } },
       structure: {
@@ -62,9 +62,9 @@ export function initialTemplates(): EntryOf<'template'>[] {
     {
       kind: 'template',
       id: 'boletin-de-escenas',
-      version: 1,
+      version: engine === 'remotion' ? 1 : 2,
       name: 'Boletín de escenas',
-      engine: 'remotion',
+      engine,
       assetIds: [],
       manifest: { version: 1, props: { titular: { type: 'string' }, detalle: { type: 'string' } } },
       structure: {

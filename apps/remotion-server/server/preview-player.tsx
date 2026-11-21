@@ -18,7 +18,10 @@ export function mountPreview(props: ProjectCompositionProps) {
     throw new Error('La sesión de vista previa no es válida.');
   const target = parentOrigin;
   const post = (type: string, timeMs?: number, acknowledgedCueStartMs?: number) =>
-    window.parent.postMessage({ type, nonce, instance, timeMs, acknowledgedCueStartMs }, target);
+    window.parent.postMessage(
+      { type, version: 1, nonce, instance, timeMs, acknowledgedCueStartMs },
+      target
+    );
   function Preview() {
     const player = useRef<PlayerRef>(null);
     const { fps, width, height, durationInFrames } = projectMetadata(props.document);
@@ -29,6 +32,7 @@ export function mountPreview(props: ProjectCompositionProps) {
         if (
           event.source !== window.parent ||
           event.origin !== target ||
+          event.data?.version !== 1 ||
           event.data?.nonce !== nonce ||
           event.data?.instance !== instance
         )

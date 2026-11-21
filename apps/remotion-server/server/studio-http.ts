@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import type { Express, Request, Response } from 'express';
 import type { ExportSnapshot } from '@workspace/render-contract';
 import { ProjectRecordSchema } from '@workspace/video-project';
+import { HyperframesProjectAdapter } from '@workspace/hyperframes-worker';
+import { readNativeManifest, type NativeManifest } from '@workspace/hyperframes-compositions';
+import { NativePreviewSession } from '@workspace/hyperframes-compositions/preview';
 import { buildPreview } from './preview-builder.js';
 import { RemotionProjectAdapter, stageMedia } from './project-adapter.js';
 
@@ -14,6 +17,8 @@ interface Session {
   owner: string;
   expires: number;
   snapshot: ExportSnapshot;
+  native?: NativeManifest;
+  previewLink?: { url: string; manifestHash: string };
   ticket?: string;
   ticketExpires?: number;
   cookie?: string;
@@ -57,7 +62,8 @@ export function installStudioRoutes(
     else batch.fullUntil = until;
     retirements.set(key, batch);
   }
-  const adapter = new RemotionProjectAdapter(config.dataDir);
+  const remotion = new RemotionProjectAdapter(config.dataDir);
+  const native = new HyperframesProjectAdapter(config.dataDir);
   const expires = () => Date.now() + 60 * 60 * 1000;
   const collect = setInterval(() => {
     for (const [key, batch] of retirements) {
@@ -130,6 +136,7 @@ export function installStudioRoutes(
         deny(res);
         return;
       }
+      const adapter = snapshot.document.engine === 'hyperframes' ? native : remotion;
       const diagnostics = await adapter.validate(snapshot);
       abort.signal.throwIfAborted();
       if (
@@ -161,6 +168,19 @@ export function installStudioRoutes(
       sessions.set(id, active);
       if (kind === 'preview') {
         active.done = (async () => {
+          if (snapshot.document.engine === 'hyperframes') {
+            const nativeSession = new NativePreviewSession(
+              active.workspace,
+              origin + '/studio/previews/' + id + '/frame',
+              {
+                dataDir: config.dataDir,
+                signal: abort.signal,
+              }
+            );
+            active.previewLink = await nativeSession.createPreview(snapshot);
+            active.native = await readNativeManifest(active.workspace);
+            return;
+          }
           await buildPreview(snapshot, active.workspace, abort.signal);
           abort.signal.throwIfAborted();
           await stageMedia(snapshot, join(active.workspace, 'media'), config.dataDir, abort.signal);
@@ -171,9 +191,13 @@ export function installStudioRoutes(
         session.status = 'completed';
         session.ticket = token();
         session.ticketExpires = Date.now() + previewTicketLifetime;
-        res
-          .set('Cache-Control', 'no-store')
-          .json({ instance: id, origin, ticket: session.ticket, diagnostics });
+        res.set('Cache-Control', 'no-store').json({
+          instance: id,
+          origin,
+          ticket: session.ticket,
+          diagnostics,
+          ...session.previewLink,
+        });
         return;
       }
       active.status = 'queued';
@@ -181,7 +205,7 @@ export function installStudioRoutes(
         try {
           active.abort.signal.throwIfAborted();
           active.status = 'running';
-          const prepared = await adapter.prepare(snapshot, active.workspace);
+          const prepared = await adapter.prepare(snapshot, active.workspace, active.abort.signal);
           await adapter.render(prepared, {
             signal: active.abort.signal,
             onProgress: (p) => {
@@ -278,7 +302,7 @@ export function installStudioRoutes(
   app.get('/studio/previews/:id/frame', (_req, res) => {
     res.set(
       'Content-Security-Policy',
-      "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors " +
+      "default-src 'none'; frame-src 'self'; script-src 'self'; style-src 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors " +
         editor
     );
     res
@@ -335,13 +359,30 @@ export function installStudioRoutes(
       deny(res);
       return;
     }
-    res.sendFile(join(s.workspace, 'player.js'));
+    if (s.native) res.sendFile(fileURLToPath(new URL('./hyperframes-player.js', import.meta.url)));
+    else res.sendFile(join(s.workspace, 'player.js'));
+  });
+  app.get('/studio/previews/:id/native/*', (req: Request, res: Response) => {
+    const session = authorizedPreview(req);
+    const file = String(req.params[0]);
+    if (!session?.native?.files.includes(file)) {
+      deny(res);
+      return;
+    }
+    res.set(
+      'Content-Security-Policy',
+      "default-src 'none'; script-src 'self' 'sha256-" +
+        session.native.scriptHash +
+        "'; style-src 'unsafe-inline'; media-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'self' " +
+        editor
+    );
+    res.sendFile(join(session.workspace, 'native', file), { dotfiles: 'allow' });
   });
   app.get('/studio/previews/:id/media/:hash', async (req, res) => {
     const s = authorizedPreview(req);
     const asset =
       s && Object.values(s.snapshot.dependencies.assets).find((a) => a.hash === req.params.hash);
-    if (!s || !asset) {
+    if (!s || s.native || !asset) {
       deny(res);
       return;
     }

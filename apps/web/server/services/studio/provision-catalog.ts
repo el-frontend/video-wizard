@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
-import { captionSource, packagesDirectory } from './catalog-source';
+import { builtinSource, captionSource, packagesDirectory } from './catalog-source';
 import { initialTemplates } from './initial-templates';
 import type { db as database } from '@/server/db';
 import { loadStylePack, stylePackFonts, stylePackIds } from '@workspace/style-packs';
@@ -44,6 +44,12 @@ export async function provisionCatalog(db: typeof database, ownerId: string) {
     };
     await library.publish(ownerId, archived);
     await library.publish(ownerId, { ...archived, version: 2, engines: ['remotion'] });
+    await library.publish(ownerId, {
+      ...archived,
+      version: 3,
+      family: { id, version: 1 },
+      engines: ['remotion', 'hyperframes'],
+    });
   }
 
   for (const preset of RemotionCaptionPresetSchema.options) {
@@ -64,6 +70,20 @@ export async function provisionCatalog(db: typeof database, ownerId: string) {
     );
   }
 
+  const builtin = { kind: 'hyperframes-caption', preset: 'default' } as const;
+  await library.publish(
+    ownerId,
+    {
+      kind: 'component',
+      id: 'subtitulo-hyperframes',
+      version: 1,
+      name: 'Subtítulo HyperFrames',
+      assetIds: [],
+      engine: 'hyperframes',
+      manifest: { version: 1, props: {}, builtin },
+    },
+    await builtinSource(builtin)
+  );
   const identityFonts = fonts.filter(({ family }) => family === 'Bricolage Grotesque');
   await library.publish(ownerId, {
     kind: 'brand',
@@ -78,11 +98,11 @@ export async function provisionCatalog(db: typeof database, ownerId: string) {
     },
   });
 
-  const templates = initialTemplates();
+  const templates = [...initialTemplates(), ...initialTemplates('hyperframes')];
   for (const template of templates) await library.publish(ownerId, template);
   return {
     styles: stylePackIds.length,
-    components: RemotionCaptionPresetSchema.options.length,
+    components: RemotionCaptionPresetSchema.options.length + 1,
     brands: 1,
     templates: templates.length,
   };

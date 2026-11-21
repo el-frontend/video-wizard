@@ -246,14 +246,16 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
         })
       ).stdout;
 
-    expect(await runSeed()).toContain('3 estilos, 9 componentes de subtítulos, 1 marca');
+    expect(await runSeed()).toContain('3 estilos, 10 componentes de subtítulos, 1 marca');
     const styles = await library.list(owner, { kind: 'style' });
     expect(styles.filter((style) => style.version === 1).map(({ id }) => id)).toEqual([
       'noticias-elfrontend-web',
       'noticias-liquid-glass',
       'noticias-modern-editorial',
     ]);
-    expect(await library.list(owner, { kind: 'style', engine: 'hyperframes' })).toEqual([]);
+    const nativeStyles = await library.list(owner, { kind: 'style', engine: 'hyperframes' });
+    expect(nativeStyles).toHaveLength(3);
+    expect(nativeStyles.every((style) => style.version === 3)).toBe(true);
     const captions = await library.list(owner, { kind: 'component', engine: 'remotion' });
     expect(captions.map(({ id }) => id)).toEqual([
       'colorshift',
@@ -285,8 +287,8 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
       },
     });
     const supported = await library.list(owner, { kind: 'style', engine: 'remotion' });
-    expect(supported).toHaveLength(3);
-    expect(supported.every((style) => style.version === 2)).toBe(true);
+    expect(supported).toHaveLength(6);
+    expect(supported.map((style) => style.version)).toEqual([3, 2, 3, 2, 3, 2]);
     const glass = styles.find(
       (style) => style.id === 'noticias-liquid-glass' && style.version === 1
     );
@@ -311,13 +313,15 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
       '9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608'
     );
 
-    expect(await runSeed()).toContain('3 estilos, 9 componentes de subtítulos, 1 marca');
+    expect(await runSeed()).toContain('3 estilos, 10 componentes de subtítulos, 1 marca');
     expect(await library.list(owner, { kind: 'style' })).toEqual(styles);
     expect((await library.list(owner, { kind: 'template' })).map((e) => e.id)).toEqual([
       'boletin-de-escenas',
+      'boletin-de-escenas',
+      'short-con-subtitulos',
       'short-con-subtitulos',
     ]);
-    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(18);
+    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(24);
     expect(await fixture.db.$count(studioAssets, eq(studioAssets.ownerId, owner))).toBe(4);
 
     const newOwner = await fixture.createOwner();
@@ -338,10 +342,10 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
     });
     const updated = await library.publish(owner, {
       ...glass,
-      version: 3,
+      version: 4,
       tokens: { colors: { background: '#FFFFFF' } },
     });
-    expect(updated.version).toBe(3);
+    expect(updated.version).toBe(4);
     const reopened = await new ProjectService(fixture.db).get(owner, document.id);
     expect(reopened).toEqual(saved);
     expect(

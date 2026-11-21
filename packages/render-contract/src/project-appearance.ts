@@ -33,7 +33,8 @@ export function projectAppearance(
         ? layer.templateRef
         : undefined;
   const implementation = ref && dependencies.libraries[libraryKey(ref)];
-  const builtin = implementation?.kind === 'component' && implementation.manifest.builtin;
+  const builtin =
+    implementation?.kind === 'component' ? implementation.manifest.builtin : undefined;
   const componentDefaults =
     implementation && 'manifest' in implementation && implementation.manifest.exposedRoles
       ? { ...defaults, exposedRoles: implementation.manifest.exposedRoles }
@@ -58,7 +59,12 @@ export function projectAppearance(
     foreground: color(colors.foreground, '#FFFFFF'),
     accent: color(colors.accent, '#FFFFFF'),
     family: typeof display.fontFamily === 'string' ? display.fontFamily : 'sans-serif',
-    weight: builtin ? remotionCaptionPresets[builtin.preset].weight : displayWeight,
+    weight:
+      builtin?.kind === 'hyperframes-caption'
+        ? 700
+        : builtin
+          ? remotionCaptionPresets[builtin.preset].weight
+          : displayWeight,
     size: ((typeof display.cqw === 'number' ? display.cqw : 6) * document.canvas.width) / 100,
     lineHeight: typeof display.lineHeight === 'number' ? display.lineHeight : 1.15,
   };

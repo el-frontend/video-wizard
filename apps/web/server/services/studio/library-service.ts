@@ -19,7 +19,7 @@ import { studioLibraries } from '@/server/db/schema';
 import { ValidationError } from '@/server/lib/utils';
 
 import { AssetNotFoundError, AssetService } from './asset-service';
-import { captionSource } from './catalog-source';
+import { builtinSource } from './catalog-source';
 import { hashBundle, LibraryBundleError, LibraryBundles } from './library-bundles';
 
 export { LibraryBundleError } from './library-bundles';
@@ -178,10 +178,10 @@ export class LibraryService {
   }
 
   async verifiedComponent(owner: string, entry: EntryOf<'component'>) {
-    if (!supportsStudioEngine(entry, 'remotion') || !entry.manifest.builtin) return false;
+    if (!supportsStudioEngine(entry, entry.engine) || !entry.manifest.builtin) return false;
     try {
       const bytes = await this.readBundle(owner, entry);
-      return bytes.equals(await captionSource(entry.manifest.builtin.preset));
+      return bytes.equals(await builtinSource(entry.manifest.builtin));
     } catch (error) {
       if (error instanceof LibraryBundleError) return false;
       throw error;

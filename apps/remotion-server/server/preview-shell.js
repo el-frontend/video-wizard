@@ -3,13 +3,14 @@ const target = root.dataset.parentOrigin;
 const instance = location.pathname.split('/').at(-2);
 const nonce = crypto.randomUUID();
 Object.assign(root.dataset, { instance, nonce });
-const post = (type) => parent.postMessage({ type, instance, nonce }, target);
+const post = (type) => parent.postMessage({ type, version: 1, instance, nonce }, target);
 async function connect(event) {
   const message = event.data;
   if (
     event.source !== parent ||
     event.origin !== target ||
     message?.type !== 'studio.connect' ||
+    message.version !== 1 ||
     message.instance !== instance ||
     message.nonce !== nonce ||
     typeof message.ticket !== 'string'

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import type {
   EntryOf,
+  EngineId,
   TemplateSlot,
   TemplateStructure,
   LibraryManifest,
@@ -79,10 +80,12 @@ function sameTarget(a: TemplateSlot, b: TemplateSlot) {
   );
 }
 export function TemplateEditor({
+  engine = 'remotion',
   entry,
   nextVersion,
   publish,
 }: {
+  engine?: EngineId;
   entry?: EntryOf<'template'>;
   nextVersion: number;
   publish: Publish;
@@ -99,7 +102,7 @@ export function TemplateEditor({
       field: entry!.manifest.props[name]!,
     }))
   );
-  const components = useLibrary('component', 'remotion');
+  const components = useLibrary('component', engine);
   const options = targets(
     structure,
     components.entries.filter((e) => e.kind === 'component')
@@ -124,7 +127,7 @@ export function TemplateEditor({
         void publish('/api/studio/libraries/template', {
           ...identity.data(),
           kind: 'template',
-          engine: entry?.engine ?? 'remotion',
+          engine,
           assetIds: [
             ...new Set([
               ...(entry?.assetIds ?? []),

@@ -23,15 +23,17 @@ const singular = {
   brand: 'marca',
 };
 function ComponentEditor({
+  engine,
   entry,
   versions,
   publish,
 }: {
   entry?: EntryOf<'component'>;
+  engine: EngineId;
   versions: number;
   publish: Publish;
 }) {
-  const library = useLibrary('component', 'remotion'),
+  const library = useLibrary('component', engine),
     identity = useIdentity(entry, versions);
   const [source, setSource] = useState(entry ? keyOf(entry) : '');
   return (
@@ -87,10 +89,14 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
   const selected = creating
     ? undefined
     : (versions.find((e) => e.version === version) ?? versions[0]);
-  const verifiedTemplates = useLibrary('template', 'remotion', {
-    enabled: kind === 'template' && !engine,
-    generation,
-  });
+  const verifiedTemplates = useLibrary(
+    'template',
+    selected?.kind === 'template' ? selected.engine : 'remotion',
+    {
+      enabled: kind === 'template' && !engine,
+      generation,
+    }
+  );
   const canInstantiate =
     selected?.kind === 'template' &&
     supportsStudioEngine(selected, selected.engine) &&
@@ -293,8 +299,12 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
             <fieldset disabled={busy} className="library-body">
               {selected?.kind === 'style' && (
                 <p className="edit-note">
-                  {supportsStudioEngine(selected, 'remotion')
-                    ? 'Implementación disponible · Remotion'
+                  {selected.engines?.some((e) => supportsStudioEngine(selected, e))
+                    ? 'Implementación disponible · ' +
+                      selected.engines
+                        .filter((e) => supportsStudioEngine(selected, e))
+                        .map((e) => (e === 'hyperframes' ? 'HyperFrames' : 'Remotion'))
+                        .join(' · ')
                     : 'Referencia archivada · sin implementación verificada'}
                 </p>
               )}
@@ -314,6 +324,7 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
               )}
               {kind === 'component' && (
                 <ComponentEditor
+                  engine={selected?.kind === 'component' ? selected.engine : engine || 'remotion'}
                   entry={selected?.kind === 'component' ? selected : undefined}
                   versions={next}
                   publish={publish}
@@ -351,6 +362,9 @@ export function LibraryBrowser({ kind, initialId }: { kind: LibraryKind; initial
                     )
                   ) : (
                     <TemplateEditor
+                      engine={
+                        selected?.kind === 'template' ? selected.engine : engine || 'remotion'
+                      }
                       entry={selected?.kind === 'template' ? selected : undefined}
                       nextVersion={next}
                       publish={publish}

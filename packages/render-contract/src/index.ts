@@ -42,3 +42,5 @@ export * from './remotion-caption-presets';
 export * from './scene-frames';
 
 export * from './video-playback';
+
+export * from './native-caption';

@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ExportSnapshot, ResolvedAsset } from './snapshot';
 import { existsSync, constants } from 'node:fs';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -71,5 +76,47 @@ export async function openAssetFile(path: string) {
   } catch (error) {
     await file.close();
     throw error;
+  }
+}
+
+export async function fileHash(path: string, signal: AbortSignal) {
+  const hash = createHash('sha256');
+  signal.throwIfAborted();
+  for await (const bytes of createReadStream(path, { signal })) hash.update(bytes);
+  signal.throwIfAborted();
+  return hash.digest('hex');
+}
+export async function stageMedia(
+  snapshot: ExportSnapshot,
+  directory: string,
+  dataDir = resolveStudioDataDir(),
+  signal?: AbortSignal,
+  filename: (asset: ResolvedAsset) => string = (asset) => asset.hash
+) {
+  await mkdir(directory, { recursive: true });
+  const seen = new Set<string>();
+  for (const asset of Object.values(snapshot.dependencies.assets)) {
+    signal?.throwIfAborted();
+    if (seen.has(asset.hash)) continue;
+    seen.add(asset.hash);
+    const path = await assetPath(dataDir, snapshot.ownerId, asset.hash);
+    const { file } = await openAssetFile(path);
+    const hash = createHash('sha256');
+    try {
+      await pipeline(
+        file.createReadStream(),
+        new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            hash.update(chunk);
+            callback(null, chunk);
+          },
+        }),
+        createWriteStream(join(directory, filename(asset)), { flags: 'wx', mode: 0o600 }),
+        { signal }
+      );
+    } finally {
+      await file.close();
+    }
+    if (hash.digest('hex') !== asset.hash) throw new Error('El contenido del recurso ha cambiado.');
   }
 }
