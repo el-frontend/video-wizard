@@ -44,6 +44,7 @@ const patch = z
   .partial();
 
 export const ProjectCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('set-title'), title: IdSchema }),
   z.strictObject({ type: z.literal('add-scene'), scene: SceneSchema, ...sibling }),
   z.strictObject({ type: z.literal('remove-scene'), ...scene }),
   z.strictObject({ type: z.literal('reorder-scene'), ...scene, ...sibling }),
@@ -104,6 +105,9 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
     return sceneId === null ? draft.globalAudio : get(scenes, sceneId).layers;
   }
   switch (command.type) {
+    case 'set-title':
+      draft.title = command.title;
+      break;
     case 'add-scene':
       insert(scenes, command.scene, command.beforeId);
       break;

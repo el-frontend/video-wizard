@@ -239,3 +239,13 @@ test('keeps an editable anchor unchanged when requesting the current scene durat
     applyCommand(draft, { type: 'extend-scene', sceneId: 'intro', durationMs: 4200 })
   ).toStrictEqual(draft);
 });
+
+test('renaming changes only the title and rejects a blank edit', () => {
+  const original = exampleProject();
+  expect(applyCommand(original, { type: 'set-title', title: 'Nuevo título' })).toStrictEqual({
+    ...original,
+    title: 'Nuevo título',
+  });
+  expect(() => applyCommand(original, { type: 'set-title', title: '   ' })).toThrow();
+  expect(original.title).toBe('Dos escenas');
+});

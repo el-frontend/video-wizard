@@ -1,0 +1,240 @@
+'use client';
+
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  applyCommand,
+  type EditorSelection,
+  type ProjectCommand,
+  type ProjectDraft,
+  type ProjectRecord,
+} from '@workspace/video-project';
+import {
+  projectRequest,
+  ProjectRequestError,
+  projectsUrl,
+} from '@/features/studio-projects/project-api';
+
+type Status = 'loading' | 'saved' | 'dirty' | 'saving' | 'conflict' | 'error';
+interface SessionState {
+  saved: ProjectRecord | null;
+  draft: ProjectDraft | null;
+  selection: EditorSelection;
+  status: Status;
+  conflict: ProjectRecord | null;
+  error: string;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+const emptySelection: EditorSelection = {
+  sceneId: null,
+  layerId: null,
+  captionId: null,
+  timeMs: 0,
+};
+const delay = 500;
+const pollInterval = 15000;
+
+function createSession(id: string, initial?: ProjectRecord) {
+  const url = projectsUrl + '/' + encodeURIComponent(id);
+  let state: SessionState = {
+    saved: initial ?? null,
+    draft: initial?.document ?? null,
+    selection: emptySelection,
+    status: initial ? 'saved' : 'loading',
+    conflict: null,
+    error: '',
+    canUndo: false,
+    canRedo: false,
+  };
+  const listeners = new Set<() => void>();
+  const past: ProjectDraft[] = [];
+  const future: ProjectDraft[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let flight: Promise<void> | null = null;
+  let read: AbortController | null = null;
+  let active = false;
+  function update(partial: Partial<SessionState>) {
+    state = { ...state, ...partial, canUndo: !!past.length, canRedo: !!future.length };
+    listeners.forEach((fn) => fn());
+  }
+  function stopTimer() {
+    clearTimeout(timer);
+    timer = undefined;
+  }
+  function edited(draft: ProjectDraft) {
+    stopTimer();
+    if (!state.conflict && !flight && draft === state.saved?.document) {
+      update({ draft, status: 'saved', error: '' });
+      return;
+    }
+    const status = state.conflict ? 'conflict' : flight ? 'saving' : 'dirty';
+    update({ draft, status, error: '' });
+    if (!state.conflict)
+      timer = setTimeout(() => {
+        timer = undefined;
+        void writeAfterFlight().catch(() => {});
+      }, delay);
+  }
+  function dispatch(command: ProjectCommand) {
+    const previous = state.draft;
+    if (!previous) return;
+    try {
+      const next = applyCommand(previous, command);
+      if (JSON.stringify(previous) === JSON.stringify(next)) return;
+      past.push(previous);
+      future.length = 0;
+      edited(next);
+    } catch {
+      update({ error: 'No se pudo aplicar el cambio al documento.' });
+    }
+  }
+  function move(from: ProjectDraft[], to: ProjectDraft[]) {
+    const next = from.pop();
+    if (!next || !state.draft) return;
+    to.push(state.draft);
+    edited(next);
+  }
+  async function refresh() {
+    if (read || flight || state.conflict) return;
+    const request = new AbortController();
+    read = request;
+    const base = state.saved?.revision;
+    try {
+      const remote = await projectRequest<ProjectRecord>(url, { signal: request.signal });
+      if (
+        request.signal.aborted ||
+        flight ||
+        base !== state.saved?.revision ||
+        remote.revision === base
+      )
+        return;
+      if (state.saved && state.draft !== state.saved.document) {
+        stopTimer();
+        update({ status: 'conflict', conflict: remote });
+      } else {
+        past.length = future.length = 0;
+        update({
+          saved: remote,
+          draft: remote.document,
+          status: 'saved',
+          error: '',
+          selection: emptySelection,
+        });
+      }
+    } catch (cause) {
+      if (!request.signal.aborted && !state.saved)
+        update({
+          status: 'error',
+          error: cause instanceof Error ? cause.message : 'No se pudo abrir el proyecto.',
+        });
+    } finally {
+      if (read === request) read = null;
+    }
+  }
+  async function write(base: ProjectRecord, submitted: ProjectDraft) {
+    try {
+      const saved = await projectRequest<ProjectRecord>(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseRevision: base.revision, document: submitted }),
+      });
+      const dirty = state.draft !== submitted;
+      update({
+        saved,
+        draft: dirty ? state.draft : saved.document,
+        status: dirty ? 'dirty' : 'saved',
+        error: '',
+      });
+    } catch (cause) {
+      stopTimer();
+      const conflict = cause instanceof ProjectRequestError ? cause.current : null;
+      update({
+        status: conflict ? 'conflict' : 'error',
+        conflict,
+        error: cause instanceof Error ? cause.message : 'No se pudo guardar el proyecto.',
+      });
+      throw cause;
+    } finally {
+      flight = null;
+    }
+  }
+  function writeNow(): Promise<void> {
+    if (state.conflict)
+      return Promise.reject(new Error('Hay que resolver el conflicto de revisiones.'));
+    if (!state.saved || !state.draft)
+      return Promise.reject(new Error('El proyecto aún no está disponible.'));
+    if (state.draft === state.saved.document) return Promise.resolve();
+    update({ status: 'saving', error: '' });
+    flight = write(state.saved, state.draft);
+    return flight;
+  }
+  async function writeAfterFlight() {
+    if (flight) await flight;
+    // A later edit restarted the debounce while this callback waited for the server.
+    if (active && !timer && !flight) await writeNow();
+  }
+  async function save() {
+    stopTimer();
+    // An explicit save settles all newer edits before a dependent action can proceed.
+    do {
+      if (flight) await flight;
+      else await writeNow();
+      stopTimer();
+    } while (state.saved && state.draft !== state.saved.document);
+  }
+  function start() {
+    active = true;
+    if (!state.saved) void refresh();
+    const onFocus = () => {
+      void refresh();
+    };
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') onFocus();
+    }, pollInterval);
+    window.addEventListener('focus', onFocus);
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (state.draft && state.draft !== state.saved?.document) event.preventDefault();
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => {
+      active = false;
+      stopTimer();
+      read?.abort();
+      read = null;
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('beforeunload', beforeUnload);
+    };
+  }
+  return {
+    start,
+    snapshot: () => state,
+    subscribe: (fn: () => void) => {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+    actions: {
+      dispatch,
+      select: (selection: EditorSelection) => update({ selection }),
+      undo: () => move(past, future),
+      redo: () => move(future, past),
+      save,
+      refresh,
+    },
+  };
+}
+
+export function useProjectSession(id: string, initial?: ProjectRecord) {
+  const [entry, setEntry] = useState(() => ({ id, session: createSession(id, initial) }));
+  let session = entry.session;
+  // RSC refreshes can return a fresh object for the same revision.
+  if (entry.id !== id) {
+    session = createSession(id, initial?.document.id === id ? initial : undefined);
+    setEntry({ id, session });
+  }
+  useEffect(() => session.start(), [session]);
+  const state = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
+  return { ...state, ...session.actions };
+}

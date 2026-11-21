@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { useState, useTransition } from 'react';
+import { Suspense, useState, useTransition } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
 import { Card } from '@workspace/ui/components/card';
@@ -17,6 +17,14 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default function SignInPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/';
