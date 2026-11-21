@@ -2,7 +2,9 @@
 Smart Crop & Video Processing Service
 FastAPI application for analyzing and cropping videos
 """
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from contextlib import contextmanager
+from tempfile import TemporaryDirectory
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -11,7 +13,7 @@ import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 import logging
 
 from analyzer import VideoAnalyzer
@@ -454,6 +456,45 @@ async def render_clip(request: RenderClipRequest):
     except Exception as e:
         logger.error(f"Clip rendering error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Clip rendering failed: {str(e)}")
+
+
+@contextmanager
+def temporary_studio_source(file: UploadFile):
+    """Own the input and intermediate files for exactly one processing operation."""
+    with TemporaryDirectory(prefix="studio-source-") as directory:
+        path = Path(directory) / "source"
+        with path.open("xb") as destination:
+            shutil.copyfileobj(file.file, destination)
+        yield path
+
+
+@app.post("/studio/transcribe-source", response_model=TranscribeResponse)
+async def transcribe_studio_source(file: UploadFile = File(...)):
+    with temporary_studio_source(file) as source:
+        return audio_service.transcribe_video(str(source), work_dir=source.parent)
+
+
+@app.post("/studio/crop-source", response_model=RenderClipResponse, response_model_exclude_none=True)
+async def crop_studio_source(
+    file: UploadFile = File(...),
+    start_ms: int = Form(..., ge=0),
+    end_ms: int = Form(..., gt=0),
+    crop_mode: Literal["dynamic", "static"] = Form(...),
+    aspect_ratio: Literal["9:16", "1:1", "4:5", "16:9"] = Form(...),
+):
+    output = str(OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
+    with temporary_studio_source(file) as source:
+        crop = await render_clip(RenderClipRequest(
+            video_path=str(source),
+            start_time=start_ms / 1000,
+            end_time=end_ms / 1000,
+            crop_mode=crop_mode,
+            aspect_ratio=aspect_ratio,
+            output_path=output,
+        ))
+        if crop.success and crop.output_path != output:
+            raise HTTPException(status_code=502, detail="Crop did not return this operation's output")
+        return crop
 
 
 YOUTUBE_URL_PATTERN = re.compile(

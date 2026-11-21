@@ -10,6 +10,7 @@ export function fitsShort(
   if (
     !scene ||
     structure.scenes.length !== 1 ||
+    scene.layers.some((layer) => layer.type === 'video') ||
     structure.canvas.width !== canvas.width ||
     structure.canvas.height !== canvas.height ||
     structure.canvas.fps !== canvas.fps

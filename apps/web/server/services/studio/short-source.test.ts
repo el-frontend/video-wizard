@@ -47,17 +47,16 @@ describe('source registration and transcription', () => {
       ingest: vi.fn(),
     };
     const python = {
-      uploadVideo: vi.fn(),
       downloadYouTube: vi.fn(),
-      transcribeVideo: vi.fn(),
-      createClip: vi.fn(),
+      transcribeSource: vi.fn(),
+      cropSource: vi.fn(),
       openProcessedCrop: vi.fn(),
     };
     expect(await new ShortSourceService(assets, python).transcribe('owner', 'source')).toEqual({
       cues: [],
       language: null,
     });
-    expect(python.uploadVideo).not.toHaveBeenCalled();
-    expect(python.transcribeVideo).not.toHaveBeenCalled();
+    expect(assets.resolveFile).not.toHaveBeenCalled();
+    expect(python.transcribeSource).not.toHaveBeenCalled();
   });
 });

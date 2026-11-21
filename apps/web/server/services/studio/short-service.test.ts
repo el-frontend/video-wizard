@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ShortService, sliceCaptions } from './short-service';
+import { sourceCues } from '@/features/studio-shorts/lib/timing';
 import type { Job } from '../job-history-service';
 import type { ProjectDraft } from '@workspace/video-project';
 
@@ -251,6 +252,11 @@ it('uses a compatible prepared layout and adapts its caption preset to each sour
     ],
   }));
   const [first, second] = await service.create(owner, { ...request, templateRef: ref });
+  for (const row of [first!, second!]) {
+    const videos = row.document.scenes[0]!.layers.filter((layer) => layer.type === 'video');
+    expect(videos).toHaveLength(1);
+    expect(videos[0]).toMatchObject({ assetId: source.id, volume: 1, visible: true });
+  }
   expect(prepare).toHaveBeenCalledWith(owner, { templateRef: ref, engine: 'remotion' });
   expect(first!.document.scenes[0]).toMatchObject({ templateRef: ref, durationMs: 7000 });
   expect(first!.document.scenes[0]!.layers[1]).toMatchObject({
@@ -272,5 +278,65 @@ it('uses a compatible prepared layout and adapts its caption preset to each sour
       canvas: { width: 640, height: 360, fps: 25 },
     })
   ).rejects.toThrow(/lienzo/);
+  expect(insert).not.toHaveBeenCalled();
+});
+
+it('retains only words surviving measured video bounds, including a full-range short', () => {
+  const segments = [
+    {
+      start: 0.5,
+      end: 1.2,
+      text: 'sí fuera',
+      words: [
+        { start: 0.5, end: 0.9, word: ' sí' },
+        { start: 1.05, end: 1.2, word: ' fuera' },
+      ],
+    },
+    {
+      start: 0.9,
+      end: 1.2,
+      text: 'descartada',
+      words: [{ start: 1.05, end: 1.2, word: ' descartada' }],
+    },
+    { start: 0.7, end: 1.2, text: 'sin alineación' },
+    { start: 0.1, end: 0.3, text: 'sí extra', words: [{ start: 0.1, end: 0.3, word: ' sí' }] },
+  ];
+  const cues = sourceCues(segments, 1000);
+  expect(sliceCaptions(cues, { startMs: 0, endMs: 1000 })).toEqual([
+    {
+      id: 'cue-0',
+      startMs: 500,
+      endMs: 1000,
+      text: 'sí',
+      words: [{ text: ' sí', startMs: 0, endMs: 400 }],
+    },
+    { id: 'cue-2', startMs: 700, endMs: 1000, text: 'sin alineación' },
+    {
+      id: 'cue-3',
+      startMs: 100,
+      endMs: 300,
+      text: 'sí',
+      words: [{ text: ' sí', startMs: 0, endMs: 200 }],
+    },
+  ]);
+});
+it('refuses to put the new recording behind an unbound old full-frame video', async () => {
+  const { service, prepare, insert } = setup();
+  const draft = (await service.create(owner, { ...request, ranges: [request.ranges[0]] }))[0]!
+    .document;
+  draft.assetIds = ['old'];
+  const v = draft.scenes[0]!.layers[0]!;
+  if (v.type !== 'video') throw Error('fixture');
+  v.assetId = 'old';
+  v.sourceInMs = 0;
+  prepare.mockResolvedValue(draft);
+  insert.mockClear();
+  await expect(
+    service.create(owner, {
+      ...request,
+      ranges: [request.ranges[0]],
+      templateRef: { id: 'old', version: 1 },
+    })
+  ).rejects.toThrow();
   expect(insert).not.toHaveBeenCalled();
 });

@@ -68,7 +68,9 @@ class AudioService:
         video_path: str, 
         output_format: str = "wav",
         sample_rate: int = 16000,
-        audio_bitrate: str = "128k"
+        audio_bitrate: str = "128k",
+        *,
+        work_dir: Optional[Path] = None
     ) -> str:
         """
         Extract audio track from video file using FFmpeg
@@ -93,7 +95,7 @@ class AudioService:
         # Generate output path
         video_name = Path(video_path).stem
         audio_filename = f"{video_name}_audio.{output_format}"
-        audio_path = self.temp_dir / audio_filename
+        audio_path = (work_dir or self.temp_dir) / audio_filename
         
         logger.info(f"Extracting audio from {video_path} to {audio_path}")
         
@@ -271,7 +273,9 @@ class AudioService:
         self,
         video_path: str,
         language: Optional[str] = None,
-        cleanup: bool = True
+        cleanup: bool = True,
+        *,
+        work_dir: Optional[Path] = None
     ) -> Dict:
         """
         Complete pipeline: Extract audio from video and transcribe
@@ -296,7 +300,7 @@ class AudioService:
 
         try:
             # Step 1: Extract audio
-            audio_path = self.extract_audio(video_path)
+            audio_path = self.extract_audio(video_path, work_dir=work_dir)
 
             # Step 2: Transcribe audio (returns segments and detected language)
             segments, detected_language = self.transcribe_audio(audio_path, language=language)

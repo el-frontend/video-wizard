@@ -111,7 +111,9 @@ export class ShortService {
             brandSnapshot: null,
           };
       if (templateRef && !fitsShort(doc, canvas, [length]))
-        invalid('La plantilla debe admitir el lienzo y la duración de cada fragmento.');
+        invalid(
+          'Elige una plantilla sin video propio que admita el lienzo y la duración de cada fragmento.'
+        );
       doc.durationMs = length;
       doc.title = asset.name + ' · ' + (docs.length + 1);
       if (!doc.assetIds.includes(assetId)) doc.assetIds.push(assetId);

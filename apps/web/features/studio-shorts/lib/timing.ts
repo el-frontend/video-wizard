@@ -6,21 +6,23 @@ export interface ShortRange {
   endMs: number;
 }
 export function sourceCues(segments: WhisperSegment[], durationMs: number): CaptionCue[] {
-  return fromWhisperSeconds(segments).flatMap((segment, i) => {
-    const startMs = Math.max(0, segment.start),
-      endMs = Math.min(durationMs, segment.end);
-    if (endMs <= startMs || !segment.text) return [];
-    const words = segment.words?.flatMap((word) => {
-      const a = Math.max(startMs, word.start),
-        b = Math.min(endMs, word.end);
-      return b > a && word.word.trim()
-        ? [{ text: word.word, startMs: a - startMs, endMs: b - startMs }]
-        : [];
-    });
+  const cues = fromWhisperSeconds(segments).flatMap((segment, i) => {
+    if (!segment.text || segment.end <= segment.start) return [];
     return [
-      { id: 'cue-' + i, startMs, endMs, text: segment.text, ...(words?.length ? { words } : {}) },
+      {
+        id: 'cue-' + i,
+        startMs: segment.start,
+        endMs: segment.end,
+        text: segment.text,
+        words: segment.words?.map((word) => ({
+          text: word.word,
+          startMs: word.start - segment.start,
+          endMs: word.end - segment.start,
+        })),
+      },
     ];
   });
+  return sliceCaptions(cues, { startMs: 0, endMs: durationMs });
 }
 
 export function sliceCaptions(cues: CaptionCue[], range: ShortRange): CaptionCue[] {
@@ -29,12 +31,13 @@ export function sliceCaptions(cues: CaptionCue[], range: ShortRange): CaptionCue
       b = Math.min(cue.endMs, range.endMs);
     if (a >= b) return [];
     const timing = { startMs: a - range.startMs, endMs: b - range.startMs };
-    if (!cue.words?.length || (a === cue.startMs && b === cue.endMs))
-      return [{ ...cue, ...timing }];
+    if (!cue.words?.length) return [{ ...cue, ...timing }];
     const words = cue.words.flatMap((word) => {
       const start = Math.max(a, cue.startMs + word.startMs),
         end = Math.min(b, cue.startMs + word.endMs);
-      return start < end ? [{ text: word.text, startMs: start - a, endMs: end - a }] : [];
+      return start < end && word.text.trim()
+        ? [{ text: word.text, startMs: start - a, endMs: end - a }]
+        : [];
     });
     if (!words.length) return [];
     const joined = cue.words
@@ -42,17 +45,15 @@ export function sliceCaptions(cues: CaptionCue[], range: ShortRange): CaptionCue
       .join('')
       .trim();
     const text =
-      words.length === cue.words.length
-        ? cue.text
-        : joined === cue.text.trim()
-          ? words
-              .map((w) => w.text)
-              .join('')
-              .trim()
-          : words
-              .map((w) => w.text.trim())
-              .join(' ')
-              .replace(/\s+([.,!?;:])/g, '$1');
+      joined === cue.text.trim()
+        ? words
+            .map((w) => w.text)
+            .join('')
+            .trim()
+        : words
+            .map((w) => w.text.trim())
+            .join(' ')
+            .replace(/\s+([.,!?;:])/g, '$1');
     return [{ id: cue.id, ...timing, text, words }];
   });
 }

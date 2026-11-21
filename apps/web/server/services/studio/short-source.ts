@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import type { ReadableStream } from 'node:stream/web';
 import { AssetDescriptorSchema } from '@workspace/video-project';
@@ -15,7 +14,7 @@ export class ShortSourceService {
     private assets: Pick<AssetService, 'get' | 'resolveFile' | 'ingest'>,
     private python: Pick<
       ClipIntegrationService,
-      'uploadVideo' | 'downloadYouTube' | 'transcribeVideo' | 'createClip' | 'openProcessedCrop'
+      'downloadYouTube' | 'transcribeSource' | 'cropSource' | 'openProcessedCrop'
     >
   ) {}
   async download(owner: string, url: string) {
@@ -27,24 +26,10 @@ export class ShortSourceService {
     });
     return AssetDescriptorSchema.strip().parse(asset);
   }
-  async prepare(owner: string, assetId: string) {
-    const asset = await this.assets.get(owner, assetId);
-    measuredVideo(asset);
-    const path = await this.assets.resolveFile(owner, assetId);
-    const extension =
-      asset.mediaType === 'video/quicktime'
-        ? '.mov'
-        : asset.mediaType === 'video/webm'
-          ? '.webm'
-          : '.mp4';
-    const filename = randomUUID() + extension;
+  private async openSource(owner: string, asset: { id: string; mediaType: string }) {
+    const path = await this.assets.resolveFile(owner, asset.id);
     const blob = await openAsBlob(path, { type: asset.mediaType });
-    const receipt = await this.python.uploadVideo(
-      new File([blob], filename, { type: asset.mediaType })
-    );
-    if (receipt.filename !== filename || receipt.path !== 'uploads/' + filename)
-      throw new ValidationError('El procesador no pudo preparar el video de origen.');
-    return receipt.path;
+    return new File([blob], 'source', { type: asset.mediaType });
   }
   async validateClip(owner: string, input: z.infer<typeof OwnedClipInputSchema>) {
     const asset = await this.assets.get(owner, input.sourceAssetId);
@@ -54,21 +39,14 @@ export class ShortSourceService {
   }
   async renderClip(owner: string, input: z.infer<typeof OwnedClipInputSchema>) {
     const source = await this.validateClip(owner, input);
-    const video_path = await this.prepare(owner, source.id);
-    const filename = randomUUID() + '.mp4',
-      output_path = 'output/' + filename;
-    const result = await this.python.createClip({
-      video_path,
-      output_path,
-      start_time: input.startMs / 1000,
-      end_time: input.endMs / 1000,
-      crop_mode: input.crop_mode,
-      aspect_ratio: input.aspect_ratio,
-    });
+    const result = await this.python.cropSource(await this.openSource(owner, source), input);
+    const filename = /^output\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.mp4)$/.exec(
+      result.output_path ?? ''
+    )?.[1];
     if (
       !result.success ||
-      result.output_path !== output_path ||
-      result.output_url !== '/' + output_path ||
+      !filename ||
+      result.output_url !== '/output/' + filename ||
       result.start_time !== input.startMs / 1000 ||
       result.end_time !== input.endMs / 1000
     )
@@ -96,8 +74,7 @@ export class ShortSourceService {
       duration = measuredVideo(asset);
     if (!asset.hasAudio) return { cues: [], language: null };
     try {
-      const path = await this.prepare(owner, assetId);
-      const result = await this.python.transcribeVideo(path);
+      const result = await this.python.transcribeSource(await this.openSource(owner, asset));
       return { cues: sourceCues(result.segments, duration), language: result.language ?? null };
     } catch {
       throw new ValidationError(

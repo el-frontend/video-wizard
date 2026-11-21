@@ -120,3 +120,31 @@ describe('mediaProbe', () => {
     expect(await mediaProbe(path)).toEqual({ width: 1, height: 1, hasAudio: false });
   });
 });
+
+it('measures a legacy AVI with video and sound and rejects a mislabeled AVI', async () => {
+  const path = join(directory, 'legacy.avi');
+  execFileSync('ffmpeg', [
+    '-v',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=size=160x90:rate=25:duration=1',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=duration=1',
+    '-c:v',
+    'mpeg4',
+    '-c:a',
+    'pcm_s16le',
+    path,
+  ]);
+  await expect(mediaProbe(path, 'video/x-msvideo')).resolves.toMatchObject({
+    width: 160,
+    height: 90,
+    hasAudio: true,
+    durationMs: 1000,
+  });
+  await expect(mediaProbe(path, 'video/mp4')).rejects.toThrow(/tipo indicado/);
+});

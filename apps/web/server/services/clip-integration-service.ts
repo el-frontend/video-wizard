@@ -1,4 +1,4 @@
-import { TranscriptionResponseSchema } from '@/server/types/clip-render';
+import { ClipRenderResponseSchema, TranscriptionResponseSchema } from '@/server/types/clip-render';
 import { extractVideoId } from '@/features/video/lib/youtube';
 import { ValidationError, logger } from '@/server/lib/utils';
 import type {
@@ -158,6 +158,42 @@ export class ClipIntegrationService {
       logger.error('Video upload failed', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to upload video');
     }
+  }
+
+  private async postStudioSource(
+    operation: 'transcribe-source' | 'crop-source',
+    file: File,
+    fields: Record<string, string> = {}
+  ) {
+    const form = new FormData();
+    form.append('file', file);
+    for (const [key, value] of Object.entries(fields)) form.append(key, value);
+    const response = await fetch(this.baseUrl + '/studio/' + operation, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+    });
+    if (!response.ok) throw Error('El procesador no pudo completar la operación.');
+    return response.json();
+  }
+
+  async transcribeSource(file: File) {
+    return TranscriptionResponseSchema.parse(
+      await this.postStudioSource('transcribe-source', file)
+    );
+  }
+
+  async cropSource(
+    file: File,
+    input: { startMs: number; endMs: number; crop_mode: string; aspect_ratio: string }
+  ) {
+    const response = await this.postStudioSource('crop-source', file, {
+      start_ms: String(input.startMs),
+      end_ms: String(input.endMs),
+      crop_mode: input.crop_mode,
+      aspect_ratio: input.aspect_ratio,
+    });
+    return ClipRenderResponseSchema.parse(response);
   }
 
   async openProcessedCrop(filename: string) {
