@@ -1,7 +1,12 @@
 import { libraryKey, type ResolvedDependencies } from './dependencies';
 import { resolveAppearance } from './appearance';
 import { remotionCaptionPresets } from './remotion-caption-presets';
-import type { JsonValue, Layer, ProjectDraft } from '@workspace/video-project';
+import {
+  StudioBrandRoleSchema,
+  type JsonValue,
+  type Layer,
+  type ProjectDraft,
+} from '@workspace/video-project';
 
 const defaults = {
   tokens: {
@@ -32,7 +37,9 @@ export function projectAppearance(
   const componentDefaults =
     implementation && 'manifest' in implementation && implementation.manifest.exposedRoles
       ? { ...defaults, exposedRoles: implementation.manifest.exposedRoles }
-      : defaults;
+      : pinned?.kind === 'style' && pinned.family
+        ? { ...defaults, exposedRoles: StudioBrandRoleSchema.options }
+        : defaults;
   const { tokens, diagnostics } = resolveAppearance({
     defaults: componentDefaults,
     style: pinned?.kind === 'style' ? pinned : undefined,

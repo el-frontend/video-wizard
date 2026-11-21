@@ -190,7 +190,7 @@ export function CaptionEditor({
   );
   useEffect(() => {
     const controller = new AbortController();
-    projectRequest<unknown>('/api/studio/libraries/component?engine=' + engine, {
+    projectRequest<unknown>('/api/studio/libraries/component?engine=' + engine + '&verified=1', {
       signal: controller.signal,
     })
       .then((raw) => {

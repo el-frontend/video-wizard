@@ -35,6 +35,7 @@ function fixture(): ExportSnapshot {
   const style = {
     ...document.styleRef!,
     name: 'Marca',
+    family: { id: 'noticias-liquid-glass', version: 1 } as const,
     kind: 'style' as const,
     engines: ['remotion' as const],
     assetIds: ['font'],
@@ -56,6 +57,13 @@ function fixture(): ExportSnapshot {
 function asset(id: string, mediaType: string): ResolvedAsset {
   return { id, name: id, url: id, hash: 'f'.repeat(64), mediaType };
 }
+it('rejects a style which declares a verified engine but has no known family', () => {
+  const snap = fixture();
+  const style = Object.values(snap.dependencies.libraries)[0]!;
+  if (style.kind !== 'style') throw Error('fixture');
+  delete style.family;
+  expect(validateSnapshot(snap)).toContainEqual(expect.objectContaining({ code: 'style-engine' }));
+});
 it('validates the resolved font family and weight for each text layer', () => {
   const snapshot = fixture(),
     layer = snapshot.document.scenes[0]!.layers[0]!;

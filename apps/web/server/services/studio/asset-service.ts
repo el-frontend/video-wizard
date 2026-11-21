@@ -4,8 +4,8 @@ import { link, mkdtemp, open, readFile, rm, type FileHandle } from 'node:fs/prom
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream } from 'node:stream/web';
-import type { AssetRecord, Diagnostic } from '@workspace/video-project';
-import { and, eq } from 'drizzle-orm';
+import { AssetDescriptorSchema, type AssetRecord, type Diagnostic } from '@workspace/video-project';
+import { and, asc, eq, gt, like } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { db } from '@/server/db';
@@ -246,6 +246,29 @@ export class AssetService {
       // Leave promoted bytes intact on database failure so another upload can claim them safely.
       await rm(temporary, { recursive: true, force: true });
     }
+  }
+
+  async list(ownerId: string, cursor?: string, media?: string) {
+    if (cursor !== undefined && !uuid.safeParse(cursor).success)
+      throw new ValidationError('Cursor de recursos inválido.');
+    if (media !== undefined && !['audio', 'video', 'image', 'font'].includes(media))
+      throw new ValidationError('Tipo de recurso inválido.');
+    const rows = await this.db
+      .select()
+      .from(studioAssets)
+      .where(
+        and(
+          eq(studioAssets.ownerId, ownerId),
+          cursor ? gt(studioAssets.id, cursor) : undefined,
+          media ? like(studioAssets.mediaType, media + '/%') : undefined
+        )
+      )
+      .orderBy(asc(studioAssets.id))
+      .limit(26);
+    const items = rows
+      .slice(0, 25)
+      .map((row) => AssetDescriptorSchema.strip().parse(toRecord(row)));
+    return { items, nextCursor: rows.length > 25 ? items[24]!.id : null };
   }
 
   async get(ownerId: string, id: string): Promise<AssetRecord> {

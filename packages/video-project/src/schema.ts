@@ -6,7 +6,7 @@ import {
   JsonObjectSchema,
   LibraryRefSchema,
   MillisecondsSchema,
-} from './library';
+} from './primitives';
 import { projectDurationMs } from './time';
 
 const range = { startMs: MillisecondsSchema, endMs: MillisecondsSchema };

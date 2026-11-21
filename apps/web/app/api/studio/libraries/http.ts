@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/server/db';
 import { UnauthorizedError, requireAuth } from '@/server/lib/auth';
+import { AssetNotFoundError } from '@/server/services/studio/asset-service';
 import { ValidationError } from '@/server/lib/utils';
 import {
   LibraryConflictError,
@@ -33,7 +34,7 @@ export async function libraryResponse<T>(action: (ownerId: string) => Promise<T>
     if (error instanceof ValidationError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
-    if (error instanceof LibraryNotFoundError) {
+    if (error instanceof LibraryNotFoundError || error instanceof AssetNotFoundError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });
     }
     if (error instanceof LibraryConflictError) {

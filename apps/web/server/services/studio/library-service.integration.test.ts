@@ -313,7 +313,11 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
 
     expect(await runSeed()).toContain('3 estilos, 9 componentes de subtítulos, 1 marca');
     expect(await library.list(owner, { kind: 'style' })).toEqual(styles);
-    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(16);
+    expect((await library.list(owner, { kind: 'template' })).map((e) => e.id)).toEqual([
+      'boletin-de-escenas',
+      'short-con-subtitulos',
+    ]);
+    expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(18);
     expect(await fixture.db.$count(studioAssets, eq(studioAssets.ownerId, owner))).toBe(4);
 
     const newOwner = await fixture.createOwner();

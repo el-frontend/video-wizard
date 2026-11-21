@@ -83,6 +83,11 @@ export const ProjectCommandSchema = z.discriminatedUnion('type', [
     layerId: IdSchema,
     startMs: MillisecondsSchema,
   }),
+  z.strictObject({
+    type: z.literal('set-scene-template'),
+    ...scene,
+    ref: LibraryRefSchema.nullable(),
+  }),
   z.strictObject({ type: z.literal('set-narration'), ...scene, text: z.string() }),
   z.strictObject({ type: z.literal('set-headline'), ...scene, text: z.string() }),
   z.strictObject({ type: z.literal('set-brand'), snapshot: BrandSnapshotSchema.nullable() }),
@@ -190,6 +195,12 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
           throw new RangeError('Selecciona una capa de audio existente.');
         layer.sourceAudioLayerId = command.audioLayerId;
       } else delete layer.sourceAudioLayerId;
+      break;
+    }
+    case 'set-scene-template': {
+      const target = get(scenes, command.sceneId);
+      if (command.ref) target.templateRef = command.ref;
+      else delete target.templateRef;
       break;
     }
     case 'set-headline':

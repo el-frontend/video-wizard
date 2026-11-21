@@ -1,50 +1,15 @@
 import { z } from 'zod';
-
-export const IdSchema = z.string().regex(/\S/);
-export const MillisecondsSchema = z.int().nonnegative();
-export const EngineIdSchema = z.enum(['remotion', 'hyperframes']);
-export type EngineId = z.infer<typeof EngineIdSchema>;
-export type JsonValue = z.infer<ReturnType<typeof z.json>>;
-// Validate entries individually so every JSON key survives deserialization.
-function dictionary<T extends z.ZodType>(value: T) {
-  return z
-    .preprocess(
-      (input) => {
-        if (input === null || typeof input !== 'object') return null;
-        const prototype = Object.getPrototypeOf(input);
-        return prototype === null || prototype === Object.prototype ? Object.entries(input) : null;
-      },
-      z.array(z.tuple([z.string(), value]))
-    )
-    .transform((entries): Record<string, z.output<T>> => Object.fromEntries(entries));
-}
-export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(JsonValueSchema),
-    JsonObjectSchema,
-  ])
-);
-export const JsonObjectSchema = dictionary(JsonValueSchema);
-
-// A library ID must round-trip as a PostgreSQL text key and one encoded URL segment.
-export const LibraryIdSchema = IdSchema.refine(
-  (id) => id !== '.' && id !== '..' && !id.includes('\0') && !/[\uD800-\uDFFF]/u.test(id)
-);
-export const LibraryRefSchema = z.strictObject({
-  id: LibraryIdSchema,
-  version: z.int().positive(),
-});
-export type LibraryRef = z.infer<typeof LibraryRefSchema>;
-export const BrandSnapshotSchema = z.strictObject({
-  ref: LibraryRefSchema,
-  values: JsonObjectSchema,
-});
-export type BrandSnapshot = z.infer<typeof BrandSnapshotSchema>;
-
+import { CanvasSchema, SceneSchema, GlobalAudioLayerSchema } from './schema';
+import {
+  type EngineId,
+  dictionary,
+  IdSchema,
+  LibraryRefSchema,
+  EngineIdSchema,
+  JsonObjectSchema,
+  MillisecondsSchema,
+} from './primitives';
+export * from './primitives';
 export const LibraryKindSchema = z.enum(['component', 'template', 'style', 'brand']);
 export type LibraryKind = z.infer<typeof LibraryKindSchema>;
 export const AppearanceRoleSchema = z
@@ -85,29 +50,72 @@ export const LibraryManifestSchema = z.strictObject({
     .optional(),
 });
 export type LibraryManifest = z.infer<typeof LibraryManifestSchema>;
+export const StudioBrandRoleSchema = z.enum([
+  'colors.accent',
+  'colors.background',
+  'colors.foreground',
+  'colors.surface',
+  'typography.display.fontFamily',
+]);
+export const StyleFamilySchema = z.strictObject({
+  id: z.enum(['noticias-liquid-glass', 'noticias-elfrontend-web', 'noticias-modern-editorial']),
+  version: z.literal(1),
+});
+const layerTarget = { sceneId: IdSchema, layerId: IdSchema };
+export const TemplateSlotSchema = z.discriminatedUnion('field', [
+  z.strictObject({ field: z.literal('text'), ...layerTarget }),
+  z.strictObject({ field: z.literal('caption'), ...layerTarget, cueId: IdSchema }),
+  z.strictObject({ field: z.enum(['headline', 'narration']), sceneId: IdSchema }),
+  z.strictObject({ field: z.literal('prop'), ...layerTarget, key: IdSchema }),
+  z.strictObject({ field: z.literal('asset'), sceneId: IdSchema.nullable(), layerId: IdSchema }),
+]);
+export const TemplateStructureSchema = z.strictObject({
+  version: z.literal(1),
+  canvas: CanvasSchema,
+  scenes: z.array(SceneSchema).min(1),
+  globalAudio: z.array(GlobalAudioLayerSchema),
+  styleRef: LibraryRefSchema.nullable(),
+  slots: dictionary(TemplateSlotSchema),
+});
+export type TemplateStructure = z.infer<typeof TemplateStructureSchema>;
+export type TemplateSlot = z.infer<typeof TemplateSlotSchema>;
+export type StyleFamily = z.infer<typeof StyleFamilySchema>;
 const entry = { ...LibraryRefSchema.shape, name: IdSchema, assetIds: z.array(IdSchema) };
 const implementation = { engine: EngineIdSchema, manifest: LibraryManifestSchema };
 const fontWeight = z.int().min(1).max(1000);
-const fontBinding = z.strictObject({
+export const FontBindingSchema = z.strictObject({
   assetId: IdSchema,
   family: IdSchema,
   weight: z.strictObject({ min: fontWeight, max: fontWeight }).refine(({ min, max }) => min <= max),
 });
-const fonts = z.array(fontBinding).optional();
+const fonts = z.array(FontBindingSchema).optional();
 export const LibraryEntrySchema = z
   .discriminatedUnion('kind', [
     z.strictObject({ ...entry, kind: z.literal('component'), ...implementation }),
-    z.strictObject({ ...entry, kind: z.literal('template'), ...implementation }),
+    z.strictObject({
+      ...entry,
+      kind: z.literal('template'),
+      ...implementation,
+      structure: TemplateStructureSchema.optional(),
+    }),
     z.strictObject({
       ...entry,
       kind: z.literal('style'),
       tokens: JsonObjectSchema,
+      family: StyleFamilySchema.optional(),
       frameMarkdown: z.string().optional(),
       engines: z.array(EngineIdSchema).optional(),
       exposedRoles: z.array(AppearanceRoleSchema).optional(),
       fonts,
     }),
-    z.strictObject({ ...entry, kind: z.literal('brand'), values: JsonObjectSchema, fonts }),
+    z.strictObject({
+      ...entry,
+      kind: z.literal('brand'),
+      values: JsonObjectSchema,
+      fonts,
+      tone: z.string().max(4000).optional(),
+      logos: z.array(z.strictObject({ name: IdSchema, assetId: IdSchema })).optional(),
+    }),
   ])
   .superRefine((value, ctx) => {
     if (
@@ -119,6 +127,16 @@ export const LibraryEntrySchema = z
         code: 'custom',
         path: ['manifest', 'builtin'],
         message: 'Expected a Remotion component.',
+      });
+    }
+    if (
+      value.kind === 'brand' &&
+      value.logos?.some((logo) => !value.assetIds.includes(logo.assetId))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['logos'],
+        message: 'Registra los recursos de los logos.',
       });
     }
     if ('fonts' in value) {
@@ -136,6 +154,22 @@ export const LibraryEntrySchema = z
   });
 export type LibraryEntry = z.infer<typeof LibraryEntrySchema>;
 
+export type EntryOf<K extends LibraryKind> = Extract<LibraryEntry, { kind: K }>;
+export function styleFamily(entry: EntryOf<'style'>): StyleFamily | undefined {
+  if (entry.family) return entry.family;
+  if (entry.version !== 2) return undefined;
+  const legacy = StyleFamilySchema.safeParse({ id: entry.id, version: 1 });
+  return legacy.success ? legacy.data : undefined;
+}
+export function supportsStudioEngine(entry: LibraryEntry, engine: EngineId) {
+  if (entry.kind === 'brand') return true;
+  if (engine !== 'remotion') return false;
+  if (entry.kind === 'style') return !!styleFamily(entry) && !!entry.engines?.includes(engine);
+  if (entry.engine !== engine) return false;
+  if (entry.kind === 'component')
+    return !!entry.manifest.builtin && !Object.keys(entry.manifest.props).length;
+  return !!entry.structure;
+}
 export const AssetRecordSchema = z.strictObject({
   id: IdSchema,
   ownerId: IdSchema,

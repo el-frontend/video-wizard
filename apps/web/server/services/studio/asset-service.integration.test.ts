@@ -108,6 +108,33 @@ afterAll(async () => {
 });
 
 describe('AssetService', () => {
+  it('paginates only the owner’s descriptors by stable ID and excludes storage paths', async () => {
+    for (let i = 0; i < 27; i++)
+      await assets.ingest(ownerId, {
+        mediaType: 'application/json',
+        filename: 'f' + i + '.json',
+        stream: Readable.from([JSON.stringify(i)]),
+      });
+    const audio = await uploadAudio();
+    await assets.ingest(otherOwnerId, {
+      mediaType: 'application/json',
+      filename: 'foreign.json',
+      stream: Readable.from(['42']),
+    });
+    const first = await assets.list(ownerId);
+    expect(first.items).toHaveLength(25);
+    expect(first.nextCursor).toBe(first.items.at(-1)!.id);
+    const next = await assets.list(ownerId, first.nextCursor!);
+    expect(next.items).toHaveLength(3);
+    expect(next.nextCursor).toBe(null);
+    const rows = [...first.items, ...next.items];
+    expect(rows.every((r) => r.ownerId === ownerId && !('locator' in r))).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual(rows.map((r) => r.id).sort());
+    expect(new Set(rows.map((r) => r.id)).size).toBe(28);
+    expect((await assets.list(ownerId, undefined, 'audio')).items.map((r) => r.id)).toEqual([
+      audio.id,
+    ]);
+  });
   it('persists measured audio and deduplicates concurrent uploads by owner and hash', async () => {
     const [first, second] = await Promise.all([uploadAudio(), uploadAudio()]);
     expect(measuredDurationMs).toBeGreaterThan(2250);

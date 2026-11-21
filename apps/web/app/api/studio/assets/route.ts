@@ -8,6 +8,21 @@ import { assetResponse, assetService } from './http';
 
 export const runtime = 'nodejs';
 
+export function GET(request: Request) {
+  return assetResponse(async (ownerId) => {
+    const params = new URL(request.url).searchParams;
+    const data = await assetService.list(
+      ownerId,
+      params.get('cursor') ?? undefined,
+      params.get('media') ?? undefined
+    );
+    return NextResponse.json(
+      { success: true, data },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    );
+  });
+}
+
 export function POST(request: Request) {
   return assetResponse(async (ownerId) => {
     const mediaType = request.headers.get('content-type');

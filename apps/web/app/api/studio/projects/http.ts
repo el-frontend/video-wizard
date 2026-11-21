@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/server/db';
 import { UnauthorizedError, requireAuth } from '@/server/lib/auth';
+import {
+  LibraryNotFoundError,
+  LibraryConflictError,
+} from '@/server/services/studio/library-service';
 import { AssetNotFoundError } from '@/server/services/studio/asset-service';
 import { ValidationError } from '@/server/lib/utils';
 import {
@@ -40,7 +44,10 @@ export async function projectResponse<T>(action: (ownerId: string) => Promise<T>
         { status: 409 }
       );
     }
+    if (error instanceof LibraryConflictError)
+      return NextResponse.json({ success: false, error: error.message }, { status: 409 });
     if (
+      error instanceof LibraryNotFoundError ||
       error instanceof ValidationError ||
       error instanceof ProjectNotFoundError ||
       error instanceof AssetNotFoundError

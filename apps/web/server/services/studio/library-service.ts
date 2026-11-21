@@ -1,5 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
+  type EntryOf,
+  supportsStudioEngine,
   EngineIdSchema,
   LibraryEntrySchema,
   LibraryKindSchema,
@@ -17,6 +19,7 @@ import { studioLibraries } from '@/server/db/schema';
 import { ValidationError } from '@/server/lib/utils';
 
 import { AssetNotFoundError, AssetService } from './asset-service';
+import { captionSource } from './catalog-source';
 import { hashBundle, LibraryBundleError, LibraryBundles } from './library-bundles';
 
 export { LibraryBundleError } from './library-bundles';
@@ -76,9 +79,12 @@ export class LibraryService {
 
   private async validateAssets(ownerId: string, entry: LibraryEntry) {
     const fonts = new Set('fonts' in entry ? entry.fonts?.map(({ assetId }) => assetId) : []);
+    const logos = new Set(entry.kind === 'brand' ? entry.logos?.map((logo) => logo.assetId) : []);
     for (const id of new Set(entry.assetIds)) {
       try {
         const asset = await this.assets.get(ownerId, id);
+        if (logos.has(id) && !asset.mediaType.startsWith('image/'))
+          throw new ValidationError('El logo debe ser una imagen.');
         if (fonts.has(id) && !asset.mediaType.startsWith('font/')) {
           throw new ValidationError(`El recurso ${id} no es una fuente.`);
         }
@@ -171,6 +177,16 @@ export class LibraryService {
     return (await this.getRecord(ownerId, ref)).entry;
   }
 
+  async verifiedComponent(owner: string, entry: EntryOf<'component'>) {
+    if (!supportsStudioEngine(entry, 'remotion') || !entry.manifest.builtin) return false;
+    try {
+      const bytes = await this.readBundle(owner, entry);
+      return bytes.equals(await captionSource(entry.manifest.builtin.preset));
+    } catch (error) {
+      if (error instanceof LibraryBundleError) return false;
+      throw error;
+    }
+  }
   async readBundle(ownerId: string, ref: LibraryRef): Promise<Buffer> {
     const { bundleHash, ownerId: storedOwnerId } = await this.getRecord(ownerId, ref);
     if (!bundleHash) throw new LibraryBundleError();

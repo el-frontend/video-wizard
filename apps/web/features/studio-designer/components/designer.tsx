@@ -10,6 +10,8 @@ import { sceneStartMs, validateForExport } from '@workspace/video-project';
 import { engineName, timeLabel } from '@/features/studio-projects/project-labels';
 import { useProjectSession } from '../hooks/use-project-session';
 import { guardProjectHistory, studioNavigation } from '../hooks/project-navigation';
+import { AppearancePicker } from './appearance-picker';
+import { ProjectEditions } from './project-editions';
 import { SceneSequence } from './scene-sequence';
 import { LayerList } from './layer-list';
 import { LayerInspector } from './layer-inspector';
@@ -410,6 +412,18 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           <TitleField
             title={draft.title}
             onTitle={(title) => session.dispatch({ type: 'set-title', title })}
+          />
+          <AppearancePicker
+            key={draft.id}
+            document={draft}
+            scene={scene}
+            layer={layer}
+            onCommand={command}
+          />
+          <ProjectEditions
+            key={draft.id + '-editions'}
+            record={saved}
+            save={session.savedRevision}
           />
           <CanvasControls canvas={draft.canvas} onCommand={command} />
           {scene && <NarrationEditor scene={scene} onCommand={command} />}

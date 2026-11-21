@@ -199,6 +199,15 @@ export class ProjectService {
       styleRef: null,
       brandSnapshot: null,
     };
+    return this.createFromDocument(ownerId, document);
+  }
+
+  async createFromDocument(ownerId: string, input: ProjectDraft): Promise<ProjectRecord> {
+    const document = parseInput(
+      ProjectDraftSchema,
+      input,
+      'El documento de la plantilla no es válido.'
+    );
     return this.db.transaction((tx) => insertProject(tx, ownerId, document, 'create'));
   }
 

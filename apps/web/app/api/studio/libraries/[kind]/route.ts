@@ -1,4 +1,5 @@
-import { EngineIdSchema, LibraryEntrySchema } from '@workspace/video-project';
+import { templateService } from '../../templates/service';
+import { supportsStudioEngine, EngineIdSchema, LibraryEntrySchema } from '@workspace/video-project';
 import type { NextRequest } from 'next/server';
 
 import { ValidationError } from '@/server/lib/utils';
@@ -16,7 +17,17 @@ export function GET(request: NextRequest, { params }: Context) {
       request.nextUrl.searchParams.get('engine') ?? undefined
     );
     if (!engine.success) throw new ValidationError('El motor de la consulta no es válido.');
-    return libraryService.list(ownerId, { kind, engine: engine.data });
+    const entries = await libraryService.list(ownerId, { kind, engine: engine.data });
+    if (request.nextUrl.searchParams.get('verified') !== '1') return entries;
+    const selected = entries.filter((e) => supportsStudioEngine(e, engine.data ?? 'remotion'));
+    const verified = await Promise.all(
+      selected.map(async (e) => {
+        if (e.kind === 'component') return libraryService.verifiedComponent(ownerId, e);
+        if (e.kind === 'template') return templateService.compatible(ownerId, e);
+        return true;
+      })
+    );
+    return selected.filter((_, i) => verified[i]);
   });
 }
 
@@ -35,6 +46,8 @@ export function POST(request: Request, { params }: Context) {
     if (entry.data.kind === 'style' && entry.data.engines?.length) {
       throw new ValidationError('La compatibilidad del estilo debe verificarse en el servidor.');
     }
+    if (entry.data.kind === 'template' && entry.data.structure)
+      return templateService.publish(ownerId, entry.data);
     return libraryService.publish(ownerId, entry.data);
   }, 201);
 }

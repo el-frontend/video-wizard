@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
-import type { ProjectDraft } from '@workspace/video-project';
-import type { ResolvedDependencies } from '@workspace/render-contract';
+import { styleFamily, type ProjectDraft } from '@workspace/video-project';
+import { libraryKey, type ResolvedDependencies } from '@workspace/render-contract';
 import { projectAppearance } from './project-appearance';
 
 export function StyleBackdrop({
@@ -13,8 +13,9 @@ export function StyleBackdrop({
   durationMs: number;
 }) {
   const frame = useCurrentFrame();
-  const pin = document.styleRef;
-  if (!pin || pin.version < 2) return null;
+  const entry = document.styleRef && dependencies.libraries[libraryKey(document.styleRef)];
+  const pin = entry?.kind === 'style' && styleFamily(entry);
+  if (!pin) return null;
   const { foreground, accent, surface } = projectAppearance(document, dependencies);
   const progress = Math.min(1, (frame * 1000) / (document.canvas.fps * durationMs));
   const unit = document.canvas.width / 1080;

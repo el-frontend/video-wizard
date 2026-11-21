@@ -32,8 +32,11 @@ export const stylePackFonts = [
   source: new URL('../packs/fonts/' + font.filename, import.meta.url),
 }));
 
-export async function loadStylePack(id: (typeof stylePackIds)[number]) {
-  const frameMarkdown = await readFile(new URL(`../packs/${id}/frame.md`, import.meta.url), 'utf8');
+export async function loadStylePack(id: (typeof stylePackIds)[number], file?: string) {
+  const frameMarkdown = await readFile(
+    file ?? new URL(`../packs/${id}/frame.md`, import.meta.url),
+    'utf8'
+  );
   const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(frameMarkdown)?.[1];
   if (!header) throw new Error(`Falta la cabecera del estilo ${id}.`);
   // Archived single-line descriptions are prose and may contain an unquoted colon.

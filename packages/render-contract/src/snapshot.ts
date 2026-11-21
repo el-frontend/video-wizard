@@ -1,5 +1,6 @@
 import {
   validateForExport,
+  supportsStudioEngine,
   type Layer,
   type Diagnostic,
   type LibraryRef,
@@ -45,7 +46,7 @@ export function validateSnapshot(snapshot: ExportSnapshot): Diagnostic[] {
     });
   for (const entry of library) {
     for (const id of entry.assetIds) ids.add(id);
-    if (entry.kind === 'style' && !entry.engines?.includes(document.engine)) {
+    if (entry.kind === 'style' && !supportsStudioEngine(entry, document.engine)) {
       diagnostics.push({
         severity: 'error',
         code: 'style-engine',

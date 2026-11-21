@@ -2,6 +2,11 @@
 
 import {
   Film,
+  Layers3,
+  LayoutTemplate,
+  Palette,
+  Stamp,
+  FolderOpen,
   PanelsTopLeft,
   HelpCircle,
   History,
@@ -31,6 +36,11 @@ const navItems: NavItem[] = [
     href: '/projects',
     icon: PanelsTopLeft,
   },
+  { title: 'Plantillas', href: '/templates', icon: LayoutTemplate },
+  { title: 'Estilos', href: '/styles', icon: Palette },
+  { title: 'Marcas', href: '/brands', icon: Stamp },
+  { title: 'Componentes', href: '/components', icon: Layers3 },
+  { title: 'Recursos', href: '/assets', icon: FolderOpen },
   {
     title: 'Video Wizard',
     href: '/video-wizard',
@@ -100,7 +110,7 @@ export function AppSidebar() {
         </div>
 
         {/* Main Navigation */}
-        <nav className="flex-1 space-y-1 p-4">
+        <nav className="flex-1 overflow-y-auto space-y-1 p-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);

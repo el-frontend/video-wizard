@@ -260,6 +260,10 @@ function createSession(id: string, initial?: ProjectRecord) {
     await flushDraft();
     await (previousAudio ?? audioFlight);
   }
+  async function savedRevision() {
+    await save();
+    return state.saved;
+  }
   async function postAudio(input: AudioReplacement) {
     await flushDraft();
     const base = state.saved;
@@ -377,6 +381,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       undo: () => move(past, future),
       redo: () => move(future, past),
       save,
+      savedRevision,
       refresh,
     },
   };
