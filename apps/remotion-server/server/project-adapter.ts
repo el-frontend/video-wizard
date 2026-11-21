@@ -12,6 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import {
   libraryKey,
+  sceneFrames,
   validateSnapshot,
   type Artifact,
   type EngineAdapter,
@@ -100,8 +101,30 @@ export class RemotionProjectAdapter implements EngineAdapter {
   async validate(snapshot: ExportSnapshot) {
     const diagnostics = validateSnapshot(snapshot);
     diagnostics.push(...projectAppearance(snapshot.document, snapshot.dependencies).diagnostics);
-    for (const scene of snapshot.document.scenes)
+    const boundaries = sceneFrames(snapshot.document);
+    for (const [index, scene] of snapshot.document.scenes.entries()) {
+      const { originMs, from, durationInFrames } = boundaries[index]!;
+      const fps = snapshot.document.canvas.fps;
       for (const layer of scene.layers) {
+        if (layer.type === 'captions') {
+          const origin = originMs + layer.startMs;
+          const unsampled = layer.cues.some((cue) => {
+            const firstFrame = Math.ceil(((origin + cue.startMs) * fps) / 1000);
+            return (
+              firstFrame >= from + durationInFrames ||
+              firstFrame >= Math.ceil(((origin + cue.endMs) * fps) / 1000)
+            );
+          });
+          if (unsampled)
+            diagnostics.push({
+              severity: 'warning',
+              code: 'cue-no-frame',
+              message:
+                'Hay subtítulos sin un fotograma visible. Ajusta su inicio o amplía su intervalo.',
+              sceneId: scene.id,
+              layerId: layer.id,
+            });
+        }
         if (
           layer.type === 'captions' &&
           layer.templateRef &&
@@ -122,6 +145,7 @@ export class RemotionProjectAdapter implements EngineAdapter {
             )
           );
       }
+    }
     if (snapshot.document.engine !== 'remotion')
       diagnostics.push({
         severity: 'error',

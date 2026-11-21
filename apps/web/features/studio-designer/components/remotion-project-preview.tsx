@@ -76,7 +76,7 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
     const handle: PreviewHandle = {
       play: () => send('studio.play'),
       pause: () => send('studio.pause'),
-      seek: (timeMs) => send('studio.seek', { timeMs }),
+      seek: (timeMs, boundary) => send('studio.seek', { timeMs, boundary }),
       getTimeMs: () => time,
       subscribe: (listener) => {
         listeners.add(listener);
@@ -122,11 +122,13 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
     };
   }, [session]);
   if (error) return <p role="alert">{error}</p>;
-  const omitted = session?.diagnostics?.filter((d) => d.code === 'scene-no-frame');
+  const omitted = session?.diagnostics?.filter(
+    (d) => d.code === 'scene-no-frame' || d.code === 'cue-no-frame'
+  );
   return source ? (
     <>
       {omitted?.map((d) => (
-        <p role="status" key={d.sceneId}>
+        <p role="status" key={JSON.stringify([d.sceneId, d.layerId, d.code])}>
           {d.message} ({d.sceneId})
         </p>
       ))}

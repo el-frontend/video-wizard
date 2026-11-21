@@ -274,3 +274,89 @@ it.each(['discard', 'pagehide', 'confirmed save'])(
     expect(reopened.result.current.canUndo).toBe(false);
   }
 );
+it('flushes edits on a pending PUT then adopts its audio POST as one undoable revision', async () => {
+  const result = await open();
+  const put = deferred(),
+    post = deferred();
+  request
+    .mockReturnValueOnce(put.promise)
+    .mockResolvedValueOnce(ok(record('v3', 'Último')))
+    .mockReturnValueOnce(post.promise);
+  act(() => result.current.dispatch({ type: 'set-title', title: 'Primero' }));
+  await tick(500);
+  act(() => result.current.dispatch({ type: 'set-title', title: 'Último' }));
+  let earlySettled = false;
+  const earlySave = result.current.save().then(() => {
+    earlySettled = true;
+  });
+  let replacement!: Promise<void>;
+  act(() => {
+    replacement = result.current.replaceAudio({
+      sceneId: 'intro',
+      audioLayerId: 'speech',
+      assetId: 'nuevo',
+    });
+  });
+  expect(result.current.replacingAudio).toBe(true);
+  act(() => {
+    result.current.dispatch({ type: 'set-title', title: 'Bloqueado' });
+    result.current.undo();
+  });
+  await act(async () => {
+    put.resolve(ok(record('v2', 'Primero')));
+  });
+  expect(
+    request.mock.calls
+      .slice(1)
+      .map(([, init]) => [init?.method, JSON.parse(String(init?.body)).baseRevision])
+  ).toEqual([
+    ['PUT', 'v1'],
+    ['PUT', 'v2'],
+    ['POST', 'v3'],
+  ]);
+  const confirmed = record('v4', 'Último');
+  confirmed.document.assetIds = [...confirmed.document.assetIds, 'nuevo'];
+  let saved = false;
+  const save = result.current.save().then(() => {
+    saved = true;
+  });
+  await tick(1000);
+  expect(saved).toBe(false);
+  expect(earlySettled).toBe(false);
+  await act(async () => {
+    post.resolve(ok(confirmed));
+    await replacement;
+    await save;
+    await earlySave;
+  });
+  expect(result.current.draft).toEqual(confirmed.document);
+  expect(result.current.saved?.document).toBe(result.current.draft);
+  await tick(1500);
+  expect(request).toHaveBeenCalledTimes(4);
+  act(() => result.current.undo());
+  expect(result.current.draft).toEqual(record('v3', 'Último').document);
+  act(() => result.current.redo());
+  expect(result.current.draft).toEqual(confirmed.document);
+});
+it('keeps the flushed draft and remote revision when the audio POST conflicts', async () => {
+  const result = await open();
+  request
+    .mockResolvedValueOnce(ok(record('v2', 'Local')))
+    .mockResolvedValueOnce(
+      Response.json(
+        { success: false, error: 'Conflicto', current: record('v3', 'Remoto') },
+        { status: 409 }
+      )
+    );
+  act(() => result.current.dispatch({ type: 'set-title', title: 'Local' }));
+  await act(async () => {
+    await expect(
+      result.current.replaceAudio({ sceneId: 'intro', audioLayerId: 'speech', assetId: 'otro' })
+    ).rejects.toThrow();
+  });
+  expect(result.current.conflict?.revision).toBe('v3');
+  expect(result.current.draft?.title).toBe('Local');
+  expect(result.current.replacingAudio).toBe(false);
+  await tick(1500);
+  expect(request).toHaveBeenCalledTimes(3);
+});

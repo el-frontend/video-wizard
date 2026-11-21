@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/server/db';
 import { UnauthorizedError, requireAuth } from '@/server/lib/auth';
+import { AssetNotFoundError } from '@/server/services/studio/asset-service';
 import { ValidationError } from '@/server/lib/utils';
 import {
   ConflictError,
@@ -39,7 +40,11 @@ export async function projectResponse<T>(action: (ownerId: string) => Promise<T>
         { status: 409 }
       );
     }
-    if (error instanceof ValidationError || error instanceof ProjectNotFoundError) {
+    if (
+      error instanceof ValidationError ||
+      error instanceof ProjectNotFoundError ||
+      error instanceof AssetNotFoundError
+    ) {
       return NextResponse.json(
         { success: false, error: error.message },
         { status: error instanceof ValidationError ? 400 : 404 }

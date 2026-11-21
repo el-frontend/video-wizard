@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Layers } from 'lucide-react';
 import type { AssetDescriptor, Layer, Scene } from '@workspace/video-project';
 import {
+  captionLayer,
   mediaLayer,
   moveBeforeId,
   titleLayer,
@@ -116,6 +117,13 @@ export function LayerList({ scene, canvas, assets, selectedId, onSelect, onComma
           onClick={() => add(titleLayer(scene, canvas))}
         >
           Añadir título
+        </button>
+        <button
+          type="button"
+          className="edit-button"
+          onClick={() => add(captionLayer(scene, canvas))}
+        >
+          Añadir capa de subtítulos
         </button>
         {index >= 0 && (
           <>

@@ -65,6 +65,24 @@ export const ProjectCommandSchema = z.discriminatedUnion('type', [
     layerId: IdSchema,
     cues: z.array(CaptionCueSchema),
   }),
+  z.strictObject({
+    type: z.literal('set-caption-source'),
+    ...scene,
+    layerId: IdSchema,
+    audioLayerId: IdSchema.nullable(),
+  }),
+  z.strictObject({
+    type: z.literal('set-caption-preset'),
+    ...scene,
+    layerId: IdSchema,
+    ref: LibraryRefSchema.nullable(),
+  }),
+  z.strictObject({
+    type: z.literal('move-linked-audio'),
+    ...scene,
+    layerId: IdSchema,
+    startMs: MillisecondsSchema,
+  }),
   z.strictObject({ type: z.literal('set-narration'), ...scene, text: z.string() }),
   z.strictObject({ type: z.literal('set-headline'), ...scene, text: z.string() }),
   z.strictObject({ type: z.literal('set-brand'), snapshot: BrandSnapshotSchema.nullable() }),
@@ -158,6 +176,22 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
       layer.cues = command.cues;
       break;
     }
+    case 'set-caption-source':
+    case 'set-caption-preset': {
+      const layers = layersFor(command.sceneId),
+        layer = get(layers, command.layerId);
+      if (layer.type !== 'captions') throw new RangeError('Se requiere una capa de subtítulos.');
+      if (command.type === 'set-caption-preset') {
+        if (command.ref) layer.templateRef = command.ref;
+        else delete layer.templateRef;
+      } else if (command.audioLayerId) {
+        const source = [...layers, ...draft.globalAudio].find((l) => l.id === command.audioLayerId);
+        if (source?.type !== 'audio')
+          throw new RangeError('Selecciona una capa de audio existente.');
+        layer.sourceAudioLayerId = command.audioLayerId;
+      } else delete layer.sourceAudioLayerId;
+      break;
+    }
     case 'set-headline':
     case 'set-narration': {
       const edited = get(scenes, command.sceneId);
@@ -178,6 +212,24 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
     case 'set-style':
       draft.styleRef = command.ref;
       break;
+    case 'move-linked-audio': {
+      const layers = get(scenes, command.sceneId).layers;
+      const audio = get(layers, command.layerId);
+      if (audio.type !== 'audio') throw new RangeError('Se requiere una capa de audio.');
+      const delta = command.startMs - audio.startMs;
+      for (const layer of layers) {
+        if (
+          layer !== audio &&
+          !(layer.type === 'captions' && layer.sourceAudioLayerId === audio.id)
+        )
+          continue;
+        if (layer.startMs + delta < 0)
+          throw new RangeError('Una capa vinculada empezaría antes de la escena.');
+        layer.startMs += delta;
+        layer.endMs += delta;
+      }
+      break;
+    }
     case 'replace-take': {
       const edited = get(scenes, command.sceneId);
       const layer = get(edited.layers, command.layerId);

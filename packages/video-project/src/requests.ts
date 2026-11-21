@@ -38,7 +38,7 @@ export type CompanionRequest = z.infer<typeof CompanionRequestSchema>;
 export interface PreviewHandle {
   play(): void;
   pause(): void;
-  seek(timeMs: number): void;
+  seek(timeMs: number, boundary?: 'at-or-after'): void;
   getTimeMs(): number;
   subscribe(listener: (timeMs: number) => void): () => void;
 }

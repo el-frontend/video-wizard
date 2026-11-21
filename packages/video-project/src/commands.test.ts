@@ -274,3 +274,65 @@ test('stacks an existing layer by its effective z-index and registers inserted m
   const added = applyCommand(draft, { type: 'add-layer', sceneId: 'outro', layer });
   expect(added.assetIds).toEqual([...draft.assetIds, 'new-audio']);
 });
+test('moves an audio interval and all linked caption windows together, rejecting negative starts atomically', () => {
+  const draft = exampleProject();
+  const scene = draft.scenes[0]!;
+  scene.layers[0]!.startMs = 500;
+  scene.layers[1]!.startMs = 200;
+  const moved = applyCommand(draft, {
+    type: 'move-linked-audio',
+    sceneId: 'intro',
+    layerId: 'speech',
+    startMs: 700,
+  });
+  expect(moved.scenes[0]!.layers.slice(0, 2)).toEqual(
+    scene.layers.slice(0, 2).map((l) => ({ ...l, startMs: l.startMs + 200, endMs: l.endMs + 200 }))
+  );
+  expect(moved.scenes[0]!.layers.slice(2)).toEqual(scene.layers.slice(2));
+  expect(moved.globalAudio).toEqual(draft.globalAudio);
+  expect(() =>
+    applyCommand(draft, {
+      type: 'move-linked-audio',
+      sceneId: 'intro',
+      layerId: 'speech',
+      startMs: 100,
+    })
+  ).toThrow(/antes/);
+  expect(scene.layers[0]!.startMs).toBe(500);
+});
+test('changing a caption preset or audio association preserves cue IDs, times and words', () => {
+  const source = exampleProject(),
+    original = source.scenes[0]!.layers[1]!;
+  const styled = applyCommand(source, {
+    type: 'set-caption-preset',
+    sceneId: 'intro',
+    layerId: 'captions',
+    ref: { id: 'minimal', version: 4 },
+  });
+  expect(styled.scenes[0]!.layers[1]).toEqual({
+    ...original,
+    templateRef: { id: 'minimal', version: 4 },
+  });
+  const unlinked = applyCommand(styled, {
+    type: 'set-caption-source',
+    sceneId: 'intro',
+    layerId: 'captions',
+    audioLayerId: null,
+  });
+  expect(unlinked.scenes[0]!.layers[1]).not.toHaveProperty('sourceAudioLayerId');
+  expect(() =>
+    applyCommand(unlinked, {
+      type: 'set-caption-source',
+      sceneId: 'intro',
+      layerId: 'captions',
+      audioLayerId: 'bye',
+    })
+  ).toThrow(/audio existente/);
+  const linked = applyCommand(unlinked, {
+    type: 'set-caption-source',
+    sceneId: 'intro',
+    layerId: 'captions',
+    audioLayerId: 'speech',
+  });
+  expect(linked).toEqual(styled);
+});

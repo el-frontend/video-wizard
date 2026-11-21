@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   applyCommand,
+  type CaptionCue,
   type EditorSelection,
   type ProjectCommand,
   type ProjectDraft,
@@ -16,7 +17,14 @@ import {
 } from '@/features/studio-projects/project-api';
 
 type Status = 'loading' | 'saved' | 'dirty' | 'saving' | 'conflict' | 'error';
+export type AudioReplacement = {
+  sceneId: string;
+  audioLayerId: string;
+  assetId: string;
+  captions?: CaptionCue[];
+};
 interface SessionState {
+  replacingAudio: boolean;
   saved: ProjectRecord | null;
   draft: ProjectDraft | null;
   selection: EditorSelection;
@@ -64,6 +72,7 @@ function openSession(id: string, initial?: ProjectRecord) {
 function createSession(id: string, initial?: ProjectRecord) {
   const url = projectsUrl + '/' + encodeURIComponent(id);
   let state: SessionState = {
+    replacingAudio: false,
     saved: initial ?? null,
     draft: initial?.document ?? null,
     selection: emptySelection,
@@ -98,8 +107,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     clearTimeout(timer);
     timer = undefined;
   }
-  function edited(draft: ProjectDraft) {
-    stopTimer();
+  function reconcileSelection(draft: ProjectDraft) {
     const selected = state.selection;
     const scene = draft.scenes.find((item) => item.id === selected.sceneId);
     const selection = {
@@ -112,7 +120,17 @@ function createSession(id: string, initial?: ProjectRecord) {
           : null,
       timeMs: Math.max(0, Math.min(selected.timeMs, draft.durationMs - 1)),
     };
-    if (selection.layerId !== selected.layerId) selection.captionId = null;
+    const selectedLayer = scene?.layers.find((l) => l.id === selection.layerId);
+    if (
+      selectedLayer?.type !== 'captions' ||
+      !selectedLayer.cues.some((c) => c.id === selected.captionId)
+    )
+      selection.captionId = null;
+    return selection;
+  }
+  function edited(draft: ProjectDraft) {
+    stopTimer();
+    const selection = reconcileSelection(draft);
     if (!state.conflict && !flight && draft === state.saved?.document) {
       update({ draft, selection, status: 'saved', error: '' });
       return;
@@ -127,7 +145,7 @@ function createSession(id: string, initial?: ProjectRecord) {
   }
   function dispatch(command: ProjectCommand) {
     const previous = state.draft;
-    if (!previous) return;
+    if (!previous || state.replacingAudio) return;
     try {
       const next = applyCommand(previous, command);
       if (JSON.stringify(previous) === JSON.stringify(next)) return;
@@ -140,13 +158,14 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
   }
   function move(from: ProjectDraft[], to: ProjectDraft[]) {
+    if (state.replacingAudio) return;
     const next = from.pop();
     if (!next || !state.draft) return;
     to.push(state.draft);
     edited(next);
   }
   async function refresh() {
-    if (read || flight || state.conflict) return;
+    if (read || flight || state.conflict || state.replacingAudio) return;
     const request = new AbortController();
     read = request;
     const base = state.saved?.revision;
@@ -226,7 +245,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     // A later edit restarted the debounce while this callback waited for the server.
     if (active && !timer && !flight) await writeNow();
   }
-  async function save() {
+  async function flushDraft() {
     stopTimer();
     // An explicit save settles all newer edits before a dependent action can proceed.
     do {
@@ -235,8 +254,67 @@ function createSession(id: string, initial?: ProjectRecord) {
       stopTimer();
     } while (state.saved && state.draft !== state.saved.document);
   }
+  let audioFlight: Promise<void> | null = null;
+  async function save() {
+    const previousAudio = audioFlight;
+    await flushDraft();
+    await (previousAudio ?? audioFlight);
+  }
+  async function postAudio(input: AudioReplacement) {
+    await flushDraft();
+    const base = state.saved;
+    const layer = base?.document.scenes
+      .find((s) => s.id === input.sceneId)
+      ?.layers.find((l) => l.id === input.audioLayerId);
+    if (!active || !base || layer?.type !== 'audio')
+      throw new Error('La capa de audio ya no está disponible.');
+    const saved = await projectRequest<ProjectRecord>(url + '/audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...input, baseRevision: base.revision }),
+    });
+    past.push(base.document);
+    future.length = 0;
+    update({
+      saved,
+      draft: saved.document,
+      status: 'saved',
+      error: '',
+      selection: reconcileSelection(saved.document),
+    });
+    notifyProjectSaved(saved.ownerId);
+  }
+  function replaceAudio(input: AudioReplacement): Promise<void> {
+    if (state.replacingAudio)
+      return Promise.reject(new Error('Ya hay una sustitución de audio en curso.'));
+    if (state.conflict)
+      return Promise.reject(new Error('Resuelve el conflicto antes de reemplazar la toma.'));
+    read?.abort();
+    update({ replacingAudio: true });
+    audioFlight = postAudio(input)
+      .catch((cause: unknown) => {
+        const conflict = cause instanceof ProjectRequestError ? cause.current : state.conflict;
+        update({
+          status: conflict ? 'conflict' : state.draft === state.saved?.document ? 'saved' : 'error',
+          conflict,
+          error: cause instanceof Error ? cause.message : 'No se pudo sustituir la toma.',
+        });
+        throw cause;
+      })
+      .finally(() => {
+        audioFlight = null;
+        update({ replacingAudio: false });
+      });
+    return audioFlight;
+  }
   function hasUnsavedChanges() {
-    return !!state.draft && (state.draft !== state.saved?.document || !!flight || !!state.conflict);
+    return (
+      !!state.draft &&
+      (state.draft !== state.saved?.document ||
+        !!flight ||
+        state.replacingAudio ||
+        !!state.conflict)
+    );
   }
   function discardRetained() {
     if (!state.saved) return;
@@ -290,6 +368,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       };
     },
     actions: {
+      replaceAudio,
       dispatch,
       hasUnsavedChanges,
       retainDraft,

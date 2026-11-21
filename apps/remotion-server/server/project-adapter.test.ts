@@ -175,3 +175,18 @@ it('interrupts a media copy before the entire original reaches a superseded work
     await rm(root, { recursive: true, force: true });
   }
 });
+it('reports a cue with no sample inside its half-open interval without changing its timing', async () => {
+  const snapshot = fixture();
+  snapshot.document.canvas.fps = 25;
+  const layer = snapshot.document.scenes[0]!.layers[1];
+  if (layer?.type !== 'captions') throw new Error('fixture');
+  layer.startMs = 300;
+  layer.cues = [{ id: 'short', text: 'Breve', startMs: 2360, endMs: 2380 }];
+  const adapter = new RemotionProjectAdapter();
+  expect(await adapter.validate(snapshot)).toContainEqual(
+    expect.objectContaining({ code: 'cue-no-frame', layerId: layer.id, severity: 'warning' })
+  );
+  expect(layer.cues[0]!.endMs).toBe(2380);
+  layer.cues[0]!.endMs = 2381;
+  expect((await adapter.validate(snapshot)).some((d) => d.code === 'cue-no-frame')).toBe(false);
+});

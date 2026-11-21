@@ -42,9 +42,10 @@ export function mountPreview(props: ProjectCompositionProps) {
             break;
           case 'studio.seek':
             if (Number.isSafeInteger(event.data.timeMs) && event.data.timeMs >= 0) {
-              ref.seekTo(
-                Math.min(durationInFrames - 1, Math.floor((event.data.timeMs * fps) / 1000))
-              );
+              const frame = (event.data.timeMs * fps) / 1000;
+              const targetFrame =
+                event.data.boundary === 'at-or-after' ? Math.ceil(frame) : Math.floor(frame);
+              ref.seekTo(Math.min(durationInFrames - 1, targetFrame));
               update();
             }
         }

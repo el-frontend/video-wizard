@@ -75,6 +75,20 @@ export function titleLayer(scene: Scene, canvas: Canvas): Layer {
   };
 }
 
+export function captionLayer(scene: Scene, canvas: Canvas): Layer {
+  return {
+    ...baseLayer(scene),
+    type: 'captions',
+    cues: [],
+    box: {
+      x: canvas.width * 0.06,
+      y: canvas.height * 0.68,
+      width: canvas.width * 0.88,
+      height: canvas.height * 0.24,
+    },
+  };
+}
+
 export function mediaLayer(scene: Scene, canvas: Canvas, asset: AssetDescriptor): Layer {
   const base = { ...baseLayer(scene), assetId: asset.id };
   const box = { x: 0, y: 0, width: canvas.width, height: canvas.height };

@@ -25,6 +25,15 @@ export const CaptionCueSchema = z
     words: z.array(CaptionWordSchema).optional(),
   })
   .refine(nonemptyRange, rangeIssue);
+// New caption input requires usable alignment. Historical drafts keep their original schema.
+export const CaptionInputSchema = CaptionCueSchema.refine((cue) => !!cue.text.trim(), {
+  message: 'Escribe texto para el subtítulo.',
+}).refine(
+  (cue) => !cue.words?.some((word) => !word.text.trim() || word.endMs > cue.endMs - cue.startMs),
+  {
+    message: 'Cada palabra necesita texto y un intervalo dentro del subtítulo.',
+  }
+);
 export type CaptionCue = z.infer<typeof CaptionCueSchema>;
 export type CaptionWord = z.infer<typeof CaptionWordSchema>;
 

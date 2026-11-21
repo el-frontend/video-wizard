@@ -518,3 +518,25 @@ main > div:has(> .studio-workspace) {
   outline: 3px solid #a8350e;
   outline-offset: 3px;
 }
+.audio-inspector audio {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  margin-block: 0.35rem 0.8rem;
+}
+.cue-list {
+  max-block-size: 13rem;
+  overflow-y: auto;
+}
+.cue-list button span {
+  white-space: pre-line;
+}
+.studio-workspace .edit-button:disabled {
+  opacity: 0.55;
+}
+.audio-inspector .edit-upload {
+  position: relative;
+  display: block;
+  overflow-wrap: anywhere;
+  margin-block: 0.3rem 0.75rem;
+}

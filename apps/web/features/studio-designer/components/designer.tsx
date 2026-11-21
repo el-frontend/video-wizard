@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { ArrowLeft, Check, Redo2, Save, Undo2 } from 'lucide-react';
 import type { PreviewHandle, ProjectRecord, ProjectCommand } from '@workspace/video-project';
-import { sceneStartMs } from '@workspace/video-project';
+import { sceneStartMs, validateForExport } from '@workspace/video-project';
 import { engineName, timeLabel } from '@/features/studio-projects/project-labels';
 import { useProjectSession } from '../hooks/use-project-session';
 import { guardProjectHistory, studioNavigation } from '../hooks/project-navigation';
@@ -14,8 +14,10 @@ import { SceneSequence } from './scene-sequence';
 import { LayerList } from './layer-list';
 import { LayerInspector } from './layer-inspector';
 import { CanvasControls } from './canvas-controls';
-import { NumberField } from './number-field';
-import { checkLayerRange } from '../lib/editor-commands';
+import { NarrationEditor } from './narration-editor';
+import { CaptionEditor } from './caption-editor';
+import { AudioInspector } from './audio-inspector';
+import { SceneExtension } from './scene-extension';
 import { useEditorDependencies } from '../hooks/use-editor-dependencies';
 import { PreviewPanel } from './preview-panel';
 
@@ -70,18 +72,39 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     discardRetained,
   } = session;
   const dependencies = useEditorDependencies(draft);
+  const timingIssues = useMemo(
+    () =>
+      draft
+        ? validateForExport(draft).filter((d) =>
+            ['layer-overflow', 'cue-overflow', 'word-overflow'].includes(d.code)
+          )
+        : [],
+    [draft]
+  );
   const projectId = initial.document.id;
   const router = useRouter();
   const [handle, onReady] = useState<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
+  const pendingCueSeek = useRef<typeof selection | null>(null);
   useLayoutEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
   useLayoutEffect(() => {
-    handle?.seek(selectionRef.current.timeMs);
+    if (!handle) return;
+    const current = selectionRef.current;
+    const pending = pendingCueSeek.current;
+    if (
+      pending &&
+      pending.captionId === current.captionId &&
+      pending.layerId === current.layerId &&
+      pending.timeMs === current.timeMs
+    )
+      handle.seek(current.timeMs, 'at-or-after');
+    else handle.seek(current.timeMs);
   }, [handle]);
   const onTimeChange = useCallback(
     (timeMs: number) => {
+      pendingCueSeek.current = null;
       select({ ...selectionRef.current, timeMs });
     },
     [select]
@@ -196,19 +219,26 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
   function selectAt(
     timeMs: number,
     sceneId: string | null = scene?.id ?? null,
-    layerId: string | null = selection.layerId
+    layerId: string | null = selection.layerId,
+    captionId: string | null = null
   ) {
-    const next = { sceneId, layerId, captionId: null, timeMs };
+    pendingCueSeek.current = null;
+    const next = { sceneId, layerId, captionId, timeMs };
     selectionRef.current = next;
     select(next);
   }
   function seek(
     timeMs: number,
     sceneId: string | null = scene?.id ?? null,
-    layerId: string | null = selection.layerId
+    layerId: string | null = selection.layerId,
+    captionId: string | null = layerId === selection.layerId ? selection.captionId : null,
+    boundary?: 'at-or-after'
   ) {
-    selectAt(timeMs, sceneId, layerId);
-    handle?.seek(timeMs);
+    selectAt(timeMs, sceneId, layerId, captionId);
+    if (boundary) {
+      pendingCueSeek.current = selectionRef.current;
+      handle?.seek(timeMs, boundary);
+    } else handle?.seek(timeMs);
   }
   function command(action: ProjectCommand) {
     const updated = session.dispatch(action);
@@ -246,7 +276,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
         <div className="designer-actions">
           <span className="save-status" role="status">
             {session.status === 'saved' && <Check size={15} />}
-            {statusLabels[session.status]}
+            {session.replacingAudio ? 'Guardando la toma…' : statusLabels[session.status]}
           </span>
           <button
             type="button"
@@ -254,7 +284,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             aria-label="Deshacer"
             title="Deshacer"
             onClick={undo}
-            disabled={!session.canUndo}
+            disabled={session.replacingAudio || !session.canUndo}
           >
             <Undo2 size={17} />
           </button>
@@ -264,14 +294,14 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             aria-label="Rehacer"
             title="Rehacer"
             onClick={redo}
-            disabled={!session.canRedo}
+            disabled={session.replacingAudio || !session.canRedo}
           >
             <Redo2 size={17} />
           </button>
           <button
             type="button"
             className="studio-primary"
-            disabled={!canSave}
+            disabled={session.replacingAudio || !canSave}
             onClick={() => void save().catch(() => {})}
           >
             <Save size={16} />
@@ -291,7 +321,19 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           </p>
         )
       )}
-      <div className="designer-layout">
+      {timingIssues.length > 0 && (
+        <div className="studio-warning" role="status">
+          <strong>Exportación bloqueada por intervalos fuera de rango.</strong>
+          <ul>
+            {timingIssues.map((d, i) => (
+              <li key={i}>
+                {d.message} · {d.sceneId} / {d.layerId}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="designer-layout" inert={session.replacingAudio}>
         <div className="preview-column">
           <div className="preview-bar">
             <h2>Vista previa</h2>
@@ -337,28 +379,13 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
                   onSelect={(id) => seek(selection.timeMs, scene.id, id)}
                   onCommand={command}
                 />
-                <details className="edit-section">
-                  <summary>Duración de la escena</summary>
-                  <NumberField
-                    key={scene.id}
-                    label="Ampliar hasta (ms)"
-                    min={scene.durationMs}
-                    value={scene.durationMs}
-                    onCommit={(durationMs) => {
-                      for (const item of scene.layers) {
-                        if (item.endAnchor === 'scene-end' && 'sourceInMs' in item) {
-                          const issue = checkLayerRange(
-                            item,
-                            { endMs: Math.max(durationMs, item.endMs) },
-                            dependencies.asset(item.assetId)?.durationMs
-                          );
-                          if (issue) return issue;
-                        }
-                      }
-                      command({ type: 'extend-scene', sceneId: scene.id, durationMs });
-                    }}
-                  />
-                </details>
+                <SceneExtension
+                  key={scene.id}
+                  document={draft}
+                  scene={scene}
+                  asset={dependencies.asset}
+                  onCommand={command}
+                />
               </div>
             )}
           </div>
@@ -370,6 +397,39 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             onTitle={(title) => session.dispatch({ type: 'set-title', title })}
           />
           <CanvasControls canvas={draft.canvas} onCommand={command} />
+          {scene && <NarrationEditor scene={scene} onCommand={command} />}
+          {layer?.type === 'audio' && scene && (
+            <AudioInspector
+              key={JSON.stringify([draft.id, scene.id, layer.id])}
+              scene={scene}
+              layer={layer}
+              onCommand={command}
+              onReplace={session.replaceAudio}
+            />
+          )}
+          {layer?.type === 'captions' && scene && (
+            <CaptionEditor
+              key={JSON.stringify([draft.id, scene.id, layer.id])}
+              engine={draft.engine}
+              scene={scene}
+              layer={layer}
+              selectedId={selection.captionId}
+              localMs={selection.timeMs - sceneStartMs(draft, scene.id) - layer.startMs}
+              onCommand={command}
+              onSeek={(cue) =>
+                seek(
+                  Math.min(
+                    draft.durationMs - 1,
+                    sceneStartMs(draft, scene.id) + layer.startMs + cue.startMs
+                  ),
+                  scene.id,
+                  layer.id,
+                  cue.id,
+                  'at-or-after'
+                )
+              }
+            />
+          )}
           {layer && scene && (
             <LayerInspector
               key={layer.id}
