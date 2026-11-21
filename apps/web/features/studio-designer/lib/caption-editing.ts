@@ -11,32 +11,65 @@ export function checkCue(cue: CaptionCue) {
     throw new RangeError('Comprueba el texto, el intervalo y los tiempos de las palabras.');
 }
 
-export function normalizedCaptionText(text: string, measuredSigns = '') {
-  return text
-    .normalize('NFC')
-    .replace(/\s+/gu, '')
-    .replace(/\p{P}/gu, (sign) => (measuredSigns.includes(sign) ? sign : ''))
-    .toLocaleLowerCase('es');
+function literalCaptionText(text: string) {
+  return text.normalize('NFC').toLocaleLowerCase('es').replace(/\s+/gu, '');
 }
 
-function sliceWords(
-  cue: CaptionCue,
-  startMs: number,
-  endMs: number,
-  textRange?: { from: number; to: number; measuredSigns: string }
-) {
-  const display = textRange ? normalizedCaptionText(cue.text, textRange.measuredSigns) : '';
+export function normalizedCaptionText(text: string) {
+  return literalCaptionText(text).replace(/\p{P}/gu, '');
+}
+
+// Each searchable character points back to the original textarea selection offsets.
+function spanFinder(graphemes: Intl.SegmentData[], normalize: (text: string) => string) {
+  let searchable = '';
+  const offsets: { start: number; end: number }[] = [];
+  for (const { segment, index } of graphemes) {
+    const value = normalize(segment);
+    searchable += value;
+    const span = { start: index, end: index + segment.length };
+    for (let i = 0; i < value.length; i++) offsets.push(span);
+  }
   let cursor = 0;
+  return (word: string, after: number) => {
+    if (!word) return undefined;
+    while (cursor < offsets.length && offsets[cursor]!.start < after) cursor++;
+    const at = searchable.indexOf(word, cursor);
+    if (at < 0) return undefined;
+    return { start: offsets[at]!.start, end: offsets[at + word.length - 1]!.end };
+  };
+}
+
+function splitWordSpans(cue: CaptionCue, cut: number) {
+  const left: CaptionWord[] = [],
+    right: CaptionWord[] = [];
+  if (!cue.words?.length) return { left, right };
+  const graphemes = Array.from(
+    new Intl.Segmenter('es', { granularity: 'grapheme' }).segment(cue.text)
+  );
+  const findLexical = spanFinder(graphemes, normalizedCaptionText);
+  const findLiteral = spanFinder(graphemes, literalCaptionText);
+  let after = 0;
+  for (const word of cue.words) {
+    const token = normalizedCaptionText(word.text),
+      literal = literalCaptionText(word.text);
+    const lexicalSpan = findLexical(token, after);
+    const literalSpan = literal !== token ? findLiteral(literal, after) : undefined;
+    // Consume punctuation included in a measured spelling when both matches refer to that occurrence.
+    const span =
+      literalSpan && (!lexicalSpan || literalSpan.start <= lexicalSpan.start)
+        ? literalSpan
+        : lexicalSpan;
+    if (!span) continue;
+    after = span.end;
+    if (span.end <= cut) left.push(word);
+    else if (span.start >= cut) right.push(word);
+  }
+  return { left, right };
+}
+
+function sliceWords(cue: CaptionCue, startMs: number, endMs: number, source = cue.words ?? []) {
   const words: CaptionWord[] = [];
-  for (const word of cue.words ?? []) {
-    if (textRange) {
-      const token = normalizedCaptionText(word.text, textRange.measuredSigns);
-      if (!token) continue;
-      const position = display.indexOf(token, cursor);
-      if (position < 0) continue;
-      cursor = position + token.length;
-      if (position < textRange.from || cursor > textRange.to) continue;
-    }
+  for (const word of source) {
     const start = cue.startMs + word.startMs,
       end = cue.startMs + word.endMs;
     if (start >= startMs && end <= endMs)
@@ -79,24 +112,19 @@ export function editCaptions(cues: CaptionCue[], edit: CaptionEdit): CaptionCue[
         throw new RangeError('Sitúa el cabezal dentro del subtítulo.');
       if (next.some((c) => c.id === edit.newId))
         throw new RangeError('El identificador de subtítulo ya existe.');
-      // Standalone measured signs occupy a position in the same text used to locate the cut.
-      const measuredSigns = (cue.words ?? [])
-        .filter((word) => !normalizedCaptionText(word.text))
-        .map((word) => word.text)
-        .join('');
-      const cut = normalizedCaptionText(cue.text.slice(0, edit.textIndex), measuredSigns).length;
+      const words = splitWordSpans(cue, edit.textIndex);
       const left = {
         ...cue,
         text: cue.text.slice(0, edit.textIndex).trimEnd(),
         endMs: edit.atMs,
-        words: sliceWords(cue, cue.startMs, edit.atMs, { from: 0, to: cut, measuredSigns }),
+        words: sliceWords(cue, cue.startMs, edit.atMs, words.left),
       };
       const right = {
         ...cue,
         id: edit.newId,
         text: cue.text.slice(edit.textIndex).trimStart(),
         startMs: edit.atMs,
-        words: sliceWords(cue, edit.atMs, cue.endMs, { from: cut, to: Infinity, measuredSigns }),
+        words: sliceWords(cue, edit.atMs, cue.endMs, words.right),
       };
       if (!left.text.trim() || !right.text.trim())
         throw new RangeError('Coloca el cursor entre los dos fragmentos de texto.');

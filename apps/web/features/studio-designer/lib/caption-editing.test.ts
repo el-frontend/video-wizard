@@ -133,3 +133,38 @@ it('keeps a measured percent sign on its textual side with exact split-local tim
   // A mismatched temporal and textual cut must not assign the sign to the wrong side.
   expect(split(500, 3)[0]?.words).toEqual([percent.words[0]]);
 });
+it.each([
+  ['Jean-Pierre', 'jeanpierre', '-'],
+  ['Jose\u0301-Pierre', 'josépierre', '-'],
+  ['50%', '50%', '%'],
+])(
+  'locates the separate sign after the measured spelling of %s',
+  (displayName, measuredName, sign) => {
+    const name = {
+      id: 'name',
+      startMs: 0,
+      endMs: 1000,
+      text: displayName + ' ' + sign + ' hoy',
+      words: [
+        { text: measuredName, startMs: 0, endMs: 200 },
+        { text: sign, startMs: 200, endMs: 400 },
+        { text: 'hoy', startMs: 600, endMs: 900 },
+      ],
+    };
+    const [left, right] = editCaptions([name], {
+      type: 'split',
+      id: name.id,
+      newId: 'later',
+      atMs: 200,
+      textIndex: name.text.lastIndexOf(sign),
+    });
+    expect(left).toMatchObject({ text: displayName, words: [name.words[0]] });
+    expect(right).toMatchObject({
+      text: sign + ' hoy',
+      words: [
+        { text: sign, startMs: 0, endMs: 200 },
+        { text: 'hoy', startMs: 400, endMs: 700 },
+      ],
+    });
+  }
+);
