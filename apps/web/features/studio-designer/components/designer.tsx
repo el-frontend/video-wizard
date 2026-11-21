@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -72,17 +72,14 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
   const dependencies = useEditorDependencies(draft);
   const projectId = initial.document.id;
   const router = useRouter();
-  const handle = useRef<PreviewHandle | null>(null);
+  const [handle, onReady] = useState<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
-  const onReady = useCallback((next: PreviewHandle | null) => {
-    handle.current = next;
-    setReady(!!next);
-    if (next && selectionRef.current.timeMs) next.seek(selectionRef.current.timeMs);
-  }, []);
+  useLayoutEffect(() => {
+    if (handle && selectionRef.current.timeMs) handle.seek(selectionRef.current.timeMs);
+  }, [handle]);
   const onTimeChange = useCallback(
     (timeMs: number) => {
       select({ ...selectionRef.current, timeMs });
@@ -196,7 +193,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
   const canSave = ['dirty', 'error', 'saving'].includes(session.status);
   const scene = draft.scenes.find((item) => item.id === selection.sceneId) ?? draft.scenes[0];
   const layer = scene?.layers.find((item) => item.id === selection.layerId);
-  function seek(
+  function selectAt(
     timeMs: number,
     sceneId: string | null = scene?.id ?? null,
     layerId: string | null = selection.layerId
@@ -204,25 +201,36 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     const next = { sceneId, layerId, captionId: null, timeMs };
     selectionRef.current = next;
     select(next);
-    handle.current?.seek(timeMs);
+  }
+  function seek(
+    timeMs: number,
+    sceneId: string | null = scene?.id ?? null,
+    layerId: string | null = selection.layerId
+  ) {
+    selectAt(timeMs, sceneId, layerId);
+    handle?.seek(timeMs);
   }
   function command(action: ProjectCommand) {
     const updated = session.dispatch(action);
     if (!updated || !draft) return;
     if (action.type === 'add-scene') {
-      seek(sceneStartMs(updated, action.scene.id), action.scene.id, null);
+      selectAt(sceneStartMs(updated, action.scene.id), action.scene.id, null);
     } else if (action.type === 'add-layer' || action.type === 'remove-layer') {
-      seek(selection.timeMs, action.sceneId, action.type === 'add-layer' ? action.layer.id : null);
+      selectAt(
+        selection.timeMs,
+        action.sceneId,
+        action.type === 'add-layer' ? action.layer.id : null
+      );
     } else if (action.type === 'remove-scene') {
       const index = draft.scenes.findIndex((item) => item.id === action.sceneId);
       const target = updated.scenes[index] ?? updated.scenes[index - 1];
-      seek(target ? sceneStartMs(updated, target.id) : 0, target?.id ?? null, null);
+      selectAt(target ? sceneStartMs(updated, target.id) : 0, target?.id ?? null, null);
     } else if (action.type === 'reorder-scene' && scene) {
       const local = Math.max(
         0,
         Math.min(scene.durationMs - 1, selection.timeMs - sceneStartMs(draft, scene.id))
       );
-      seek(sceneStartMs(updated, scene.id) + local, scene.id, selection.layerId);
+      selectAt(sceneStartMs(updated, scene.id) + local, scene.id, selection.layerId);
     }
   }
   return (
@@ -306,7 +314,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
               value={selection.timeMs}
               aria-label="Posición de reproducción"
               aria-valuetext={timeLabel(selection.timeMs)}
-              disabled={!ready}
+              disabled={!handle}
               onChange={(event) => seek(Number(event.target.value))}
             />
             <span>{timeLabel(draft.durationMs)}</span>

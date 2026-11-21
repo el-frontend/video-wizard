@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { MonitorPlay } from 'lucide-react';
 import type { PreviewHandle, ProjectDraft } from '@workspace/video-project';
 
@@ -20,23 +20,48 @@ interface PreviewProps {
   onTimeChange: (ms: number) => void;
   onReady: (handle: PreviewHandle | null) => void;
 }
-function DraftPlayer({
-  projectId,
-  revision,
-  document,
+// A mounted Player belongs to one immutable document/revision pair.
+function FramePlayer({
+  active,
   onReady,
-}: Omit<PreviewProps, 'onTimeChange'>) {
-  const [frame, setFrame] = useState({ revision, document });
+  onTimeChange,
+  ...props
+}: PreviewProps & { active: boolean }) {
+  const [handle, setHandle] = useState<PreviewHandle | null>(null);
+  useLayoutEffect(() => {
+    if (!active || !handle) return;
+    let listening = true;
+    const unsubscribe = handle.subscribe((ms) => {
+      if (listening) onTimeChange(ms);
+    });
+    onReady(handle);
+    return () => {
+      listening = false;
+      unsubscribe();
+      onReady(null);
+    };
+  }, [active, handle, onReady, onTimeChange]);
+  return <Player {...props} onReady={setHandle} />;
+}
+
+function DraftPlayer({ document, revision, ...props }: PreviewProps) {
+  const [frame, setFrame] = useState({ document, revision, generation: 0 });
+  const active = frame.document === document && frame.revision === revision;
   useEffect(() => {
-    const timer = setTimeout(() => setFrame({ revision, document }), 500);
+    if (active) return;
+    const timer = setTimeout(
+      () => setFrame((previous) => ({ document, revision, generation: previous.generation + 1 })),
+      500
+    );
     return () => clearTimeout(timer);
-  }, [revision, document]);
+  }, [active, document, revision]);
   return (
-    <Player
-      projectId={projectId}
-      revision={frame.revision}
+    <FramePlayer
+      key={frame.generation}
+      {...props}
+      active={active}
       document={frame.document}
-      onReady={onReady}
+      revision={frame.revision}
     />
   );
 }
@@ -48,16 +73,6 @@ export function PreviewPanel({
   onTimeChange,
   onReady,
 }: PreviewProps) {
-  const unsubscribe = useRef<(() => void) | undefined>(undefined);
-  const ready = useCallback(
-    (handle: PreviewHandle | null) => {
-      unsubscribe.current?.();
-      unsubscribe.current = handle?.subscribe(onTimeChange);
-      onReady(handle);
-    },
-    [onReady, onTimeChange]
-  );
-  useEffect(() => () => unsubscribe.current?.(), []);
   const empty = document.durationMs === 0;
   const unavailable = document.engine === 'hyperframes';
   return (
@@ -77,7 +92,8 @@ export function PreviewPanel({
           projectId={projectId}
           revision={revision}
           document={document}
-          onReady={ready}
+          onReady={onReady}
+          onTimeChange={onTimeChange}
         />
       )}
     </div>
