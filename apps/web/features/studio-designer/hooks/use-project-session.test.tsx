@@ -40,6 +40,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', request.mockReset());
 });
 afterEach(() => {
+  window.dispatchEvent(new Event('pagehide'));
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -223,3 +224,53 @@ it('keeps the 409 record when an older focus read finishes after the rejected wr
   await tick(1000);
   expect(request).toHaveBeenCalledTimes(3);
 });
+
+it('resumes a retained conflict only for the original owner and project in the same tab', async () => {
+  request.mockResolvedValueOnce(ok(initial));
+  const editor = renderHook(() => useProjectSession('project', initial));
+  await act(async () => {});
+  const remote = record('remote', 'Versión remota');
+  request.mockResolvedValueOnce(
+    Response.json({ success: false, error: 'Conflicto', current: remote }, { status: 409 })
+  );
+  act(() => editor.result.current.dispatch({ type: 'set-title', title: 'Edición pendiente' }));
+  await tick(500);
+  editor.result.current.retainDraft();
+  editor.unmount();
+  const otherSeed = { ...initial, ownerId: 'different-owner' };
+  request.mockResolvedValueOnce(ok(otherSeed));
+  const other = renderHook(() => useProjectSession('project', otherSeed));
+  await act(async () => {});
+  expect(other.result.current.draft?.title).toBe(initial.document.title);
+  other.unmount();
+  // Next may restore the old server payload even though the 409 already supplied a newer record.
+  const recovered = renderHook(() => useProjectSession('project', initial));
+  expect(recovered.result.current.draft?.title).toBe('Edición pendiente');
+  expect(recovered.result.current.conflict?.revision).toBe('remote');
+  expect(recovered.result.current.canUndo).toBe(true);
+  expect(recovered.result.current.status).toBe('conflict');
+});
+
+it.each(['discard', 'pagehide', 'confirmed save'])(
+  'releases a retained session on %s',
+  async (reason) => {
+    request.mockResolvedValueOnce(ok(initial));
+    const editor = renderHook(() => useProjectSession('project', initial));
+    await act(async () => {});
+    act(() => editor.result.current.dispatch({ type: 'set-title', title: 'Otra edición' }));
+    const release = editor.result.current.retainDraft();
+    if (reason === 'discard') release();
+    if (reason === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+    const confirmed = reason === 'confirmed save' ? record('saved', 'Otra edición') : initial;
+    if (reason === 'confirmed save') {
+      request.mockResolvedValueOnce(ok(confirmed));
+      await act(() => editor.result.current.save());
+    }
+    editor.unmount();
+    request.mockResolvedValueOnce(ok(confirmed));
+    const reopened = renderHook(() => useProjectSession('project', confirmed));
+    await act(async () => {});
+    expect(reopened.result.current.draft?.title).toBe(confirmed.document.title);
+    expect(reopened.result.current.canUndo).toBe(false);
+  }
+);

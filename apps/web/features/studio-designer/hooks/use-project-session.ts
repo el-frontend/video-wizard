@@ -34,6 +34,32 @@ const emptySelection: EditorSelection = {
 const delay = 500;
 const pollInterval = 15000;
 
+// Only an unavoidable same-document exit can park a session here.
+const retainedSessions = new Map<string, { session: ReturnType<typeof createSession> }>();
+function sessionKey(record: ProjectRecord) {
+  return JSON.stringify([record.ownerId, record.document.id, record.revision]);
+}
+
+function clearTabDrafts() {
+  retainedSessions.clear();
+}
+
+function openSession(id: string, initial?: ProjectRecord) {
+  if (initial?.document.id === id) {
+    // The server payload may have a newer revision than the base of the retained draft.
+    for (const slot of retainedSessions.values()) {
+      const base = slot.session.snapshot().saved;
+      if (
+        base?.ownerId === initial.ownerId &&
+        base.document.id === id &&
+        retainedSessions.get(sessionKey(base)) === slot
+      )
+        return slot.session;
+    }
+  }
+  return createSession(id, initial);
+}
+
 function createSession(id: string, initial?: ProjectRecord) {
   const url = projectsUrl + '/' + encodeURIComponent(id);
   let state: SessionState = {
@@ -54,7 +80,17 @@ function createSession(id: string, initial?: ProjectRecord) {
   let read: AbortController | null = null;
   let active = false;
   function update(partial: Partial<SessionState>) {
+    const previous = state.saved;
     state = { ...state, ...partial, canUndo: !!past.length, canRedo: !!future.length };
+    if (partial.saved && previous) {
+      const previousKey = sessionKey(previous);
+      const slot = retainedSessions.get(previousKey);
+      if (slot?.session === session) {
+        retainedSessions.delete(previousKey);
+        if (state.draft !== partial.saved.document)
+          retainedSessions.set(sessionKey(partial.saved), slot);
+      }
+    }
     listeners.forEach((fn) => fn());
   }
   function stopTimer() {
@@ -186,6 +222,11 @@ function createSession(id: string, initial?: ProjectRecord) {
   function hasUnsavedChanges() {
     return !!state.draft && (state.draft !== state.saved?.document || !!flight || !!state.conflict);
   }
+  function discardRetained() {
+    if (!state.saved) return;
+    const key = sessionKey(state.saved);
+    if (retainedSessions.get(key)?.session === session) retainedSessions.delete(key);
+  }
   function start() {
     active = true;
     // App Router can restore an older server payload on Back or Forward.
@@ -211,7 +252,19 @@ function createSession(id: string, initial?: ProjectRecord) {
       window.removeEventListener('beforeunload', beforeUnload);
     };
   }
-  return {
+  function retainDraft(): () => void {
+    if (!state.saved) return () => {};
+    const slot = { session };
+    retainedSessions.set(sessionKey(state.saved), slot);
+    // Full document navigation (including Auth.js sign-out) ends this recovery scope.
+    window.addEventListener('pagehide', clearTabDrafts, { once: true });
+    return () => {
+      if (!state.saved) return;
+      const key = sessionKey(state.saved);
+      if (retainedSessions.get(key) === slot) retainedSessions.delete(key);
+    };
+  }
+  const session = {
     start,
     snapshot: () => state,
     subscribe: (fn: () => void) => {
@@ -223,6 +276,8 @@ function createSession(id: string, initial?: ProjectRecord) {
     actions: {
       dispatch,
       hasUnsavedChanges,
+      retainDraft,
+      discardRetained,
       select: (selection: EditorSelection) => update({ selection }),
       undo: () => move(past, future),
       redo: () => move(future, past),
@@ -230,14 +285,15 @@ function createSession(id: string, initial?: ProjectRecord) {
       refresh,
     },
   };
+  return session;
 }
 
 export function useProjectSession(id: string, initial?: ProjectRecord) {
-  const [entry, setEntry] = useState(() => ({ id, session: createSession(id, initial) }));
+  const [entry, setEntry] = useState(() => ({ id, session: openSession(id, initial) }));
   let session = entry.session;
   // RSC refreshes can return a fresh object for the same revision.
   if (entry.id !== id) {
-    session = createSession(id, initial?.document.id === id ? initial : undefined);
+    session = openSession(id, initial?.document.id === id ? initial : undefined);
     setEntry({ id, session });
   }
   useEffect(() => session.start(), [session]);

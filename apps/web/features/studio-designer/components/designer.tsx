@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { ArrowLeft, Check, ListVideo, Redo2, Save, Undo2 } from 'lucide-react';
 import type { PreviewHandle, ProjectRecord } from '@workspace/video-project';
 import { sceneStartMs } from '@workspace/video-project';
@@ -49,7 +50,19 @@ function TitleField({ title, onTitle }: { title: string; onTitle: (title: string
 
 export function Designer({ initial }: { initial: ProjectRecord }) {
   const session = useProjectSession(initial.document.id, initial);
-  const { draft, saved, selection, select, save, undo, redo, hasUnsavedChanges } = session;
+  const {
+    draft,
+    saved,
+    selection,
+    select,
+    save,
+    undo,
+    redo,
+    hasUnsavedChanges,
+    retainDraft,
+    discardRetained,
+  } = session;
+  const projectId = initial.document.id;
   const router = useRouter();
   const handle = useRef<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
@@ -98,13 +111,30 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
         await save();
         return true;
       } catch {
-        return window.confirm(
+        const discard = window.confirm(
           'El borrador tiene cambios sin guardar. ¿Quieres salir y descartarlos?'
         );
+        if (discard) discardRetained();
+        return discard;
       }
     }
+    const recoveryNotice = 'studio-draft-' + projectId;
+    toast.dismiss(recoveryNotice);
+    function offerRecovery() {
+      toast.warning(
+        'El navegador cambió de página. Tu borrador sigue disponible en esta pestaña.',
+        {
+          id: recoveryNotice,
+          duration: 15000,
+          action: {
+            label: 'Reabrir borrador',
+            onClick: () => router.push('/designer/' + encodeURIComponent(projectId)),
+          },
+        }
+      );
+    }
     const removeHistoryGuard = navigation
-      ? guardProjectHistory(navigation, hasUnsavedChanges, mayLeave)
+      ? guardProjectHistory(navigation, hasUnsavedChanges, mayLeave, retainDraft, offerRecovery)
       : undefined;
     function followAfterSave(event: MouseEvent) {
       if (
@@ -144,7 +174,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
       removeHistoryGuard?.();
       document.removeEventListener('click', followAfterSave, true);
     };
-  }, [hasUnsavedChanges, save, router]);
+  }, [hasUnsavedChanges, save, router, projectId, retainDraft, discardRetained]);
   if (!draft || !saved)
     return (
       <section lang="es" className="studio-workspace">
