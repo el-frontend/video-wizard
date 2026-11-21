@@ -11,5 +11,5 @@ export default async function ProjectsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/signin?callbackUrl=/projects');
   const page = await new ProjectService(db).list(session.user.id);
-  return <ProjectLibrary initial={page} />;
+  return <ProjectLibrary key={session.user.id} initial={page} ownerId={session.user.id} />;
 }

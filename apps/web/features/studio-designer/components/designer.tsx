@@ -126,10 +126,14 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
         {
           id: recoveryNotice,
           duration: 15000,
-          action: {
-            label: 'Reabrir borrador',
-            onClick: () => router.push('/designer/' + encodeURIComponent(projectId)),
-          },
+          action: (
+            <Link
+              className="font-semibold underline"
+              href={'/designer/' + encodeURIComponent(projectId)}
+            >
+              Reabrir borrador
+            </Link>
+          ),
         }
       );
     }

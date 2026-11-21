@@ -9,6 +9,7 @@ import {
   type ProjectRecord,
 } from '@workspace/video-project';
 import {
+  notifyProjectSaved,
   projectRequest,
   ProjectRequestError,
   projectsUrl,
@@ -181,6 +182,7 @@ function createSession(id: string, initial?: ProjectRecord) {
         status: dirty ? 'dirty' : 'saved',
         error: '',
       });
+      notifyProjectSaved(saved.ownerId);
     } catch (cause) {
       stopTimer();
       const conflict = cause instanceof ProjectRequestError ? cause.current : null;

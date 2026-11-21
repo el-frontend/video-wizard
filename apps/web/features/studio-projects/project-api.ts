@@ -9,6 +9,17 @@ export class ProjectRequestError extends Error {
   }
 }
 
+const savedProjects = new EventTarget();
+
+export function notifyProjectSaved(ownerId: string) {
+  savedProjects.dispatchEvent(new Event(ownerId));
+}
+
+export function onProjectSaved(ownerId: string, listener: () => void) {
+  savedProjects.addEventListener(ownerId, listener);
+  return () => savedProjects.removeEventListener(ownerId, listener);
+}
+
 export const projectsUrl = '/api/studio/projects';
 
 export async function projectRequest<T>(url: string, options?: RequestInit): Promise<T> {

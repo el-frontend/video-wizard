@@ -1,77 +1,93 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EngineId, ProjectPage, ProjectRecord } from '@workspace/video-project';
 import { studioNavigation } from '@/features/studio-designer/hooks/project-navigation';
-import { projectRequest, projectsUrl } from '../project-api';
+import { onProjectSaved, projectRequest, projectsUrl } from '../project-api';
 
-export function useProjects(initial: ProjectPage) {
+export function useProjects(initial: ProjectPage, ownerId: string) {
   const [page, setPage] = useState(initial);
-  const [busy, setBusy] = useState<'create' | 'list' | null>(null);
+  const [reading, setReading] = useState<'refresh' | 'more' | null>(null);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-  const controller = useRef<AbortController | null>(null);
+  const pageRequest = useRef<AbortController | null>(null);
+  const createRequest = useRef<AbortController | null>(null);
   const router = useRouter();
-  const revalidation = useRef<AbortController | null>(null);
-  useEffect(() => {
-    // Back can remount this page with a cached server response from before an edit.
+
+  const readPage = useCallback(async (cursor?: string) => {
+    if (cursor && pageRequest.current) return;
+    pageRequest.current?.abort();
     const request = new AbortController();
-    revalidation.current = request;
-    void projectRequest<ProjectPage>(projectsUrl, { signal: request.signal })
-      .then((latest) => {
-        if (!request.signal.aborted) setPage(latest);
-      })
-      .catch(() => {});
-    return () => {
-      request.abort();
-      controller.current?.abort();
-    };
-  }, []);
-  async function run(kind: 'create' | 'list', action: (signal: AbortSignal) => Promise<void>) {
-    if (controller.current) return;
-    revalidation.current?.abort();
-    const request = new AbortController();
-    controller.current = request;
-    setBusy(kind);
-    setError('');
+    pageRequest.current = request;
+    setReading(cursor ? 'more' : 'refresh');
+    if (cursor) setError('');
     try {
-      await action(request.signal);
+      const query = cursor ? '?' + new URLSearchParams({ cursor }) : '';
+      const next = await projectRequest<ProjectPage>(projectsUrl + query, {
+        signal: request.signal,
+      });
+      if (request.signal.aborted) return;
+      if (!cursor) {
+        setPage(next);
+        return;
+      }
+      setPage((previous) => {
+        const ids = new Set(previous.items.map((item) => item.id));
+        return {
+          items: [...previous.items, ...next.items.filter((item) => !ids.has(item.id))],
+          nextCursor: next.nextCursor,
+        };
+      });
     } catch (cause) {
       if (!request.signal.aborted)
-        setError(cause instanceof Error ? cause.message : 'No se pudo completar la operación.');
+        setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los proyectos.');
     } finally {
-      controller.current = null;
-      if (!request.signal.aborted) setBusy(null);
+      if (pageRequest.current === request) {
+        pageRequest.current = null;
+        if (!request.signal.aborted) setReading(null);
+      }
     }
-  }
-  function create(title: string, engine: EngineId) {
-    return run('create', async (signal) => {
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onProjectSaved(ownerId, () => void readPage());
+    void readPage();
+    return () => {
+      unsubscribe();
+      pageRequest.current?.abort();
+      createRequest.current?.abort();
+    };
+  }, [ownerId, readPage]);
+
+  async function create(title: string, engine: EngineId) {
+    if (createRequest.current) return;
+    const request = new AbortController();
+    createRequest.current = request;
+    setCreating(true);
+    setError('');
+    try {
       const record = await projectRequest<ProjectRecord>(projectsUrl, {
         method: 'POST',
-        signal,
+        signal: request.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, engine }),
       });
-      if (signal.aborted) return;
+      if (request.signal.aborted) return;
       const href = '/designer/' + encodeURIComponent(record.document.id);
       if (studioNavigation()) router.push(href);
       else location.assign(href);
-    });
+    } catch (cause) {
+      if (!request.signal.aborted)
+        setError(cause instanceof Error ? cause.message : 'No se pudo crear el proyecto.');
+    } finally {
+      createRequest.current = null;
+      if (!request.signal.aborted) setCreating(false);
+    }
   }
   function more() {
-    if (!page.nextCursor) return;
-    const query = new URLSearchParams({ cursor: page.nextCursor });
-    return run('list', async (signal) => {
-      const next = await projectRequest<ProjectPage>(projectsUrl + '?' + query, { signal });
-      if (!signal.aborted)
-        setPage((previous) => {
-          const ids = new Set(previous.items.map((item) => item.id));
-          return {
-            items: [...previous.items, ...next.items.filter((item) => !ids.has(item.id))],
-            nextCursor: next.nextCursor,
-          };
-        });
-    });
+    if (page.nextCursor) return readPage(page.nextCursor);
   }
-  return { page, busy, error, create, more };
+  const busy = creating ? 'create' : reading === 'more' ? 'list' : null;
+  return { page, busy, loadingPage: reading !== null, error, create, more };
 }

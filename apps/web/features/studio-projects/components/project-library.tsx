@@ -96,8 +96,8 @@ function CreateProjectForm({
   );
 }
 
-export function ProjectLibrary({ initial }: { initial: ProjectPage }) {
-  const { page, busy, error, create, more } = useProjects(initial);
+export function ProjectLibrary({ initial, ownerId }: { initial: ProjectPage; ownerId: string }) {
+  const { page, busy, loadingPage, error, create, more } = useProjects(initial, ownerId);
   return (
     <section lang="es" className="studio-workspace">
       <header className="studio-heading">
@@ -119,7 +119,12 @@ export function ProjectLibrary({ initial }: { initial: ProjectPage }) {
             <p className="studio-empty-library">Aún no tienes proyectos guardados.</p>
           )}
           {page.nextCursor && (
-            <button type="button" className="studio-secondary" disabled={!!busy} onClick={more}>
+            <button
+              type="button"
+              className="studio-secondary"
+              disabled={!!busy || loadingPage}
+              onClick={more}
+            >
               Cargar más proyectos
             </button>
           )}
