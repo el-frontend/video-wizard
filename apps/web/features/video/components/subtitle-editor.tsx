@@ -6,7 +6,7 @@ import { Input } from '@workspace/ui/components/input';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { Download, FileText } from 'lucide-react';
 import { useState } from 'react';
-import { mergeSubtitleSegments } from '../lib/legacy-timing';
+import { editSubtitleText, mergeSubtitleSegments } from '../lib/legacy-timing';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
 import type { SubtitleSegment } from '../types';
 import { SilenceFillerPanel } from './silence-filler-panel';
@@ -41,7 +41,7 @@ export function SubtitleEditor({
 
   const handleTextChange = (index: number, newText: string) => {
     const updated = [...subtitles];
-    updated[index] = { ...updated[index], text: newText, words: undefined };
+    updated[index] = editSubtitleText(updated[index]!, newText);
     onSubtitlesChange(updated);
   };
 

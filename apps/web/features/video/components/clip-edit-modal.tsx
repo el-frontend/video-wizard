@@ -11,6 +11,7 @@ import {
 } from '@workspace/ui/components/dialog';
 import { Loader2, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { editSubtitleText } from '../lib/legacy-timing';
 import { getAspectClass } from '../lib/aspect-ratios';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
 import type { BrandKit } from '../types/brand-kit';
@@ -76,7 +77,7 @@ export function ClipEditModal({
   // Handle subtitle text edit
   const handleSubtitleEdit = (index: number, newText: string) => {
     const updated = [...editedSubtitles];
-    updated[index] = { ...updated[index], text: newText, words: undefined };
+    updated[index] = editSubtitleText(updated[index]!, newText);
     setEditedSubtitles(updated);
   };
 

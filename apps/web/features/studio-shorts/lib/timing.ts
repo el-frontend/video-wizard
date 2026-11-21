@@ -1,13 +1,19 @@
 import type { CaptionCue } from '@workspace/video-project';
-import { fromWhisperSeconds, type WhisperSegment } from '@/features/video/lib/legacy-timing';
+import {
+  fromWhisperSeconds,
+  secondsToLegacyMs,
+  type LegacySubtitleMs,
+  type SubtitleSegmentSeconds,
+  type WhisperSegment,
+} from '@/features/video/lib/legacy-timing';
 
 export interface ShortRange {
   startMs: number;
   endMs: number;
 }
-export function sourceCues(segments: WhisperSegment[], durationMs: number): CaptionCue[] {
-  const cues = fromWhisperSeconds(segments).flatMap((segment, i) => {
-    if (!segment.text || segment.end <= segment.start) return [];
+function toCaptionCues(segments: LegacySubtitleMs[]): CaptionCue[] {
+  return segments.flatMap((segment, i) => {
+    if (!segment.text.trim() || segment.end <= segment.start) return [];
     return [
       {
         id: 'cue-' + i,
@@ -22,10 +28,31 @@ export function sourceCues(segments: WhisperSegment[], durationMs: number): Capt
       },
     ];
   });
-  return sliceCaptions(cues, { startMs: 0, endMs: durationMs });
 }
 
-export function sliceCaptions(cues: CaptionCue[], range: ShortRange): CaptionCue[] {
+export function sourceCues(segments: WhisperSegment[], durationMs: number): CaptionCue[] {
+  return sliceCaptions(toCaptionCues(fromWhisperSeconds(segments)), {
+    startMs: 0,
+    endMs: durationMs,
+  });
+}
+
+export function editedClipCues(
+  segments: SubtitleSegmentSeconds[],
+  durationMs: number
+): CaptionCue[] {
+  return sliceCaptions(
+    toCaptionCues(secondsToLegacyMs(segments)),
+    { startMs: 0, endMs: durationMs },
+    'authored'
+  );
+}
+
+export function sliceCaptions(
+  cues: CaptionCue[],
+  range: ShortRange,
+  textSource: 'measured' | 'authored' = 'measured'
+): CaptionCue[] {
   return cues.flatMap((cue) => {
     const a = Math.max(cue.startMs, range.startMs),
       b = Math.min(cue.endMs, range.endMs);
@@ -39,6 +66,9 @@ export function sliceCaptions(cues: CaptionCue[], range: ShortRange): CaptionCue
         ? [{ text: word.text, startMs: start - a, endMs: end - a }]
         : [];
     });
+    // An edited cue may retain timing for only one part of its text after a merge.
+    if (textSource === 'authored')
+      return [{ ...cue, ...timing, words: words.length ? words : undefined }];
     if (!words.length) return [];
     const joined = cue.words
       .map((w) => w.text)

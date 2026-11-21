@@ -47,6 +47,13 @@ export function legacyMsToSeconds(input: LegacySubtitleMs[]): SubtitleSegment[] 
   }));
 }
 
+export function editSubtitleText(
+  segment: SubtitleSegmentSeconds,
+  text: string
+): SubtitleSegmentSeconds {
+  return { ...segment, text, words: undefined };
+}
+
 export function mergeSubtitleSegments(
   first: SubtitleSegmentSeconds,
   next: SubtitleSegmentSeconds

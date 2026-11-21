@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ShortService, sliceCaptions } from './short-service';
-import { sourceCues } from '@/features/studio-shorts/lib/timing';
+import { sourceCues, editedClipCues } from '@/features/studio-shorts/lib/timing';
+import {
+  editSubtitleText,
+  legacyMsToSeconds,
+  mergeSubtitleSegments,
+} from '@/features/video/lib/legacy-timing';
 import type { Job } from '../job-history-service';
 import type { ProjectDraft } from '@workspace/video-project';
 
@@ -193,6 +198,47 @@ describe('processed clip provenance', () => {
       },
     });
     expect(c).toMatchObject({ cues: [{ startMs: 0, endMs: 7000, text: 'Edición' }] });
+  });
+  it('opens an edited and merged legacy cue with its whole text and only the neighbor’s real word timing', async () => {
+    const [first, next] = legacyMsToSeconds([
+      { start: 400, end: 1200, text: 'Antes', words: [{ word: 'Antes', start: 500, end: 900 }] },
+      {
+        start: 1200,
+        end: 1900,
+        text: 'continúa',
+        words: [{ word: 'continúa', start: 1300, end: 1700 }],
+      },
+    ]);
+    const edited = editSubtitleText(first!, 'Texto editado');
+    const merged = mergeSubtitleSegments(edited, next!);
+    const clipCaptions = editedClipCues([merged], 7000);
+    const { service } = fixture();
+    const project = await service.fromJob(owner, { ...input, clipCaptions });
+    const layer = project.document.scenes[0]!.layers.find((l) => l.type === 'captions');
+    expect(layer?.cues).toEqual([
+      {
+        id: expect.any(String),
+        startMs: 400,
+        endMs: 1900,
+        text: 'Texto editado continúa',
+        words: [{ text: 'continúa', startMs: 900, endMs: 1300 }],
+      },
+    ]);
+  });
+  it('clamps the authored cue’s measured neighbor without assigning time to the manual text', () => {
+    const merged = mergeSubtitleSegments(
+      { start: 0.5, end: 0.9, text: 'Línea manual' },
+      { start: 0.9, end: 1.4, text: 'final', words: [{ start: 0.91, end: 1.35, word: 'final' }] }
+    );
+    expect(editedClipCues([merged], 1000)).toEqual([
+      {
+        id: 'cue-0',
+        startMs: 500,
+        endMs: 1000,
+        text: 'Línea manual final',
+        words: [{ text: 'final', startMs: 410, endMs: 500 }],
+      },
+    ]);
   });
   it('rejects foreign jobs, raw historic paths, burned renders and short derived files', async () => {
     for (const [who, record, duration] of [

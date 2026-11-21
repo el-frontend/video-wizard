@@ -15,7 +15,11 @@ import {
 } from '@/features/video';
 import { useBrandKit } from '@/features/video/hooks/use-brand-kit';
 import { pollJobUntilDone } from '@/features/video/lib/poll-job';
-import { sliceCaptions, sourceCues, toLegacySeconds } from '@/features/studio-shorts/lib/timing';
+import {
+  sliceCaptions,
+  editedClipCues,
+  toLegacySeconds,
+} from '@/features/studio-shorts/lib/timing';
 import { openClipJob } from '@/features/studio-shorts/lib/api';
 import { getDimensions } from '../lib/aspect-ratios';
 import { useRouter } from 'next/navigation';
@@ -249,7 +253,7 @@ export function VideoContainer() {
             ? {
                 ...c,
                 subtitles: editedSubtitles,
-                clipCaptions: sourceCues(
+                clipCaptions: editedClipCues(
                   editedSubtitles,
                   Math.round(c.endTime * 1000) - Math.round(c.startTime * 1000)
                 ),

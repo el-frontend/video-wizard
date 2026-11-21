@@ -9,6 +9,7 @@ import {
   LibraryRefSchema,
   MillisecondsSchema,
   type PlaybackVariant,
+  type CaptionCue,
   type AssetRecord,
   type ProjectDraft,
   type ProjectRecord,
@@ -69,7 +70,7 @@ export class ShortService {
   private async createBatch(
     owner: string,
     data: unknown,
-    variant?: PlaybackVariant
+    processedClip?: { variant: PlaybackVariant; clipCaptions: CaptionCue[] }
   ): Promise<ProjectRecord[]> {
     const parsed = createInput.safeParse(data);
     if (!parsed.success)
@@ -84,6 +85,7 @@ export class ShortService {
       new Set(sourceCaptions.map((c) => c.id)).size !== sourceCaptions.length
     )
       invalid('Comprueba los identificadores y tiempos de los subtítulos del video.');
+    const variant = processedClip?.variant;
     if (variant) {
       const derived = await this.assets.get(owner, variant.assetId);
       if (
@@ -141,7 +143,9 @@ export class ShortService {
         fit: range.crop?.fit ?? 'cover',
         focalPoint: range.crop?.focalPoint ?? { x: 0.5, y: 0.5 },
       });
-      const cues = sliceCaptions(sourceCaptions, range).map((c) => ({ ...c, id: randomUUID() }));
+      const cues = (processedClip?.clipCaptions ?? sliceCaptions(sourceCaptions, range)).map(
+        (c) => ({ ...c, id: randomUUID() })
+      );
       const captions = scene.layers.find((l) => l.type === 'captions');
       if (captions) {
         captions.endMs = length;
@@ -169,15 +173,12 @@ export class ShortService {
     const { sourceStartMs: startMs, sourceEndMs: endMs } = variant;
     if (clipCaptions.some((c) => c.endMs > endMs - startMs))
       invalid('Los subtítulos editados deben estar dentro del clip.');
-    const sourceCaptions = clipCaptions.map((c) => ({
-      ...c,
-      startMs: c.startMs + startMs,
-      endMs: c.endMs + startMs,
-    }));
+    if (new Set(clipCaptions.map((c) => c.id)).size !== clipCaptions.length)
+      invalid('Comprueba los identificadores de los subtítulos del clip.');
     const [record] = await this.createBatch(
       owner,
-      { assetId: sourceAssetId, ranges: [{ startMs, endMs }], sourceCaptions, ...settings },
-      variant
+      { assetId: sourceAssetId, ranges: [{ startMs, endMs }], ...settings },
+      { variant, clipCaptions }
     );
     return record!;
   }
