@@ -190,3 +190,17 @@ it('reports a cue with no sample inside its half-open interval without changing 
   layer.cues[0]!.endMs = 2381;
   expect((await adapter.validate(snapshot)).some((d) => d.code === 'cue-no-frame')).toBe(false);
 });
+it('uses the rendered frame at 200 ms for a caption layer at 167 ms and excludes a cue ending at that frame', async () => {
+  const snapshot = fixture();
+  snapshot.document.canvas.fps = 30;
+  const layer = snapshot.document.scenes[0]!.layers.find((l) => l.type === 'captions')!;
+  layer.startMs = 167;
+  layer.cues = [{ id: 'short', startMs: 33, endMs: 34, text: 'Primer cuadro' }];
+  const adapter = new RemotionProjectAdapter();
+  const missing = async () =>
+    (await adapter.validate(snapshot)).some((d) => d.code === 'cue-no-frame');
+  expect(await missing()).toBe(false);
+  layer.cues[0]!.startMs = 32;
+  layer.cues[0]!.endMs = 33;
+  expect(await missing()).toBe(true);
+});

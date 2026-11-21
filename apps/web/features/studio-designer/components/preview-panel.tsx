@@ -17,7 +17,7 @@ interface PreviewProps {
   projectId: string;
   revision: string;
   document: ProjectDraft;
-  onTimeChange: (ms: number) => void;
+  onTimeChange: (ms: number, acknowledgedCueStartMs?: number) => void;
   onReady: (handle: PreviewHandle | null) => void;
 }
 // A mounted Player belongs to one immutable document/revision pair.
@@ -31,8 +31,8 @@ function FramePlayer({
   useLayoutEffect(() => {
     if (!active || !handle) return;
     let listening = true;
-    const unsubscribe = handle.subscribe((ms) => {
-      if (listening) onTimeChange(ms);
+    const unsubscribe = handle.subscribe((ms, acknowledgedCueStartMs) => {
+      if (listening) onTimeChange(ms, acknowledgedCueStartMs);
     });
     onReady(handle);
     return () => {

@@ -13,3 +13,7 @@ export function sceneFrames({ scenes, canvas }: Pick<ProjectDraft, 'scenes' | 'c
     return { originMs, from, durationInFrames: boundary - from };
   });
 }
+/** Time relative to a layer at one absolute frame sample. */
+export function layerSampleMs(frame: number, fps: number, layerOriginMs: number) {
+  return (frame * 1000) / fps - layerOriginMs;
+}

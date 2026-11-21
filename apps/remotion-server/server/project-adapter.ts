@@ -1,3 +1,4 @@
+import { containsTime } from '@workspace/video-project';
 import { projectAppearance } from '@workspace/remotion-compositions';
 import { bundle } from '@remotion/bundler';
 import { makeCancelSignal, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
@@ -11,6 +12,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import {
+  layerSampleMs,
   libraryKey,
   sceneFrames,
   validateSnapshot,
@@ -112,7 +114,7 @@ export class RemotionProjectAdapter implements EngineAdapter {
             const firstFrame = Math.ceil(((origin + cue.startMs) * fps) / 1000);
             return (
               firstFrame >= from + durationInFrames ||
-              firstFrame >= Math.ceil(((origin + cue.endMs) * fps) / 1000)
+              !containsTime(cue, layerSampleMs(firstFrame, fps, origin))
             );
           });
           if (unsampled)

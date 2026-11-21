@@ -8,7 +8,7 @@ import {
   type Scene,
 } from '@workspace/video-project';
 import { projectRequest } from '@/features/studio-projects/project-api';
-import { editCaptions, type CaptionEdit } from '../lib/caption-editing';
+import { editCaptions, normalizedCaptionText, type CaptionEdit } from '../lib/caption-editing';
 import { readCaptionFile, serializeCaptionFile } from '../lib/caption-files';
 import type { CommandHandler } from '../lib/editor-commands';
 import { SelectField } from './select-field';
@@ -32,10 +32,10 @@ function CueForm({
   const id = useId(),
     textarea = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState('');
-  const normalized = (text: string) => text.replace(/[\s\p{P}]+/gu, '').toLocaleLowerCase('es');
   const aligned =
     cue.words?.length &&
-    normalized(cue.words.map((w) => w.text).join(' ')) === normalized(cue.text);
+    normalizedCaptionText(cue.words.map((w) => w.text).join(' ')) ===
+      normalizedCaptionText(cue.text);
   return (
     <form
       aria-label={adding ? 'Nuevo subtítulo' : 'Editar subtítulo'}

@@ -66,3 +66,35 @@ it('never assigns crossing words to an invented interval and keeps text on both 
   });
   expect(changed[0]?.words).toEqual([{ text: 'día', startMs: 450, endMs: 780 }]);
 });
+const greeting = {
+  id: 'greeting',
+  startMs: 100,
+  endMs: 1000,
+  text: 'Hola, mundo',
+  words: [
+    { text: 'hola', startMs: 25, endMs: 240 },
+    { text: 'mundo', startMs: 510, endMs: 800 },
+  ],
+};
+it('preserves measured spelling and alignment for an unchanged or time-only update', () => {
+  const edit = (patch: Partial<typeof greeting>) =>
+    editCaptions([greeting], { type: 'update', id: greeting.id, patch });
+  expect(edit({ text: 'Hola, mundo', startMs: 100, endMs: 1000 })[0]).toBe(greeting);
+  expect(edit({ startMs: 110 })[0]?.words).toEqual([
+    { text: 'hola', startMs: 15, endMs: 230 },
+    { text: 'mundo', startMs: 500, endMs: 790 },
+  ]);
+});
+it('splits measured words across a display-case and punctuation boundary without inventing text', () => {
+  const halves = editCaptions([greeting], {
+    type: 'split',
+    id: greeting.id,
+    newId: 'after',
+    textIndex: 6,
+    atMs: 550,
+  });
+  expect(halves.map((c) => [c.text, c.words])).toEqual([
+    ['Hola,', [greeting.words[0]]],
+    ['mundo', [{ text: 'mundo', startMs: 60, endMs: 350 }]],
+  ]);
+});

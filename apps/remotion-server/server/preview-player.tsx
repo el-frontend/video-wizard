@@ -17,8 +17,8 @@ export function mountPreview(props: ProjectCompositionProps) {
   if (!parentOrigin || !nonce || !instance)
     throw new Error('La sesión de vista previa no es válida.');
   const target = parentOrigin;
-  const post = (type: string, timeMs?: number) =>
-    window.parent.postMessage({ type, nonce, instance, timeMs }, target);
+  const post = (type: string, timeMs?: number, acknowledgedCueStartMs?: number) =>
+    window.parent.postMessage({ type, nonce, instance, timeMs, acknowledgedCueStartMs }, target);
   function Preview() {
     const player = useRef<PlayerRef>(null);
     const { fps, width, height, durationInFrames } = projectMetadata(props.document);
@@ -45,8 +45,11 @@ export function mountPreview(props: ProjectCompositionProps) {
               const frame = (event.data.timeMs * fps) / 1000;
               const targetFrame =
                 event.data.boundary === 'at-or-after' ? Math.ceil(frame) : Math.floor(frame);
-              ref.seekTo(Math.min(durationInFrames - 1, targetFrame));
-              update();
+              const sampledFrame = Math.min(durationInFrames - 1, targetFrame);
+              ref.seekTo(sampledFrame);
+              if (event.data.boundary === 'at-or-after') {
+                post('studio.time', Math.round((sampledFrame * 1000) / fps), event.data.timeMs);
+              } else update();
             }
         }
       }

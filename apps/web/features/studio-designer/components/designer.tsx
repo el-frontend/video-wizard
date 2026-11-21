@@ -85,26 +85,41 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
   const router = useRouter();
   const [handle, onReady] = useState<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
-  const pendingCueSeek = useRef<typeof selection | null>(null);
+  const cueSeek = useRef<(typeof selection & { sampleMs?: number; awaitingAck: boolean }) | null>(
+    null
+  );
   useLayoutEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
   useLayoutEffect(() => {
     if (!handle) return;
     const current = selectionRef.current;
-    const pending = pendingCueSeek.current;
+    const pending = cueSeek.current;
     if (
       pending &&
       pending.captionId === current.captionId &&
       pending.layerId === current.layerId &&
-      pending.timeMs === current.timeMs
-    )
-      handle.seek(current.timeMs, 'at-or-after');
-    else handle.seek(current.timeMs);
+      (pending.sampleMs ?? pending.timeMs) === current.timeMs
+    ) {
+      pending.awaitingAck = true;
+      handle.seek(pending.timeMs, 'at-or-after');
+    } else {
+      cueSeek.current = null;
+      handle.seek(current.timeMs);
+    }
   }, [handle]);
   const onTimeChange = useCallback(
-    (timeMs: number) => {
-      pendingCueSeek.current = null;
+    (timeMs: number, acknowledgedCueStartMs?: number) => {
+      const pending = cueSeek.current;
+      if (acknowledgedCueStartMs !== undefined) {
+        if (!pending || acknowledgedCueStartMs !== pending.timeMs) return;
+        pending.sampleMs = timeMs;
+        pending.awaitingAck = false;
+      } else if (pending) {
+        // Ignore frame notifications queued before the acknowledgement of our cue seek.
+        if (pending.awaitingAck) return;
+        if (timeMs !== pending.sampleMs) cueSeek.current = null;
+      }
       select({ ...selectionRef.current, timeMs });
     },
     [select]
@@ -222,7 +237,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     layerId: string | null = selection.layerId,
     captionId: string | null = null
   ) {
-    pendingCueSeek.current = null;
+    cueSeek.current = null;
     const next = { sceneId, layerId, captionId, timeMs };
     selectionRef.current = next;
     select(next);
@@ -236,7 +251,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
   ) {
     selectAt(timeMs, sceneId, layerId, captionId);
     if (boundary) {
-      pendingCueSeek.current = selectionRef.current;
+      cueSeek.current = { ...selectionRef.current, awaitingAck: true };
       handle?.seek(timeMs, boundary);
     } else handle?.seek(timeMs);
   }

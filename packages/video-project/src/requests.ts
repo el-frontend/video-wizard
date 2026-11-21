@@ -40,5 +40,6 @@ export interface PreviewHandle {
   pause(): void;
   seek(timeMs: number, boundary?: 'at-or-after'): void;
   getTimeMs(): number;
-  subscribe(listener: (timeMs: number) => void): () => void;
+  /** Cue seeks acknowledge their exact requested start along with the sampled time. */
+  subscribe(listener: (timeMs: number, acknowledgedCueStartMs?: number) => void): () => void;
 }

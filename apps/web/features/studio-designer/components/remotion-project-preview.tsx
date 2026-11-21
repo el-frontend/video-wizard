@@ -66,7 +66,7 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
     if (!session) return;
     let nonce = '',
       time = 0;
-    const listeners = new Set<(ms: number) => void>();
+    const listeners = new Set<(ms: number, acknowledgedCueStartMs?: number) => void>();
     function send(type: string, extra = {}) {
       frame.current?.contentWindow?.postMessage(
         { type, instance: session!.instance, nonce, ...extra },
@@ -108,7 +108,11 @@ export function RemotionProjectPreview({ projectId, revision, document, onReady 
       if (msg.type === 'studio.error') setError('La sesión de vista previa no está disponible.');
       if (msg.type === 'studio.time' && Number.isSafeInteger(msg.timeMs) && msg.timeMs >= 0) {
         time = msg.timeMs;
-        listeners.forEach((listener) => listener(time));
+        const cueStartMs =
+          Number.isSafeInteger(msg.acknowledgedCueStartMs) && msg.acknowledgedCueStartMs >= 0
+            ? msg.acknowledgedCueStartMs
+            : undefined;
+        listeners.forEach((listener) => listener(time, cueStartMs));
       }
     };
     window.addEventListener('message', receive);

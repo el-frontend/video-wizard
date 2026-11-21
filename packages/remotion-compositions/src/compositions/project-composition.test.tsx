@@ -1,4 +1,10 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import { useCurrentFrame } from 'remotion';
+import { LayerRenderer } from './layer-renderer';
+vi.mock('remotion', async (original) => ({
+  ...(await original<typeof import('remotion')>()),
+  useCurrentFrame: vi.fn(),
+}));
 import { exampleProject } from '@workspace/video-project/fixtures';
 import {
   captionAt,
@@ -51,4 +57,28 @@ it('uses the next absolute scene start as the previous scene’s exclusive end',
   expect(scenes[0].props).toMatchObject({ from: 0, durationInFrames: 30 });
   expect(scenes[1]).toBeNull();
   expect(scenes[2].props).toMatchObject({ from: 30, durationInFrames: 31 });
+});
+it('draws the caption at absolute frame six, excluding the previous cue ending exactly there', () => {
+  const document = exampleProject();
+  document.canvas.fps = 30;
+  const layer = document.scenes[0]!.layers.find((l) => l.type === 'captions')!;
+  delete layer.templateRef;
+  layer.startMs = 167;
+  layer.cues = [
+    { id: 'ends', startMs: 0, endMs: 33, text: 'Anterior' },
+    { id: 'begins', startMs: 33, endMs: 34, text: 'Primer cuadro' },
+  ];
+  vi.mocked(useCurrentFrame).mockReturnValue(1);
+  const sample = () =>
+    LayerRenderer({
+      document,
+      layer,
+      origin: 0,
+      dependencies: { assets: {}, libraries: {} },
+      registry: {},
+    });
+  expect(sample()?.props.children).toBe('Primer cuadro');
+  layer.cues.shift();
+  vi.mocked(useCurrentFrame).mockReturnValue(2);
+  expect(sample()).toBeNull();
 });

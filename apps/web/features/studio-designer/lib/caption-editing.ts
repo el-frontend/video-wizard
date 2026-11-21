@@ -11,22 +11,34 @@ export function checkCue(cue: CaptionCue) {
     throw new RangeError('Comprueba el texto, el intervalo y los tiempos de las palabras.');
 }
 
+export function normalizedCaptionText(text: string) {
+  return text
+    .normalize('NFC')
+    .replace(/[\s\p{P}]+/gu, '')
+    .toLocaleLowerCase('es');
+}
+
 function sliceWords(
   cue: CaptionCue,
   startMs: number,
   endMs: number,
-  fromIndex = 0,
-  toIndex = cue.text.length
+  textRange?: { from: number; to: number }
 ) {
+  const display = textRange ? normalizedCaptionText(cue.text) : '';
   let cursor = 0;
   const words: CaptionWord[] = [];
   for (const word of cue.words ?? []) {
-    const position = cue.text.indexOf(word.text, cursor);
-    if (position < 0) continue;
-    cursor = position + word.text.length;
+    if (textRange) {
+      const token = normalizedCaptionText(word.text);
+      if (!token) continue;
+      const position = display.indexOf(token, cursor);
+      if (position < 0) continue;
+      cursor = position + token.length;
+      if (position < textRange.from || cursor > textRange.to) continue;
+    }
     const start = cue.startMs + word.startMs,
       end = cue.startMs + word.endMs;
-    if (position >= fromIndex && cursor <= toIndex && start >= startMs && end <= endMs)
+    if (start >= startMs && end <= endMs)
       words.push({ ...word, startMs: start - startMs, endMs: end - startMs });
   }
   return words.length ? words : undefined;
@@ -49,6 +61,12 @@ export function editCaptions(cues: CaptionCue[], edit: CaptionEdit): CaptionCue[
       break;
     case 'update': {
       const changed = { ...cue, ...edit.patch };
+      if (
+        changed.text === cue.text &&
+        changed.startMs === cue.startMs &&
+        changed.endMs === cue.endMs
+      )
+        return cues;
       changed.words =
         changed.text === cue.text ? sliceWords(cue, changed.startMs, changed.endMs) : undefined;
       checkCue(changed);
@@ -60,18 +78,19 @@ export function editCaptions(cues: CaptionCue[], edit: CaptionEdit): CaptionCue[
         throw new RangeError('Sitúa el cabezal dentro del subtítulo.');
       if (next.some((c) => c.id === edit.newId))
         throw new RangeError('El identificador de subtítulo ya existe.');
+      const cut = normalizedCaptionText(cue.text.slice(0, edit.textIndex)).length;
       const left = {
         ...cue,
         text: cue.text.slice(0, edit.textIndex).trimEnd(),
         endMs: edit.atMs,
-        words: sliceWords(cue, cue.startMs, edit.atMs, 0, edit.textIndex),
+        words: sliceWords(cue, cue.startMs, edit.atMs, { from: 0, to: cut }),
       };
       const right = {
         ...cue,
         id: edit.newId,
         text: cue.text.slice(edit.textIndex).trimStart(),
         startMs: edit.atMs,
-        words: sliceWords(cue, edit.atMs, cue.endMs, edit.textIndex),
+        words: sliceWords(cue, edit.atMs, cue.endMs, { from: cut, to: Infinity }),
       };
       if (!left.text.trim() || !right.text.trim())
         throw new RangeError('Coloca el cursor entre los dos fragmentos de texto.');

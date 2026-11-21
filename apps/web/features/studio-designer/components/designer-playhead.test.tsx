@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function transport() {
-  let notify: (ms: number) => void = () => {};
+  let notify: (ms: number, cueStartMs?: number) => void = () => {};
   const handle: PreviewHandle = {
     play: vi.fn(),
     pause: vi.fn(),
@@ -33,7 +33,7 @@ function transport() {
       return () => {};
     },
   };
-  return { handle, queuedTime: (ms: number) => notify(ms) };
+  return { handle, queuedTime: (ms: number, cueStartMs?: number) => notify(ms, cueStartMs) };
 }
 
 it('keeps the requested scene time across obsolete frame events, including undo to a shorter scene', async () => {
@@ -173,10 +173,62 @@ it('retains a caption boundary seek requested while the next Player is rebuildin
     const next = transport();
     act(() => player.onReady(next.handle));
     expect(next.handle.seek).toHaveBeenCalledWith(2660, 'at-or-after');
-    act(() => next.queuedTime(2680));
+    act(() => next.queuedTime(2680, 2660));
     expect((screen.getByLabelText('Posición de reproducción') as HTMLInputElement).value).toBe(
       '2680'
     );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('restores the acknowledged 32 ms cue after a rebuild and releases it after real playback navigation', async () => {
+  vi.useFakeTimers();
+  try {
+    const document = exampleProject();
+    document.canvas.fps = 30;
+    const captions = document.scenes[0]!.layers.find((l) => l.type === 'captions')!;
+    captions.cues = [{ id: 'c32', startMs: 32, endMs: 40, text: 'Inicio breve' }];
+    const initial = {
+      ownerId: 'owner',
+      revision: 'v1',
+      document,
+      updatedAt: '2026-01-01T00:00:00Z',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, init) =>
+        init?.method === 'PUT'
+          ? new Promise<Response>(() => {})
+          : Response.json({ success: true, data: String(url).endsWith('/project') ? initial : [] })
+      )
+    );
+    render(<Designer initial={initial} />);
+    await act(async () => {});
+    const old = transport();
+    act(() => player.onReady(old.handle));
+    fireEvent.click(screen.getByRole('button', { name: /Subtítulos Z/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Inicio breve/ }));
+    expect(old.handle.seek).toHaveBeenLastCalledWith(32, 'at-or-after');
+    act(() => old.queuedTime(33, 32));
+    act(() => old.queuedTime(33));
+    const slider = screen.getByLabelText('Posición de reproducción') as HTMLInputElement;
+    expect(slider.value).toBe('33');
+    async function rebuild(title: string) {
+      fireEvent.change(screen.getByLabelText('Título del proyecto'), { target: { value: title } });
+      await act(async () => vi.advanceTimersByTimeAsync(505));
+      const next = transport();
+      act(() => player.onReady(next.handle));
+      return next;
+    }
+    const restored = await rebuild('Revisión dos');
+    expect(restored.handle.seek).toHaveBeenLastCalledWith(32, 'at-or-after');
+    act(() => restored.queuedTime(0));
+    expect(slider.value).toBe('33');
+    act(() => restored.queuedTime(33, 32));
+    act(() => restored.queuedTime(100));
+    expect(slider.value).toBe('100');
+    const afterPlayback = await rebuild('Revisión tres');
+    expect(afterPlayback.handle.seek).toHaveBeenLastCalledWith(100);
   } finally {
     vi.useRealTimers();
   }

@@ -1,6 +1,11 @@
 import type { ComponentType, CSSProperties } from 'react';
 import { Audio, Img, OffthreadVideo, useCurrentFrame } from 'remotion';
-import { contrastRatio, libraryKey, type ResolvedDependencies } from '@workspace/render-contract';
+import {
+  contrastRatio,
+  layerSampleMs,
+  libraryKey,
+  type ResolvedDependencies,
+} from '@workspace/render-contract';
 import type { Layer, ProjectDraft } from '@workspace/video-project';
 import type { CaptionTemplateProps } from '../types';
 import { captionAt } from './project-timing';
@@ -75,12 +80,12 @@ export function LayerRenderer({
       </div>
     ) : null;
 
-  const offset =
-    (Math.floor(((origin + layer.startMs) * fps) / 1000) * 1000) / fps - (origin + layer.startMs);
+  const layerOriginMs = origin + layer.startMs;
+  const absoluteFrame = Math.floor((layerOriginMs * fps) / 1000) + frame;
   const text = layer.type === 'component' ? (headline ?? '') : '';
   const caption =
     layer.type === 'captions'
-      ? captionAt(layer.cues, (frame * 1000) / fps + offset)
+      ? captionAt(layer.cues, layerSampleMs(absoluteFrame, fps, layerOriginMs))
       : {
           currentSegment: { id: 0, text, start: 0, end: (layer.endMs - layer.startMs) / 1000 },
           currentWord: text,
