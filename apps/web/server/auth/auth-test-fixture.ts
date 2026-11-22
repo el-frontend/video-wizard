@@ -47,7 +47,9 @@ export async function authFixture(lastMigration = 8) {
       if (/^\d+.*\.sql$/.test(filename) && parseInt(filename, 10) <= lastMigration)
         await apply(filename);
     }
-    return { db, pool, apply, close };
+    const scoped = new URL(connectionString);
+    scoped.searchParams.set('options', '-csearch_path=' + namespace);
+    return { db, pool, apply, close, connectionString: scoped.toString() };
   } catch (error) {
     await close();
     throw error;

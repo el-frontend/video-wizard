@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { getGlobalBroadcastChannel } from 'better-auth/client';
 import { Button } from '@workspace/ui/components/button';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
@@ -45,6 +46,12 @@ export function CredentialsForm({
         );
         return;
       }
+      // Better Auth 1.7.27 broadcasts sign-out, but successful sign-in only refreshes this tab.
+      getGlobalBroadcastChannel().post({
+        event: 'session',
+        data: { trigger: 'getSession' },
+        clientId: Math.random().toString(36).slice(2),
+      });
       await onSuccess(result.data.user.id);
     } catch {
       setError('No se pudo conectar con el estudio. Inténtalo de nuevo.');
