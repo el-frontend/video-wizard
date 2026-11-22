@@ -108,6 +108,7 @@ it.each([
   'completion-ack',
   'lost-admission',
   'receipt-save',
+  'last-receipt-save',
   'receipt-ack',
 ] as const)(
   'uses the real worker retry path after %s without admitting another remote export',
@@ -125,7 +126,12 @@ it.each([
     if (failure === 'ingest') ingest.mockRejectedValueOnce(new Error('fixture ingest failure'));
     const { renderAdmission } = await import('../services/render-admission');
     const accept = renderAdmission.accept.bind(renderAdmission);
-    if (failure === 'receipt-save')
+    if (failure === 'last-receipt-save') {
+      vi.spyOn(AssetService.prototype, 'get')
+        .mockRejectedValueOnce(new Error('fixture source unavailable'))
+        .mockRejectedValueOnce(new Error('fixture source still unavailable'));
+    }
+    if (failure === 'receipt-save' || failure === 'last-receipt-save')
       vi.spyOn(renderAdmission, 'accept').mockRejectedValueOnce(
         new Error('fixture receipt write failure')
       );
@@ -190,14 +196,41 @@ it.each([
     }
     const row = await history.getById(webId, owner);
     expect(calls.filter((c) => c === 'POST /renders')).toHaveLength(1);
-    const uncertain = failure === 'lost-admission' || failure === 'receipt-save';
+    const uncertain = ['lost-admission', 'receipt-save', 'last-receipt-save'].includes(failure);
     expect(row?.status).toBe(uncertain ? 'failed' : 'completed');
     const task = await fixture.pool.query('SELECT attempts FROM queue_tasks WHERE job_id=$1', [
       webId,
     ]);
-    expect(task.rows[0].attempts).toBe(
-      ['lost-admission', 'completion-ack'].includes(failure) ? 1 : 2
-    );
+    if (failure === 'last-receipt-save') {
+      expect(task.rows[0].attempts).toBe(3);
+      expect(row).toMatchObject({
+        resultData: { phase: 'submitting' },
+        errorMessage: 'fixture receipt write failure',
+      });
+      expect(calls).toEqual(['POST /renders']);
+      const auth = await import('../lib/auth');
+      vi.spyOn(auth, 'requireAuth').mockResolvedValueOnce({
+        id: owner,
+        name: null,
+        email: null,
+        image: null,
+      });
+      const { GET } = await import('@/app/api/jobs/[id]/route');
+      const { NextRequest } = await import('next/server');
+      const response = await GET(new NextRequest(baseURL + '/api/jobs/' + webId), {
+        params: Promise.resolve({ id: webId }),
+      });
+      expect(response.status).toBe(200);
+      const { data } = await response.json();
+      expect(data.resultData).toBeNull();
+      expect(data.errorMessage).toMatch(/confirmar.*admisión/i);
+      expect(data.errorMessage).toContain(webId);
+      expect(data.errorMessage).not.toMatch(/vuelve a intentarlo/i);
+    } else {
+      expect(task.rows[0].attempts).toBe(
+        ['lost-admission', 'completion-ack'].includes(failure) ? 1 : 2
+      );
+    }
     if (uncertain) {
       expect(publicJob(row!).errorMessage).toMatch(/confirmar.*admisión/i);
       expect(publicJob(row!).errorMessage).toContain(webId);

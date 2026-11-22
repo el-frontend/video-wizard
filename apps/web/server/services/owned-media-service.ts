@@ -166,6 +166,8 @@ export function renderCaptions(input: z.infer<typeof storedRenderInput>) {
     : input.subtitles.map((caption, index) => ({ ...caption, id: index + 1 }));
 }
 
+const submittingReceipt = z.object({ phase: z.literal('submitting') });
+
 /** Historical receipts can contain engine locators. Project responses from proven identifiers. */
 export function publicJob(job: Job) {
   if (job.type === 'analysis') return job;
@@ -179,13 +181,16 @@ export function publicJob(job: Job) {
     ...job,
     inputData: input.success ? input.data : null,
     resultData: null,
-    errorMessage:
-      job.errorMessage === UNKNOWN_RENDER_ADMISSION
-        ? UNKNOWN_RENDER_ADMISSION + ' ID: ' + job.id
-        : job.errorMessage
-          ? 'No se pudo completar el trabajo. Vuelve a intentarlo.'
-          : null,
+    errorMessage: job.errorMessage ? 'No se pudo completar el trabajo. Vuelve a intentarlo.' : null,
   };
+  if (
+    job.type === 'render' &&
+    job.status === 'failed' &&
+    (submittingReceipt.safeParse(job.resultData).success ||
+      job.errorMessage === UNKNOWN_RENDER_ADMISSION)
+  ) {
+    return { ...summary, errorMessage: UNKNOWN_RENDER_ADMISSION + ' ID: ' + job.id };
+  }
   if (!input.success) return { ...summary, errorMessage: reingest };
   if (job.status !== 'completed') return summary;
   const crop = completedCrop(job);
