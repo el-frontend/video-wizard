@@ -1,10 +1,12 @@
 'use client';
 
 import {
+  CircleUserRound,
   Film,
   Scissors,
   Layers3,
   LayoutTemplate,
+  LogOut,
   Palette,
   Stamp,
   FolderOpen,
@@ -149,16 +151,23 @@ export function AppSidebar({
 
         {/* Bottom Navigation */}
         <div className="border-t border-border p-4 space-y-1">
-          <p className="truncate px-3 text-sm" title={userLabel}>
-            {userLabel}
+          <p
+            className="studio-account-control flex min-w-0 items-center gap-3 px-3 py-2 text-sm"
+            title={userLabel}
+          >
+            <CircleUserRound aria-hidden="true" className="h-5 w-5 shrink-0" />
+            <span className="truncate">{userLabel}</span>
           </p>
           <button
             type="button"
-            className="min-h-12 px-3 text-sm underline"
+            className="studio-account-control flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
             onClick={onSignOut}
             disabled={busy}
           >
-            Cerrar sesión
+            <LogOut aria-hidden="true" className="h-5 w-5 shrink-0" />
+            <span>Cerrar sesión</span>
           </button>
           {error && (
             <p role="alert" className="text-sm">

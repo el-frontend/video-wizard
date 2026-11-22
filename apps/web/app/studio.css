@@ -346,7 +346,7 @@ main > div:has(> .studio-workspace) {
   div:has(> main .studio-workspace) > aside {
     width: 4rem;
   }
-  div:has(> main .studio-workspace) > aside :is(a, div:has(> div > span)) {
+  div:has(> main .studio-workspace) > aside :is(a, .studio-account-control, div:has(> div > span)) {
     justify-content: center;
     padding-inline: 0.4rem;
   }
