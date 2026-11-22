@@ -25,8 +25,8 @@ export interface AuthenticatedUser {
  * Resolves the current session, throwing UnauthorizedError when no user
  * is signed in. Use at the top of API route handlers that need an owner.
  */
-export async function requireAuth(): Promise<AuthenticatedUser> {
-  const session = await auth();
+export async function requireAuth(request?: Request): Promise<AuthenticatedUser> {
+  const session = await auth(request);
 
   if (!session?.user?.id) {
     throw new UnauthorizedError();

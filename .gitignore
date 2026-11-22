@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Local assistant sessions
 /.studio-data/
+
+/.studio/bootstrap-user.json
+/.studio/.bootstrap-*

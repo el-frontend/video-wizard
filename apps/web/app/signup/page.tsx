@@ -10,7 +10,7 @@ import { Card } from '@workspace/ui/components/card';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 
-import { MIN_PASSWORD_LENGTH } from '@/server/lib/password';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 
 export default function SignUpPage() {
   const router = useRouter();

@@ -57,6 +57,13 @@
       "when": 1795203378146,
       "tag": "0007_studio_library_json",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795351678230,
+      "tag": "0008_better_auth",
+      "breakpoints": true
     }
   ]
 }
