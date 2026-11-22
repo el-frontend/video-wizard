@@ -11,7 +11,8 @@ import { cliPackage } from '@workspace/hyperframes-compositions';
 import { installStudioRoutes } from './studio-http';
 
 const evidence = resolve(
-  '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
+  process.env.STUDIO_NATIVE_EVIDENCE_DIR ||
+    '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
 );
 it.skipIf(import.meta.env.MODE !== 'native')(
   'seeks the private native preview forward and backward and acknowledges only the exact cue target',

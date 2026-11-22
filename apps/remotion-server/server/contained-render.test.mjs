@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { cp, readFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, it } from 'vitest';
@@ -11,7 +13,9 @@ import { signServiceToken } from '@workspace/service-auth';
 it.skipIf(import.meta.env.MODE !== 'contained')(
   'exports private originals, cuts and both Studio engines with audio inside the isolated renderer',
   async () => {
-    const evidence = '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence';
+    const evidence =
+      process.env.STUDIO_NATIVE_EVIDENCE_DIR ||
+      '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence';
     const workspace = (await readFile(join(evidence, 'workspace.txt'), 'utf8')).trim();
     const snapshot = JSON.parse(
       await readFile(join(workspace, 'noticias-liquid-glass', 'fixture.json'), 'utf8')
@@ -22,8 +26,11 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
       directory = await mkdtemp(join(tmpdir(), 'studio-auth-outputs-'));
     const docker = (args, env = process.env) =>
       execFileSync('docker', args, { encoding: 'utf8', env, timeout: 60000 }).trim();
-    const port = '39147',
-      base = 'http://127.0.0.1:' + port;
+    const reservation = createServer().listen(0, '127.0.0.1');
+    await once(reservation, 'listening');
+    const port = reservation.address().port;
+    await new Promise((done) => reservation.close(done));
+    const base = 'http://127.0.0.1:' + port;
     const call = async (path, scope, refs = {}, body, method, extra = {}) =>
       fetch(base + path, {
         redirect: 'error',
@@ -156,6 +163,7 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
         [
           'run',
           '--detach',
+          '--pull=never',
           '--rm',
           '--name',
           container,
@@ -172,7 +180,7 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
           'RENDER_CONCURRENCY=2',
           '-e',
           'RENDERS_DIR=/tmp/technical-renders',
-          process.env.STUDIO_TEST_RENDER_IMAGE || 'video-wizard-auth-task4-test',
+          process.env.STUDIO_TEST_RENDER_IMAGE || 'video-wizard-renderer:local',
         ],
         { ...process.env, STUDIO_RENDER_SECRET: secret }
       );

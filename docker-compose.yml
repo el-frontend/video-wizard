@@ -21,12 +21,14 @@ services:
       - video-wizard-network
     ports:
       - '127.0.0.1:5432:5432'
-    env_file:
-      - .env.docker
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set the local database user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the local database password}
+      POSTGRES_DB: ${POSTGRES_DB:?Set the local database name}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -47,7 +49,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: pnpm db:migrate
+    command: sh -c 'pnpm auth:preflight && pnpm db:migrate'
     restart: 'no'
 
   # Python Processing Engine
@@ -64,10 +66,10 @@ services:
       - ./apps/processing-engine/uploads:/app/uploads
       - ./apps/processing-engine/output:/app/output
       - ./apps/processing-engine:/app
-    env_file:
-      - ./apps/processing-engine/.env
     environment:
-      - LOG_LEVEL=DEBUG
+      STUDIO_RENDER_SECRET: ${STUDIO_RENDER_SECRET:?Set the private service secret}
+      USE_OPENAI_API: ${USE_OPENAI_API:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     command: sh -c "pip install -r requirements.txt && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
     restart: unless-stopped
 
@@ -84,10 +86,11 @@ services:
     # Chromium (via Remotion) needs a large /dev/shm; Docker's 64MB default
     # causes "cannot allocate memory" / "disk space low" render failures.
     shm_size: '2gb'
-    env_file:
-      - ./apps/remotion-server/.env
     environment:
-      - NODE_ENV=development
+      - STUDIO_RENDER_SECRET=${STUDIO_RENDER_SECRET:?Set the private service secret}
+      - STUDIO_EDITOR_ORIGIN=${STUDIO_EDITOR_ORIGIN:-http://localhost:3000}
+      - STUDIO_PREVIEW_ORIGIN=${STUDIO_PREVIEW_ORIGIN:-http://localhost:3001}
+      - NODE_ENV=production
       - PORT=3001
       - RENDERS_DIR=./renders
       # Cap concurrent Chromium tabs per render to bound memory in the
@@ -113,7 +116,7 @@ services:
     networks:
       - video-wizard-network
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     env_file:
       - .env.docker
     volumes:

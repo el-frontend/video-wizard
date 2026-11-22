@@ -24,7 +24,8 @@ it.skipIf(!run)(
   'checks and renders real native style fixtures with measured crop and audio',
   async () => {
     const evidence = resolve(
-      '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
+      process.env.STUDIO_NATIVE_EVIDENCE_DIR ||
+        '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
     );
     await mkdir(evidence, { recursive: true });
     const workspace = await mkdtemp(join(tmpdir(), 'studio-native-'));
