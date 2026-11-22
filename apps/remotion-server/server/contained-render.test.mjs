@@ -79,6 +79,51 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
         ])
       ).streams;
       expect(streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+      // A silent track also passes a stream-count check. Verify the fixture tone after encoding.
+      const samples = execFileSync('ffmpeg', [
+        '-v',
+        'error',
+        '-ss',
+        '0.1',
+        '-t',
+        '0.2',
+        '-i',
+        file,
+        '-map',
+        '0:a:0',
+        '-ac',
+        '1',
+        '-ar',
+        '8000',
+        '-f',
+        's16le',
+        'pipe:1',
+      ]);
+      let energy = 0;
+      for (let byte = 0; byte + 1 < samples.length; byte += 2)
+        energy += samples.readInt16LE(byte) ** 2;
+      expect(Math.sqrt(energy / (samples.length / 2))).toBeGreaterThan(50);
+      if (label === 'crop') {
+        // The generated logo is yellow, over a blue/green video. Sample its top-right interior.
+        const rgb = execFileSync('ffmpeg', [
+          '-v',
+          'error',
+          '-i',
+          file,
+          '-frames:v',
+          '1',
+          '-vf',
+          'crop=2:2:iw-28:28,scale=1:1',
+          '-pix_fmt',
+          'rgb24',
+          '-f',
+          'rawvideo',
+          'pipe:1',
+        ]);
+        expect(rgb[0]).toBeGreaterThan(170);
+        expect(rgb[1]).toBeGreaterThan(170);
+        expect(rgb[2]).toBeLessThan(90);
+      }
     }
     try {
       const studioData = join(directory, 'data');
