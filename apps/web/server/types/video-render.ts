@@ -77,6 +77,7 @@ export interface OwnedVideoDescriptor extends OwnedMediaDescriptor {
 }
 export interface LegacyRenderAdmission {
   compositionId: 'VideoWithSubtitles';
+  webJobId: string;
   sourceAsset: OwnedVideoDescriptor;
   logoAsset?: OwnedMediaDescriptor;
   inputProps: {

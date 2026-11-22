@@ -8,10 +8,10 @@ import { ValidationError } from '@/server/lib/utils';
 
 export default workspacePage('/editor/[id]', async (user, { params }) => {
   try {
-    const { sourceAssetId, subtitles } = await editorMedia(user.id, (await params).id!);
+    const media = await editorMedia(user.id, (await params).id!);
     return (
       <main className="min-h-screen bg-gray-50">
-        <VideoEditorContainer sourceAssetId={sourceAssetId} subtitles={subtitles} />
+        <VideoEditorContainer {...media} />
       </main>
     );
   } catch (error) {

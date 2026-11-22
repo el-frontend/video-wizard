@@ -1,3 +1,4 @@
+import { renderAdmission } from './render-admission';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AssetRecord } from '@workspace/video-project';
@@ -42,6 +43,8 @@ const service = new SubtitleGenerationService(renderOrigin);
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.spyOn(renderAdmission, 'reserve').mockResolvedValue(null);
+  vi.spyOn(renderAdmission, 'accept').mockResolvedValue(undefined);
   vi.spyOn(AssetService.prototype, 'get').mockResolvedValue(record);
   vi.spyOn(AssetService.prototype, 'ingest').mockResolvedValue({ ...record, id: outputId });
 });

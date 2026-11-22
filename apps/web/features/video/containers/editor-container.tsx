@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 interface VideoEditorContainerProps {
   sourceAssetId: string;
+  sourceDurationMs: number;
   subtitles: SubtitleSegment[];
 }
 
@@ -16,7 +17,11 @@ interface VideoEditorContainerProps {
  * Client-side container for the video editor
  * Manages state for preview and export
  */
-export function VideoEditorContainer({ sourceAssetId, subtitles }: VideoEditorContainerProps) {
+export function VideoEditorContainer({
+  sourceAssetId,
+  sourceDurationMs,
+  subtitles,
+}: VideoEditorContainerProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<CaptionTemplate>('default');
 
   return (
@@ -30,6 +35,7 @@ export function VideoEditorContainer({ sourceAssetId, subtitles }: VideoEditorCo
           </div>
           <VideoEditorPreview
             videoUrl={'/api/studio/assets/' + sourceAssetId}
+            sourceDurationMs={sourceDurationMs}
             subtitles={subtitles}
             initialTemplate={selectedTemplate}
             onTemplateChange={setSelectedTemplate}

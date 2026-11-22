@@ -1,3 +1,4 @@
+import { UNKNOWN_RENDER_ADMISSION } from './render-admission';
 import { OwnedClipInputSchema } from '@/server/types/clip-render';
 import { z } from 'zod';
 import type { AssetRecord } from '@workspace/video-project';
@@ -145,11 +146,16 @@ export async function editorMedia(owner: string, jobId: string) {
     const source = await resolveOwnedVideo(owner, render.data);
     if (renderReceipt.safeParse(job.resultData).data?.sourceAssetId !== source.assetId)
       throw new ValidationError(reingest);
-    return { sourceAssetId: source.assetId, subtitles: renderCaptions(render.data) };
+    return {
+      sourceAssetId: source.assetId,
+      sourceDurationMs: source.durationMs,
+      subtitles: renderCaptions(render.data),
+    };
   }
   const source = await jobVideo(owner, job);
   return {
     sourceAssetId: source.id,
+    sourceDurationMs: measuredVideo(source),
     subtitles: legacyMsToSeconds(completedTranscript(job)?.subtitles ?? []),
   };
 }
@@ -173,7 +179,12 @@ export function publicJob(job: Job) {
     ...job,
     inputData: input.success ? input.data : null,
     resultData: null,
-    errorMessage: job.errorMessage ? 'No se pudo completar el trabajo. Vuelve a intentarlo.' : null,
+    errorMessage:
+      job.errorMessage === UNKNOWN_RENDER_ADMISSION
+        ? UNKNOWN_RENDER_ADMISSION + ' ID: ' + job.id
+        : job.errorMessage
+          ? 'No se pudo completar el trabajo. Vuelve a intentarlo.'
+          : null,
   };
   if (!input.success) return { ...summary, errorMessage: reingest };
   if (job.status !== 'completed') return summary;

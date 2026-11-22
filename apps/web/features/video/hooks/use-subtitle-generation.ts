@@ -156,7 +156,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       updateState({
         sourceAssetId: asset.id,
         sourceDurationMs: null,
-        progress: `Video ready: ${asset.name}`,
+        progress: `Video listo: ${asset.name}`,
       });
 
       // Step 2: Generate subtitles

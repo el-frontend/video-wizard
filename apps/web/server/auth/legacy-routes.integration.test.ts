@@ -261,7 +261,10 @@ it('revalidates the stored parent job in the worker and persists its exact priva
   );
   expect(response.status).toBe(202);
   const jobId = (await response.json()).data.jobId;
-  const job = (await jobs.getById(jobId, owner))!;
+  const { queueService } = await import('@/server/services/queue-service');
+  const claimed = await queueService.claimNext('default');
+  const job = claimed!.job;
+  expect(job.id).toBe(jobId);
   expect(job.inputData).toMatchObject({ jobId: cropId, subtitleClock: 'seconds', subtitles });
   const remoteId = randomUUID();
   const network = vi.spyOn(globalThis, 'fetch');
@@ -281,8 +284,9 @@ it('revalidates the stored parent job in the worker and persists its exact priva
       )
       .mockResolvedValueOnce(new Response(bytes));
     const result = await handlers.render(job);
-    await jobs.complete(jobId, result);
+    await queueService.complete(claimed!.task.id, jobId, result);
     const admission = JSON.parse(String(network.mock.calls[0]![1]?.body));
+    expect(admission.webJobId).toBe(jobId);
     expect(admission.sourceAsset).toMatchObject({
       assetId: derivedId,
       width: 32,
@@ -348,6 +352,7 @@ it('legacyEditorIgnoresRawQueryPaths and never transcribes on navigation', async
     const shell = await page(params(cropId));
     expect(shell.props.children.props.children.props).toEqual({
       sourceAssetId: derivedId,
+      sourceDurationMs: 1000,
       subtitles: [],
     });
     expect((await page(params(staleId))).props.children.props.children[0].props.children).toMatch(

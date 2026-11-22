@@ -46,7 +46,7 @@ export const jobs = pgTable(
     /** Flexible input payload depending on job type (video path, YouTube URL, etc.) */
     inputData: t.jsonb('input_data'),
 
-    /** Result payload after job completion (transcription, analysis, render URL, etc.) */
+    /** Private admission receipt during render; public result once the work completes. */
     resultData: t.jsonb('result_data'),
 
     /** Error message when status is 'failed' */

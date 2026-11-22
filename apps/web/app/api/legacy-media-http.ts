@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { requireAuth, UnauthorizedError, unauthorizedResponse } from '@/server/lib/auth';
 import { ValidationError } from '@/server/lib/utils';
 import { AssetNotFoundError } from '@/server/services/studio/asset-service';
-import { jobHistoryService, type JobType } from '@/server/services/job-history-service';
+import type { JobType } from '@/server/services/job-history-service';
 import { queueService } from '@/server/services/queue-service';
 import {
   resolveBrand,
@@ -41,8 +41,7 @@ export async function mediaRequest(
 }
 
 export async function enqueue(owner: string, type: JobType, inputData: unknown) {
-  const job = await jobHistoryService.create({ userId: owner, type, inputData });
-  await queueService.enqueue({ jobId: job.id, queueName: 'default' });
+  const job = await queueService.enqueue({ userId: owner, type, inputData, queueName: 'default' });
   return Response.json({ success: true, data: { jobId: job.id } }, { status: 202 });
 }
 

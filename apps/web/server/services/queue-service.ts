@@ -4,13 +4,15 @@ import { db } from '@/server/db';
 import { jobs, queueTasks, taskQueues } from '@/server/db/schema';
 import { ServiceError } from '@/server/lib/utils';
 
-import type { Job } from './job-history-service';
+import type { Job, JobType } from './job-history-service';
 
 export type QueueTask = typeof queueTasks.$inferSelect;
 export type TaskQueue = typeof taskQueues.$inferSelect;
 
 interface EnqueueInput {
-  jobId: string;
+  userId: string;
+  type: JobType;
+  inputData: unknown;
   queueName: string;
   /** Lower runs earlier within the same queue. Defaults to 0. */
   position?: number;
@@ -86,30 +88,28 @@ class QueueService {
     return racedExisting;
   }
 
-  /**
-   * Enqueue an existing job (must already exist in `jobs`).
-   * Updates the job status to `queued` so the user-facing list shows
-   * the right state.
-   */
-  async enqueue({ jobId, queueName, position = 0, maxRetries }: EnqueueInput): Promise<QueueTask> {
+  /** Publish the history row and executable task in the same commit. */
+  async enqueue({ userId, type, inputData, queueName, position = 0, maxRetries }: EnqueueInput) {
     const queue = await this.ensureQueue(queueName);
-
-    const [task] = await db
-      .insert(queueTasks)
-      .values({
-        jobId,
-        queueId: queue.id,
-        status: 'pending',
-        position,
-        ...(maxRetries !== undefined ? { maxRetries } : {}),
-      })
-      .returning();
-
-    if (!task) throw new ServiceError('Failed to enqueue task');
-
-    await db.update(jobs).set({ status: 'queued' }).where(eq(jobs.id, jobId));
-
-    return task;
+    return db.transaction(async (tx) => {
+      const [job] = await tx
+        .insert(jobs)
+        .values({ userId, type, inputData, status: 'queued' })
+        .returning({ id: jobs.id });
+      if (!job) throw new ServiceError('Failed to create queued job');
+      const [task] = await tx
+        .insert(queueTasks)
+        .values({
+          jobId: job.id,
+          queueId: queue.id,
+          status: 'pending',
+          position,
+          maxRetries,
+        })
+        .returning({ id: queueTasks.id });
+      if (!task) throw new ServiceError('Failed to create queue task');
+      return job;
+    });
   }
 
   /**
@@ -202,19 +202,31 @@ class QueueService {
    * `nextRetryAt` set via exponential backoff) when attempts remain;
    * otherwise marks both task and job as `failed`.
    */
-  async fail(taskId: string, jobId: string, errorMessage: string): Promise<FailResult> {
+  async fail(
+    taskId: string,
+    jobId: string,
+    errorMessage: string,
+    retryable = true
+  ): Promise<FailResult> {
     return await db.transaction(async (tx) => {
       const [current] = await tx
-        .select({ attempts: queueTasks.attempts, maxRetries: queueTasks.maxRetries })
+        .select({
+          attempts: queueTasks.attempts,
+          maxRetries: queueTasks.maxRetries,
+          status: queueTasks.status,
+        })
         .from(queueTasks)
-        .where(eq(queueTasks.id, taskId))
-        .limit(1);
+        .where(and(eq(queueTasks.id, taskId), eq(queueTasks.jobId, jobId)))
+        .limit(1)
+        .for('update');
 
       if (!current) {
         throw new ServiceError(`Queue task ${taskId} disappeared mid-failure`);
       }
 
-      if (current.attempts < current.maxRetries) {
+      // A committed completion may lose its acknowledgement to the worker.
+      if (current.status === 'completed') return { retrying: false, nextRetryAt: null };
+      if (retryable && current.attempts < current.maxRetries) {
         const nextRetryAt = computeNextRetry(current.attempts);
 
         await tx

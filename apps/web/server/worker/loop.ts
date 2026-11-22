@@ -1,3 +1,4 @@
+import { UnknownRenderAdmissionError } from '@/server/services/render-admission';
 import { logger } from '@/server/lib/utils';
 import { type ClaimedTask, queueService } from '@/server/services/queue-service';
 
@@ -50,7 +51,12 @@ async function processOne(
     logger.info('Worker completed task', { taskId: task.id, jobId: job.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown handler error';
-    const outcome = await queueService.fail(task.id, job.id, message);
+    const outcome = await queueService.fail(
+      task.id,
+      job.id,
+      message,
+      !(error instanceof UnknownRenderAdmissionError)
+    );
 
     logger.error('Worker handler failed', error, {
       taskId: task.id,

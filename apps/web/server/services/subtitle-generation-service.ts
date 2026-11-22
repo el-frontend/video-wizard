@@ -1,3 +1,4 @@
+import { renderAdmission, UnknownRenderAdmissionError } from './render-admission';
 import type { LegacyRenderAdmission } from '@/server/types/video-render';
 import type { ReadableStream } from 'node:stream/web';
 import { z } from 'zod';
@@ -60,6 +61,7 @@ export class SubtitleGenerationService {
     const { brandKit, logoAsset } = await resolveBrand(owner, input.brandKit);
     const admission: LegacyRenderAdmission = {
       compositionId: 'VideoWithSubtitles',
+      webJobId,
       sourceAsset,
       logoAsset,
       inputProps: {
@@ -72,14 +74,24 @@ export class SubtitleGenerationService {
         brandKit,
       },
     };
-    const response = await fetch(this.renderOrigin + '/renders', {
-      method: 'POST',
-      redirect: 'error',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(admission),
-    });
-    if (!response.ok) throw new Error('No se pudo iniciar la exportación.');
-    const { jobId } = z.object({ jobId: z.uuid() }).parse(await response.json());
+    let jobId = await renderAdmission.reserve(owner, webJobId);
+    if (!jobId) {
+      try {
+        const response = await fetch(this.renderOrigin + '/renders', {
+          method: 'POST',
+          redirect: 'error',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(admission),
+        });
+        if (!response.ok) throw new UnknownRenderAdmissionError();
+        jobId = z.object({ jobId: z.uuid() }).parse(await response.json()).jobId;
+      } catch {
+        // Once the request has left this process, a failed response cannot establish non-admission.
+        throw new UnknownRenderAdmissionError();
+      }
+      // If this write loses its acknowledgement, a retry rereads the durable receipt.
+      await renderAdmission.accept(owner, webJobId, jobId);
+    }
     const resource = this.renderOrigin + '/renders/' + jobId;
     let lastProgress = -1;
     for (let attempt = 0; attempt < 900; attempt++) {
