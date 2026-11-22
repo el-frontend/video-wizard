@@ -81,6 +81,7 @@ export class SubtitleGenerationService {
     if (!response.ok) throw new Error('No se pudo iniciar la exportación.');
     const { jobId } = z.object({ jobId: z.uuid() }).parse(await response.json());
     const resource = this.renderOrigin + '/renders/' + jobId;
+    let lastProgress = -1;
     for (let attempt = 0; attempt < 900; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const status = await fetch(resource, { redirect: 'error', cache: 'no-store' });
@@ -104,8 +105,18 @@ export class SubtitleGenerationService {
           videoUrl: '/api/studio/assets/' + output.id,
         };
       }
-      if (typeof receipt.progress === 'number' && onProgress)
-        await onProgress(Math.round(receipt.progress * 100));
+      if (receipt.status === 'in-progress' && typeof receipt.progress === 'number' && onProgress) {
+        const percent = Math.round(receipt.progress * 100);
+        if (percent !== lastProgress) {
+          lastProgress = percent;
+          // The renderer already accepted this job. A progress write cannot invalidate it.
+          try {
+            await onProgress(percent);
+          } catch {
+            console.warn('Could not record render progress.');
+          }
+        }
+      }
     }
     throw new Error('Se agotó el tiempo de exportación.');
   }

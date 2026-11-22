@@ -139,3 +139,30 @@ it('requires a UUID receipt before requesting status or the artifact', async () 
   ).rejects.toThrow();
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+
+it('finishes the admitted render when reporting progress fails', async () => {
+  const network = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ jobId: rendererId }))
+    .mockResolvedValueOnce(Response.json({ status: 'in-progress', progress: 0.5 }))
+    .mockResolvedValueOnce(Response.json({ status: 'in-progress', progress: 0.5 }))
+    .mockResolvedValueOnce(Response.json({ status: 'completed' }))
+    .mockResolvedValueOnce(new Response('fixture'));
+  vi.stubGlobal('fetch', network);
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const progress = vi.fn().mockRejectedValue(new Error('unavailable'));
+  const render = service.render(
+    owner,
+    webJobId,
+    storedRenderInput.parse({
+      sourceAssetId: sourceId,
+      subtitleClock: 'seconds',
+      subtitles: [],
+    }),
+    progress
+  );
+  await vi.advanceTimersByTimeAsync(6000);
+  expect(await render).toMatchObject({ jobId: webJobId, outputAssetId: outputId });
+  expect(progress).toHaveBeenCalledExactlyOnceWith(50);
+  expect(network.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+});
