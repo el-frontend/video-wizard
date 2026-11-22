@@ -94,7 +94,7 @@ node scripts/local-studio.mjs worker
 node scripts/local-studio.mjs web
 ```
 
-Abre <http://localhost:3000/signin>. Para volver a iniciar un renderer ya creado con la misma configuración ejecuta `docker start video-wizard-studio-renderer`.
+Abre <http://localhost:3000/signin>. Con los servicios en ejecución, `node scripts/local-studio.mjs smoke` abre Chrome con el usuario demo, verifica la página privada y los controles de cuenta a 800 y 1280 píxeles y cierra la sesión. Guarda las capturas de la barra lateral en un directorio temporal privado. Para volver a iniciar un renderer ya creado con la misma configuración ejecuta `docker start video-wizard-studio-renderer`.
 
 ## Diagnóstico
 

@@ -13,8 +13,6 @@ const python = join(root, 'apps/processing-engine');
 const envFile = (path) => parseEnv(readFileSync(path, 'utf8'));
 const privateEnv = join(root, '.env.studio-auth');
 const command = process.argv[2];
-const render = envFile(join(root, '.env.studio-render'));
-const webEnv = envFile(join(web, '.env.local'));
 process.umask(0o077);
 
 function run(program, args, env, cwd = root, capture = false) {
@@ -36,6 +34,12 @@ function service(program, args, env, cwd = root) {
 }
 
 async function main() {
+  if (command === 'smoke') {
+    const { checkLocalStudio } = await import('./local-studio-smoke.mjs');
+    return checkLocalStudio(root);
+  }
+  const render = envFile(join(root, '.env.studio-render'));
+  const webEnv = envFile(join(web, '.env.local'));
   const target = new URL(webEnv.DATABASE_URL);
   assert.ok(
     ['localhost', '127.0.0.1'].includes(target.hostname) &&
@@ -225,7 +229,7 @@ async function main() {
       env
     );
   }
-  throw new Error('Expected prepare, migrate, build, web, worker, python or renderer.');
+  throw new Error('Expected prepare, migrate, build, web, worker, python, renderer or smoke.');
 }
 main().catch((error) => {
   // A rejected connection may include the original connection string in a driver error.
