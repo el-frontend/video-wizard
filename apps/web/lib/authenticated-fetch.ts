@@ -8,12 +8,35 @@ let owner: string | null = null;
 let session: string | null = null;
 let suspended = true;
 let generation = 0;
+let jobLifetime: AbortController | null = null;
 let cached: { token: string; expires: number } | null = null;
 let pending: Promise<string | null> | null = null;
 
+export type WorkspaceJob = { ownerId: string | null; signal: AbortSignal };
+
+function endJobs() {
+  jobLifetime?.abort(
+    new DOMException('Se canceló el seguimiento al salir de la cuenta.', 'AbortError')
+  );
+}
+
+// A failed sign-out can admit new work without reviving any earlier operation.
+export function resumeWorkspaceJobs(ownerId: string) {
+  if (owner !== ownerId || suspended || (jobLifetime && !jobLifetime.signal.aborted)) return;
+  jobLifetime = new AbortController();
+  for (const event of [
+    sessionEvents.ending,
+    sessionEvents.leaving,
+    sessionEvents.accountChanged,
+    'pagehide',
+  ]) {
+    window.addEventListener(event, endJobs, { signal: jobLifetime.signal });
+  }
+}
+
 // Long-running readers retain the owner that submitted the job across session renewal.
 export function workspaceIdentity() {
-  return { ownerId: owner, active: !suspended };
+  return { ownerId: owner, active: !suspended, signal: jobLifetime?.signal ?? AbortSignal.abort() };
 }
 
 export function clearAccessToken(): void {
@@ -24,9 +47,11 @@ export function clearAccessToken(): void {
 
 export function bindWorkspaceSession(ownerId: string, sessionId: string | null) {
   if (owner !== ownerId || session !== sessionId || suspended) clearAccessToken();
+  if (owner !== ownerId) endJobs();
   owner = ownerId;
   session = sessionId;
   suspended = false;
+  resumeWorkspaceJobs(ownerId);
 }
 
 export function suspendWorkspace() {

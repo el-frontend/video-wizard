@@ -1,5 +1,9 @@
 import { sessionEvents } from '@/features/auth/lib/session-events';
-import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
+import {
+  authenticatedFetch,
+  workspaceIdentity,
+  type WorkspaceJob,
+} from '@/lib/authenticated-fetch';
 /**
  * Subset of the `jobs` row that the client cares about. Mirrors the
  * server-side Job type without coupling the client bundle to drizzle.
@@ -45,32 +49,25 @@ function waitForRead(signal: AbortSignal, intervalMs?: number) {
 /** Follow an accepted job using only status GETs, including after same-owner sign-in. */
 export async function pollJobUntilDone(
   jobId: string,
-  ownerId: string | null,
+  operation: WorkspaceJob,
   onTick?: (job: PolledJob) => void,
   options: PollOptions = {}
 ): Promise<PolledJob> {
   const { intervalMs = 2000, timeoutMs = 30 * 60 * 1000 } = options;
   const url = '/api/jobs/' + encodeURIComponent(jobId);
   const controller = new AbortController();
-  const { signal } = controller;
-  const cancel = () =>
-    controller.abort(
-      new DOMException('El seguimiento del trabajo terminó al cambiar de sesión.', 'AbortError')
-    );
-  const endEvents = [
-    sessionEvents.ending,
-    sessionEvents.leaving,
-    sessionEvents.accountChanged,
-    'pagehide',
-  ];
-  endEvents.forEach((event) => window.addEventListener(event, cancel));
+  // The submitting caller captured the account lifetime before sending its POST.
+  // It may already be aborted when a late 202 body supplies the job ID.
+  const signal = AbortSignal.any([operation.signal, controller.signal]);
   const deadline = setTimeout(
     () => controller.abort(new Error('Se agotó el tiempo de espera del trabajo.')),
     timeoutMs
   );
   function checkOwner() {
     const current = workspaceIdentity();
-    if (!ownerId || ownerId !== current.ownerId) cancel();
+    if (!operation.ownerId || operation.ownerId !== current.ownerId) {
+      throw new DOMException('El trabajo pertenece a otra cuenta.', 'AbortError');
+    }
     signal.throwIfAborted();
     return current.active;
   }
@@ -95,6 +92,5 @@ export async function pollJobUntilDone(
     }
   } finally {
     clearTimeout(deadline);
-    endEvents.forEach((event) => window.removeEventListener(event, cancel));
   }
 }

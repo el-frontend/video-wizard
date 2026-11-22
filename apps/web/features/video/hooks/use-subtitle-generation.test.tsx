@@ -2,7 +2,8 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { sessionEvents } from '@/features/auth/lib/session-events';
-import { bindWorkspaceSession } from '@/lib/authenticated-fetch';
+import { acceptedJobResponse } from '@/test/accepted-job-response';
+import { bindWorkspaceSession, suspendWorkspace } from '@/lib/authenticated-fetch';
 import { useSubtitleGeneration } from './use-subtitle-generation';
 
 const { token } = vi.hoisted(() => ({ token: vi.fn() }));
@@ -154,3 +155,60 @@ it('finishes the original accepted render after same-owner sign-in', async () =>
   expect(view.result.current.renderedVideoUrl).toBe(output);
   expect(onComplete).toHaveBeenCalledExactlyOnceWith(output);
 });
+
+it.each(['transcription during retirement', 'render after leaving'])(
+  'cancels %s between acceptance and the first status read',
+  async (scenario) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { view, work, onComplete } = await startAcceptedJob();
+    await act(async () => {
+      bind('owner-a', 'renewed');
+      window.dispatchEvent(new Event(sessionEvents.restored));
+      await work;
+    });
+    const render = scenario.startsWith('render');
+    const accepted = acceptedJobResponse('already-accepted');
+    const fetcher = vi.mocked(fetch).mockClear();
+    if (!render)
+      fetcher.mockResolvedValueOnce(Response.json({ path: 'fixture', filename: 'fixture.mp4' }));
+    fetcher.mockResolvedValueOnce(accepted.response).mockImplementation(async () =>
+      Response.json({
+        success: true,
+        data: {
+          id: 'already-accepted',
+          status: 'completed',
+          resultData: { subtitles: [], sourceDurationMs: 1000, videoUrl: '/late' },
+        },
+      })
+    );
+    let finished = false;
+    await act(async () => {
+      const action = render
+        ? view.result.current.renderVideo()
+        : view.result.current.generateSubtitles();
+      void action.then(() => {
+        finished = true;
+      });
+    });
+    expect(accepted.response.bodyUsed).toBe(true);
+    const count = fetcher.mock.calls.length;
+    try {
+      await act(async () => {
+        window.dispatchEvent(new Event(sessionEvents.ending));
+        if (render) {
+          suspendWorkspace();
+          window.dispatchEvent(new Event(sessionEvents.leaving));
+        }
+        accepted.deliver();
+      });
+      expect(finished).toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(count);
+      expect(view.result.current.currentStep).toBe('error');
+      expect(onComplete).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        window.dispatchEvent(new Event(sessionEvents.leaving));
+      });
+    }
+  }
+);

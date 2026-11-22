@@ -1,6 +1,6 @@
 'use client';
 
-import { authenticatedFetch } from '@/lib/authenticated-fetch';
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import type { ContentAnalysis } from '@/lib/types/content-intelligence';
 import { useState } from 'react';
 import { formatTranscriptForAI, validateVideoFile } from '../lib/utils';
@@ -96,7 +96,9 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
     if (!isYouTube && !state.file) return;
     if (isYouTube && !isYouTubeUrl(state.youtubeUrl)) return;
 
+    const operation = workspaceIdentity();
     try {
+      operation.signal.throwIfAborted();
       // Step 1: Get video to server (upload or YouTube download)
       updateState({
         currentStep: 'uploading',
@@ -106,14 +108,16 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
 
       const asset = await registerSource(
         isYouTube ? state.youtubeUrl : state.file!,
-        new AbortController().signal
+        operation.signal
       );
+      operation.signal.throwIfAborted();
       updateState({
         sourceAssetId: asset.id,
         currentStep: 'transcribing',
         progress: 'Extracting audio and generating subtitles...',
       });
-      const { cues, language } = await transcribeSource(asset.id);
+      const { cues, language } = await transcribeSource(asset.id, operation.signal);
+      operation.signal.throwIfAborted();
       const transcriptionData: TranscriptionResult = {
         cues,
         language: language ?? 'en',
@@ -137,6 +141,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       const formattedTranscript = formatTranscriptForAI(transcriptionData.segments);
 
       const analysisResponse = await authenticatedFetch('/api/analyze-content', {
+        signal: operation.signal,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,6 +157,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       }
 
       const analysisData = await analysisResponse.json();
+      operation.signal.throwIfAborted();
 
       if (!analysisData.success || !analysisData.data) {
         throw new Error(analysisData.error || 'Analysis error');

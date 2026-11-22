@@ -1,6 +1,6 @@
 'use client';
 
-import { authenticatedFetch } from '@/lib/authenticated-fetch';
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import type { GeneratedClip, SubtitleSegment, SubtitleTemplate } from '@/features/video';
 import {
   AspectRatioSelector,
@@ -99,6 +99,8 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
       return;
     }
 
+    const operation = workspaceIdentity();
+    if (operation.ownerId !== ownerId || operation.signal.aborted) return;
     setIsGeneratingClips(true);
 
     // Take top 5 clips by viral score
@@ -137,7 +139,9 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
 
       try {
         // Step 1: Enqueue the vertical clip (CROP ONLY) and poll for it.
+        operation.signal.throwIfAborted();
         const clipResponse = await authenticatedFetch('/api/create-clip', {
+          signal: operation.signal,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -159,7 +163,8 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
           throw new Error(clipQueued.message || 'Clip creation queue failed');
         }
 
-        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId, ownerId);
+        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId, operation);
+        operation.signal.throwIfAborted();
         if (finishedClip.status === 'failed') {
           throw new Error(finishedClip.errorMessage || 'Clip creation failed');
         }
@@ -203,7 +208,17 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
           )
         );
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') break;
+        if (
+          operation.signal.aborted ||
+          (err instanceof DOMException && err.name === 'AbortError')
+        ) {
+          setGeneratedClips((prev) =>
+            prev.map((card) =>
+              card.isLoading ? { ...card, isLoading: false, error: 'Generación cancelada.' } : card
+            )
+          );
+          break;
+        }
         console.error(`Error generating clip ${i + 1}:`, err);
 
         // Mark this clip as error

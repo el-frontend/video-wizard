@@ -131,6 +131,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
    * Upload video (or download from YouTube) and generate subtitles
    */
   const generateSubtitles = async () => {
+    const operation = workspaceIdentity();
     const isYouTube = state.inputMode === 'youtube';
 
     if (!isYouTube && !state.file) return;
@@ -149,6 +150,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       if (isYouTube) {
         const downloadResponse = await fetch(`${PYTHON_ENGINE_URL}/download-youtube`, {
           method: 'POST',
+          signal: operation.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: state.youtubeUrl }),
         });
@@ -165,6 +167,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
 
         const uploadResponse = await fetch(`${PYTHON_ENGINE_URL}/upload`, {
           method: 'POST',
+          signal: operation.signal,
           body: formData,
         });
 
@@ -175,6 +178,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         uploadData = await uploadResponse.json();
       }
 
+      operation.signal.throwIfAborted();
       updateState({
         uploadedPath: uploadData.path,
         sourceDurationMs: null,
@@ -187,9 +191,9 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         progress: 'Generating subtitles from video...',
       });
 
-      const { ownerId } = workspaceIdentity();
       const subtitleResponse = await authenticatedFetch('/api/generate-subtitles', {
         method: 'POST',
+        signal: operation.signal,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -210,7 +214,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       }
 
       // Worker drains the queue; poll the job until it finishes.
-      const finished = await pollJobUntilDone(subtitleData.data.jobId, ownerId, (job) => {
+      const finished = await pollJobUntilDone(subtitleData.data.jobId, operation, (job) => {
         if (job.status === 'queued' || job.status === 'pending') {
           updateState({ progress: 'Waiting in queue...' });
         } else if (job.status === 'processing') {
@@ -218,6 +222,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         }
       });
 
+      operation.signal.throwIfAborted();
       if (finished.status === 'failed') {
         throw new Error(finished.errorMessage || 'Transcription failed');
       }
@@ -262,6 +267,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
    * `jobs` row via `GET /api/jobs/:id`.
    */
   const renderVideo = async (brandKit?: BrandKit) => {
+    const operation = workspaceIdentity();
     if (!state.uploadedPath || state.sourceDurationMs === null) {
       updateState({
         error: 'No hay un video de origen disponible',
@@ -277,9 +283,9 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         error: '',
       });
 
-      const { ownerId } = workspaceIdentity();
       const renderResponse = await authenticatedFetch('/api/render-video-subtitles', {
         method: 'POST',
+        signal: operation.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPath: state.uploadedPath,
@@ -304,7 +310,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
 
       const jobId: string = renderData.data.jobId;
 
-      const finished = await pollJobUntilDone(jobId, ownerId, (job) => {
+      const finished = await pollJobUntilDone(jobId, operation, (job) => {
         if (job.status === 'queued' || job.status === 'pending') {
           updateState({ progress: 'Waiting in queue...' });
         } else if (job.status === 'processing') {
@@ -313,6 +319,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         }
       });
 
+      operation.signal.throwIfAborted();
       if (finished.status === 'failed') {
         throw new Error(finished.errorMessage || 'Render failed');
       }

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { workspaceIdentity } from '@/lib/authenticated-fetch';
 import { WorkspaceShell } from './workspace-shell';
 import { registerPreviewRetirement, sessionEvents } from '../lib/session-events';
 const { signOut, login, live } = vi.hoisted(() => ({
@@ -73,7 +74,9 @@ it('revokes the session when a preview retirement never settles', async () => {
   signOut.mockReset().mockResolvedValue({ error: null });
   try {
     render(shell);
+    const job = workspaceIdentity();
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    expect(job.signal.aborted).toBe(true);
     expect(retire).toHaveBeenCalledOnce();
     expect(signOut).not.toHaveBeenCalled();
     await act(async () => {
@@ -85,4 +88,18 @@ it('revokes the session when a preview retirement never settles', async () => {
     remove();
     vi.useRealTimers();
   }
+});
+
+it('after failed sign-out admits only new work for the same owner', async () => {
+  signOut.mockReset().mockResolvedValue({ error: { status: 503 } });
+  render(shell);
+  const earlier = workspaceIdentity();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  });
+  expect(screen.getByRole('alert').textContent).toContain('No se pudo cerrar');
+  expect(earlier.signal.aborted).toBe(true);
+  const next = workspaceIdentity();
+  expect(next.ownerId).toBe(earlier.ownerId);
+  expect(next.signal.aborted).toBe(false);
 });

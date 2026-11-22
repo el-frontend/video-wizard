@@ -60,9 +60,10 @@ export function useClipWorkflow() {
       }));
 
       // Step 1: Enqueue the vertical clip via the worker queue.
-      const { ownerId } = workspaceIdentity();
+      const operation = workspaceIdentity();
       const clipResponse = await authenticatedFetch('/api/create-clip', {
         method: 'POST',
+        signal: operation.signal,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -85,7 +86,8 @@ export function useClipWorkflow() {
         throw new Error('Clip creation queue failed');
       }
 
-      const finished = await pollJobUntilDone(queued.data.jobId, ownerId);
+      const finished = await pollJobUntilDone(queued.data.jobId, operation);
+      operation.signal.throwIfAborted();
       if (finished.status === 'failed') {
         throw new Error(finished.errorMessage || 'Clip creation failed');
       }
@@ -122,6 +124,7 @@ export function useClipWorkflow() {
 
         const transcribeResponse = await authenticatedFetch('/api/transcribe', {
           method: 'POST',
+          signal: operation.signal,
           headers: {
             'Content-Type': 'application/json',
           },
@@ -135,6 +138,7 @@ export function useClipWorkflow() {
         }
 
         const transcribeResult = await transcribeResponse.json();
+        operation.signal.throwIfAborted();
 
         // Filter segments to match clip time range
         const filteredSegments = transcribeResult.data.segments

@@ -4,7 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { Card } from '@workspace/ui/components/card';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { authClient } from '@/lib/auth-client';
-import { bindWorkspaceSession, suspendWorkspace } from '@/lib/authenticated-fetch';
+import {
+  bindWorkspaceSession,
+  resumeWorkspaceJobs,
+  suspendWorkspace,
+} from '@/lib/authenticated-fetch';
 import { CredentialsForm } from './credentials-form';
 import { retirePreviews, sessionEvents } from '../lib/session-events';
 
@@ -59,8 +63,7 @@ export function WorkspaceShell({
   }, [user.id, sessionId]);
   useLayoutEffect(() => {
     if (differentOwner) {
-      suspendWorkspace();
-      setDestination('/projects');
+      window.dispatchEvent(new Event(sessionEvents.accountChanged));
     } else if (live.data && live.data.session.id !== currentSession.current) {
       currentSession.current = live.data.session.id;
       bindWorkspaceSession(user.id, currentSession.current);
@@ -82,15 +85,13 @@ export function WorkspaceShell({
   }, [locked]);
   async function signedIn(id: string) {
     if (id !== user.id) {
-      suspendWorkspace();
-      setDestination('/projects');
+      window.dispatchEvent(new Event(sessionEvents.accountChanged));
       return;
     }
     const verified = await authClient.getSession();
     if (!verified.data || verified.data.user.id !== user.id) {
       if (verified.data) {
-        suspendWorkspace();
-        setDestination('/projects');
+        window.dispatchEvent(new Event(sessionEvents.accountChanged));
         return;
       }
       throw new Error('Sesión no disponible.');
@@ -118,6 +119,7 @@ export function WorkspaceShell({
       suspendWorkspace();
       setDestination('/signin');
     } catch {
+      resumeWorkspaceJobs(user.id);
       setError('No se pudo cerrar la sesión. Inténtalo de nuevo.');
     } finally {
       setBusy(false);
