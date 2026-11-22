@@ -57,7 +57,7 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
       throw Error('La exportación de prueba excedió el plazo.');
     }
     async function verifyVideo(path, scope, refs, label) {
-      expect((await fetch(base + path)).status).toBe(404);
+      expect((await fetch(base + path)).status).toBe(401);
       expect((await call(path, scope, { ...refs, ownerId: randomUUID() })).status).toBe(404);
       expect((await call(path, scope, refs, undefined, 'HEAD')).status).toBe(200);
       expect((await call(path, scope, refs, undefined, 'GET', { range: 'bytes=0-3' })).status).toBe(
@@ -244,7 +244,7 @@ it.skipIf(import.meta.env.MODE !== 'contained')(
           { ownerId: randomUUID(), projectId, previewId },
           { ...admission, instance: previewId }
         );
-        expect(unrelated.status).toBe(400);
+        expect(unrelated.status).toBe(404);
         const preview = await call(
           '/studio/previews',
           'preview.create',

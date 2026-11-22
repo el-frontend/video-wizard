@@ -7,12 +7,12 @@ from tempfile import TemporaryDirectory
 from typing import Literal, Optional
 import re
 import shutil
-import time
 import uuid
 
 import jwt
 from fastapi import FastAPI, HTTPException, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
+from private_media import private_media
 from pydantic import BaseModel
 
 from audio_service import get_audio_service
@@ -82,18 +82,10 @@ def result_directory(root, operation):
 
 @app.api_route("/uploads/{filename}", methods=["GET", "HEAD"])
 @app.api_route("/output/{filename}", methods=["GET", "HEAD"])
-async def read_result(request: Request, filename: str):
+def read_result(request: Request, filename: str):
     root = OUTPUT_DIR if request.url.path.startswith("/output/") else UPLOAD_DIR
     path = result_directory(root, request.state.operation) / filename
-    if (
-        not path.is_file()
-        or path.is_symlink()
-        or time.time() - path.stat().st_mtime > 3600
-    ):
-        raise HTTPException(404)
-    return FileResponse(
-        path, media_type="video/mp4", headers={"Cache-Control": "no-store"}
-    )
+    return private_media(request, path)
 
 
 class RenderClipResponse(BaseModel):

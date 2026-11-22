@@ -31,7 +31,6 @@ it.skipIf(import.meta.env.MODE !== 'native')(
     ];
     const backend = express(),
       editor = express();
-    backend.use(express.json());
     const a = backend.listen(0, '127.0.0.1'),
       b = editor.listen(0, '127.0.0.1');
     await Promise.all([once(a, 'listening'), once(b, 'listening')]);

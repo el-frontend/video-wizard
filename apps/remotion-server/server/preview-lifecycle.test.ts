@@ -23,7 +23,6 @@ vi.mock('./project-adapter.js', () => ({
 
 it('retires one overlapping preview, then cancels an unmounted preview while staging', async () => {
   const app = express();
-  app.use(express.json());
   const http = app.listen(0, '127.0.0.1');
   await once(http, 'listening');
   const origin = 'http://127.0.0.1:' + (http.address() as AddressInfo).port;

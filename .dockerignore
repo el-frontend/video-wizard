@@ -10,5 +10,8 @@
 **/.pytest_cache
 **/uploads
 **/output
-**/renders
+apps/processing-engine/temp
+apps/processing-engine/temp_videos
+apps/processing-engine/temp_crop_data
+apps/remotion-server/renders
 **/*.tsbuildinfo

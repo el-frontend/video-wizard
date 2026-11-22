@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from main import app
 
@@ -198,3 +199,76 @@ def test_real_http_crop_returns_only_this_operations_audio_video(
         server.should_exit = True
         worker.join(10)
         sock.close()
+
+
+@pytest.mark.parametrize(
+    "prefix,scope", [("output", "crop.read"), ("uploads", "download.read")]
+)
+def test_private_single_ranges(machine, tmp_path, monkeypatch, prefix, scope):
+    from uuid import uuid4
+    from main import result_directory
+    from service_auth import authorize
+
+    monkeypatch.chdir(tmp_path)
+    client = TestClient(app)
+    auth = machine(scope)
+    op = authorize(auth["Authorization"], scope, source=prefix == "output")
+    directory = result_directory(tmp_path / prefix, op)
+    directory.mkdir(parents=True)
+    name = (
+        str(uuid4()) + ".mp4" if prefix == "output" else "yt_jNQXAC9IVRw_abc12345.mp4"
+    )
+    (directory / name).write_bytes(b"0123456789")
+    url = "/" + prefix + "/" + name
+    full = client.get(url, headers=auth)
+    assert full.status_code == 200 and full.content == b"0123456789"
+    for method in ("GET", "HEAD"):
+        for request_range, expected_interval, expected in [
+            ("bytes=2-4", "2-4", b"234"),
+            ("bytes=-3", "7-9", b"789"),
+            ("bytes=8-", "8-9", b"89"),
+            ("bytes=8-40", "8-9", b"89"),
+        ]:
+            response = client.request(
+                method, url, headers={**auth, "Range": request_range}
+            )
+            assert response.status_code == 206
+            assert (
+                response.headers["Content-Range"]
+                == "bytes " + expected_interval + "/10"
+            )
+            assert response.headers["Content-Length"] == str(len(expected))
+            assert response.content == (expected if method == "GET" else b"")
+        for invalid in ("bytes=10-", "bytes=3-2", "bytes=-0", "bytes=0-2,4-6"):
+            response = client.request(method, url, headers={**auth, "Range": invalid})
+            assert (
+                response.status_code == 416
+                and response.headers["Content-Range"] == "bytes */10"
+            )
+            assert (
+                response.headers["Accept-Ranges"] == "bytes"
+                and "no-store" in response.headers["Cache-Control"]
+            )
+        assert (
+            client.request(
+                method,
+                url,
+                headers={**machine(scope, ownerId=str(uuid4())), "Range": "bytes=11-"},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.request(method, url, headers={"Range": "bytes=11-"}).status_code
+            == 401
+        )
+    for validator in (full.headers["ETag"], full.headers["Last-Modified"]):
+        assert (
+            client.get(
+                url, headers={**auth, "Range": "bytes=0-1", "If-Range": validator}
+            ).status_code
+            == 206
+        )
+    miss = client.get(
+        url, headers={**auth, "Range": "bytes=80-", "If-Range": '"other"'}
+    )
+    assert miss.status_code == 200 and miss.content == full.content

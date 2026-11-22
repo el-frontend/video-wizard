@@ -1,7 +1,8 @@
-import type { Express, Request } from 'express';
+import express, { type Express, type Request } from 'express';
+import type { ServicePrincipal } from '@workspace/service-auth';
 import { join } from 'node:path';
 import { legacyAdmission } from '@workspace/render-contract';
-import { serviceRequest } from './service-request.js';
+import { requireService } from './service-request.js';
 import type { makeRenderQueue } from './render-queue.js';
 
 export function installLegacyRoutes(
@@ -10,47 +11,49 @@ export function installLegacyRoutes(
   secret: string,
   rendersDir: string
 ) {
-  app.post('/renders', async (req, res) => {
-    const principal = await serviceRequest(req, 'render.create', secret);
-    if (!principal) {
-      res.status(401).end();
+  const guard = (scope: string) => requireService(secret, scope);
+  app.post('/renders', guard('render.create'), express.json({ limit: '8mb' }), (req, res) => {
+    const principal: ServicePrincipal = res.locals.principal;
+    const input = legacyAdmission.safeParse(req.body);
+    if (!input.success) {
+      res.status(400).end();
       return;
     }
-    const input = legacyAdmission.safeParse(req.body);
-    if (!input.success || input.data.webJobId !== principal.jobId) {
-      res.status(400).end();
+    if (input.data.webJobId !== principal.jobId) {
+      res.status(404).end();
       return;
     }
     res
       .status(202)
       .json({ jobId: queue.createJob({ ownerId: principal.ownerId, admission: input.data }) });
   });
-  async function owned(req: Request, scope: string) {
-    const principal = await serviceRequest(req, scope, secret);
+  function owned(req: Request, principal: ServicePrincipal) {
     const id = String(req.params.id);
     if (!principal || principal.rendererJobId !== id) return;
     const job = queue.jobs.get(id);
     if (job?.data.ownerId === principal.ownerId && job.data.admission.webJobId === principal.jobId)
       return job;
   }
-  app.get('/renders/:id.mp4', async (req, res) => {
-    const job = await owned(req, 'render.artifact');
+  app.get('/renders/:id.mp4', guard('render.artifact'), (req, res) => {
+    const job = owned(req, res.locals.principal);
     if (job?.status !== 'completed') {
       res.status(404).end();
       return;
     }
-    res.set('Cache-Control', 'no-store').sendFile(join(rendersDir, String(req.params.id) + '.mp4'));
+    res
+      .set('Cache-Control', 'private, no-store')
+      .sendFile(join(rendersDir, String(req.params.id) + '.mp4'));
   });
-  app.get('/renders/:id', async (req, res) => {
-    const job = await owned(req, 'render.read');
+  app.get('/renders/:id', guard('render.read'), (req, res) => {
+    const job = owned(req, res.locals.principal);
     if (!job) {
       res.status(404).end();
       return;
     }
     res.set('Cache-Control', 'no-store').json({ status: job.status, progress: job.progress });
   });
-  app.delete('/renders/:id', async (req, res) => {
-    const job = await owned(req, 'render.cancel');
+  app.delete('/renders/:id', guard('render.cancel'), (req, res) => {
+    const job = owned(req, res.locals.principal);
     if (!job) {
       res.status(404).end();
       return;

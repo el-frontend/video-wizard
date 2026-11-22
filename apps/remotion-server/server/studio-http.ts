@@ -1,4 +1,6 @@
-import { serviceRequest } from './service-request.js';
+import express from 'express';
+import type { ServicePrincipal } from '@workspace/service-auth';
+import { requireService } from './service-request.js';
 import { serviceKey } from '@workspace/service-auth';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -89,8 +91,9 @@ export function installStudioRoutes(
   }, 60_000);
   collect.unref();
   const deny = (res: Response) => res.status(404).end();
-  const owned = async (req: Request, scope: string) => {
-    const principal = await serviceRequest(req, scope, config.secret);
+  const guard = (scope: string) => requireService(config.secret, scope);
+  const parseJson = express.json({ limit: '8mb' });
+  const owned = (req: Request, principal: ServicePrincipal) => {
     const id = String(req.params.id);
     const session = sessions.get(id);
     return principal &&
@@ -103,26 +106,23 @@ export function installStudioRoutes(
   };
 
   async function start(req: Request, res: Response, kind: Session['kind']) {
-    const principal = await serviceRequest(
-      req,
-      kind === 'preview' ? 'preview.create' : 'studio.create',
-      config.secret
-    );
-    if (!principal) {
-      res.status(401).end();
-      return;
-    }
+    const principal: ServicePrincipal = res.locals.principal;
     const snapshot: ExportSnapshot | undefined = req.body?.snapshot;
     if (
       !snapshot ||
       !ProjectRecordSchema.shape.document.safeParse(snapshot.document).success ||
       typeof snapshot.revision !== 'string' ||
-      !snapshot.ownerId ||
-      principal.ownerId !== snapshot.ownerId ||
-      principal.projectId !== snapshot.document.id ||
-      (kind === 'preview' && (!principal.previewId || principal.previewId !== req.body.instance))
+      !snapshot.ownerId
     ) {
       res.status(400).json({ error: 'La instantánea no es válida.' });
+      return;
+    }
+    if (
+      principal.ownerId !== snapshot.ownerId ||
+      principal.projectId !== snapshot.document.id ||
+      (kind === 'preview' && principal.previewId !== req.body.instance)
+    ) {
+      deny(res);
       return;
     }
     const id: string =
@@ -253,15 +253,24 @@ export function installStudioRoutes(
       res.off('close', onClose);
     }
   }
-  app.post('/renders', (req, res, next) => {
-    if (req.body?.compositionId === 'StudioProject') void start(req, res, 'render');
-    else next();
-  });
-  app.post('/studio/previews', (req, res) => {
+  // POST /renders serves two operations. A Studio token selects this handler before JSON parsing.
+  app.post(
+    '/renders',
+    requireService(config.secret, 'studio.create', true),
+    parseJson,
+    (req, res) => {
+      if (req.body?.compositionId !== 'StudioProject') {
+        res.status(400).end();
+        return;
+      }
+      void start(req, res, 'render');
+    }
+  );
+  app.post('/studio/previews', guard('preview.create'), parseJson, (req, res) => {
     void start(req, res, 'preview');
   });
-  app.delete('/studio/previews/:id', async (req, res) => {
-    const principal = await serviceRequest(req, 'preview.release', config.secret);
+  app.delete('/studio/previews/:id', guard('preview.release'), async (req, res) => {
+    const principal: ServicePrincipal = res.locals.principal;
     const id = String(req.params.id),
       owner = principal?.ownerId,
       project = principal?.projectId;
@@ -288,8 +297,8 @@ export function installStudioRoutes(
     }
     res.status(204).end();
   });
-  app.get('/studio/renders/:id', async (req, res) => {
-    const s = await owned(req, 'studio.read');
+  app.get('/studio/renders/:id', guard('studio.read'), (req, res) => {
+    const s = owned(req, res.locals.principal);
     if (!s || s.kind !== 'render') {
       deny(res);
       return;
@@ -301,13 +310,13 @@ export function installStudioRoutes(
       projectId: s.snapshot.document.id,
     });
   });
-  app.get('/studio/renders/:id/video', async (req, res) => {
-    const s = await owned(req, 'studio.artifact');
+  app.get('/studio/renders/:id/video', guard('studio.artifact'), (req, res) => {
+    const s = owned(req, res.locals.principal);
     if (!s || s.kind !== 'render' || s.status !== 'completed') {
       deny(res);
       return;
     }
-    res.set('Cache-Control', 'no-store').sendFile(join(s.workspace, 'video.mp4'));
+    res.set('Cache-Control', 'private, no-store').sendFile(join(s.workspace, 'video.mp4'));
   });
   app.use('/studio/previews/:id', (_req, res, next) => {
     res.set({
@@ -339,7 +348,7 @@ export function installStudioRoutes(
     return s?.kind === 'preview' && s.expires > Date.now() ? s : undefined;
   };
   const cookieName = 'studio_preview';
-  app.post('/studio/previews/:id/session', (req, res) => {
+  app.post('/studio/previews/:id/session', parseJson, (req, res) => {
     const s = preview(req);
     if (
       !s ||

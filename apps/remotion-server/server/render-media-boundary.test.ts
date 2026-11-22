@@ -44,7 +44,6 @@ it('executes an admitted job after expiry and closes the staged media host', asy
   });
   queue.schedule('block', () => blocker);
   const app = express();
-  app.use(express.json());
   installLegacyRoutes(app, queue, secret, directory);
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');

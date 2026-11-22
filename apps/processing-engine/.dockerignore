@@ -10,5 +10,7 @@
 **/.pytest_cache
 **/uploads
 **/output
-**/renders
+temp
+temp_videos
+temp_crop_data
 **/*.tsbuildinfo

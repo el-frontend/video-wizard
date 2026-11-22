@@ -1,4 +1,4 @@
-import type { Request } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { verifyServiceToken } from '@workspace/service-auth';
 const refs: Record<string, string[]> = {
   'preview.create': ['projectId', 'previewId'],
@@ -11,7 +11,7 @@ const refs: Record<string, string[]> = {
   'render.cancel': ['jobId', 'rendererJobId'],
   'render.artifact': ['jobId', 'rendererJobId'],
 };
-export async function serviceRequest(req: Request, scope: string, secret: string) {
+async function serviceRequest(req: Request, scope: string, secret: string) {
   const authorization = req.get('authorization');
   if (
     !authorization?.startsWith('Bearer ') ||
@@ -35,4 +35,17 @@ export async function serviceRequest(req: Request, scope: string, secret: string
   } catch {
     return;
   }
+}
+
+export function requireService(secret: string, scope: string, fallThrough = false): RequestHandler {
+  return async (req, res, next) => {
+    const principal = await serviceRequest(req, scope, secret);
+    if (!principal) {
+      if (fallThrough) next('route');
+      else res.set('WWW-Authenticate', 'Bearer').status(401).end();
+      return;
+    }
+    res.locals.principal = principal;
+    next();
+  };
 }
