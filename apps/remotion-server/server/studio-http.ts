@@ -1,3 +1,5 @@
+import { serviceRequest } from './service-request.js';
+import { serviceKey } from '@workspace/service-auth';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -47,7 +49,8 @@ export function installStudioRoutes(
 ) {
   const editor = new URL(config.editorOrigin).origin,
     origin = new URL(config.previewOrigin).origin;
-  if (editor === origin || !config.secret)
+  serviceKey(config.secret);
+  if (editor === origin)
     throw new Error('Configura los orígenes separados y la credencial interna de Studio.');
   const sessions = new Map<string, Session>();
   // DELETE can arrive before Next finishes resolving the snapshot for POST.
@@ -85,16 +88,28 @@ export function installStudioRoutes(
       }
   }, 60_000);
   collect.unref();
-  const internal = (req: Request) => equal(req.headers.authorization, 'Bearer ' + config.secret);
   const deny = (res: Response) => res.status(404).end();
-  const owned = (req: Request) => {
-    const s = sessions.get(String(req.params.id));
-    return internal(req) && s?.owner === req.headers['x-studio-owner'] ? s : undefined;
+  const owned = async (req: Request, scope: string) => {
+    const principal = await serviceRequest(req, scope, config.secret);
+    const id = String(req.params.id);
+    const session = sessions.get(id);
+    return principal &&
+      session &&
+      principal.jobId === id &&
+      principal.projectId === session.snapshot.document.id &&
+      principal.ownerId === session.owner
+      ? session
+      : undefined;
   };
 
   async function start(req: Request, res: Response, kind: Session['kind']) {
-    if (!internal(req)) {
-      deny(res);
+    const principal = await serviceRequest(
+      req,
+      kind === 'preview' ? 'preview.create' : 'studio.create',
+      config.secret
+    );
+    if (!principal) {
+      res.status(401).end();
       return;
     }
     const snapshot: ExportSnapshot | undefined = req.body?.snapshot;
@@ -103,7 +118,9 @@ export function installStudioRoutes(
       !ProjectRecordSchema.shape.document.safeParse(snapshot.document).success ||
       typeof snapshot.revision !== 'string' ||
       !snapshot.ownerId ||
-      req.headers['x-studio-owner'] !== snapshot.ownerId
+      principal.ownerId !== snapshot.ownerId ||
+      principal.projectId !== snapshot.document.id ||
+      (kind === 'preview' && (!principal.previewId || principal.previewId !== req.body.instance))
     ) {
       res.status(400).json({ error: 'La instantánea no es válida.' });
       return;
@@ -244,12 +261,13 @@ export function installStudioRoutes(
     void start(req, res, 'preview');
   });
   app.delete('/studio/previews/:id', async (req, res) => {
+    const principal = await serviceRequest(req, 'preview.release', config.secret);
     const id = String(req.params.id),
-      owner = req.get('x-studio-owner'),
-      project = req.get('x-studio-project');
+      owner = principal?.ownerId,
+      project = principal?.projectId;
     const session = sessions.get(id);
     if (
-      !internal(req) ||
+      principal?.previewId !== id ||
       !instanceId.test(id) ||
       !owner ||
       !project ||
@@ -270,8 +288,8 @@ export function installStudioRoutes(
     }
     res.status(204).end();
   });
-  app.get('/studio/renders/:id', (req, res) => {
-    const s = owned(req);
+  app.get('/studio/renders/:id', async (req, res) => {
+    const s = await owned(req, 'studio.read');
     if (!s || s.kind !== 'render') {
       deny(res);
       return;
@@ -283,8 +301,8 @@ export function installStudioRoutes(
       projectId: s.snapshot.document.id,
     });
   });
-  app.get('/studio/renders/:id/video', (req, res) => {
-    const s = owned(req);
+  app.get('/studio/renders/:id/video', async (req, res) => {
+    const s = await owned(req, 'studio.artifact');
     if (!s || s.kind !== 'render' || s.status !== 'completed') {
       deny(res);
       return;

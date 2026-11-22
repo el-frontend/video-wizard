@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import type { ReadableStream } from 'node:stream/web';
 import { AssetDescriptorSchema } from '@workspace/video-project';
@@ -18,7 +19,10 @@ export class ShortSourceService {
     >
   ) {}
   async download(owner: string, url: string) {
-    const { filename, mediaType, stream } = await this.python.downloadYouTube(url);
+    const { filename, mediaType, stream } = await this.python.downloadYouTube(
+      { ownerId: owner, jobId: randomUUID() },
+      url
+    );
     const asset = await this.assets.ingest(owner, {
       filename,
       mediaType,
@@ -37,9 +41,18 @@ export class ShortSourceService {
       throw new ValidationError('El tramo excede la duración medida del video.');
     return asset;
   }
-  async renderClip(owner: string, input: z.infer<typeof OwnedClipInputSchema>) {
+  async renderClip(
+    owner: string,
+    input: z.infer<typeof OwnedClipInputSchema>,
+    jobId: string = randomUUID()
+  ) {
     const source = await this.validateClip(owner, input);
-    const result = await this.python.cropSource(await this.openSource(owner, source), input);
+    const context = { ownerId: owner, jobId, assetId: source.id };
+    const result = await this.python.cropSource(
+      context,
+      await this.openSource(owner, source),
+      input
+    );
     const filename = /^output\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.mp4)$/.exec(
       result.output_path ?? ''
     )?.[1];
@@ -51,7 +64,7 @@ export class ShortSourceService {
       result.end_time !== input.endMs / 1000
     )
       throw Error('El procesador no confirmó el recorte solicitado.');
-    const stream = await this.python.openProcessedCrop(filename);
+    const stream = await this.python.openProcessedCrop(context, filename);
     const derived = await this.assets.ingest(owner, {
       filename,
       mediaType: 'video/mp4',
@@ -75,12 +88,18 @@ export class ShortSourceService {
       sourceDurationMs: derived.durationMs,
     };
   }
-  async transcribe(owner: string, assetId: string, language?: string) {
+  async transcribe(
+    owner: string,
+    assetId: string,
+    language?: string,
+    jobId: string = randomUUID()
+  ) {
     const asset = await this.assets.get(owner, assetId),
       duration = measuredVideo(asset);
     if (!asset.hasAudio) return { cues: [], language: null };
     try {
       const result = await this.python.transcribeSource(
+        { ownerId: owner, jobId, assetId },
         await this.openSource(owner, asset),
         language
       );

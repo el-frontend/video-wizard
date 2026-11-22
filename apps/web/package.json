@@ -47,7 +47,8 @@
     "@workspace/render-contract": "workspace:*",
     "better-auth": "1.7.27",
     "@better-auth/drizzle-adapter": "1.7.27",
-    "jose": "^6.1.3"
+    "jose": "^6.1.3",
+    "@workspace/service-auth": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

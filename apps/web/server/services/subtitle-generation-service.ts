@@ -1,3 +1,4 @@
+import { serviceHeaders, serviceKey } from '@workspace/service-auth';
 import { renderAdmission, UnknownRenderAdmissionError } from './render-admission';
 import type { LegacyRenderAdmission } from '@/server/types/video-render';
 import type { ReadableStream } from 'node:stream/web';
@@ -21,12 +22,13 @@ export class SubtitleGenerationService {
     private readonly renderOrigin = process.env.REMOTION_SERVER_URL || 'http://localhost:3001'
   ) {}
 
-  async transcribe(owner: string, input: z.infer<typeof transcriptionInput>) {
+  async transcribe(owner: string, input: z.infer<typeof transcriptionInput>, jobId?: string) {
     const source = await resolveOwnedVideo(owner, input);
     const { cues, language } = await shortSource.transcribe(
       owner,
       source.assetId,
-      input.language ?? undefined
+      input.language ?? undefined,
+      jobId
     );
     const segments = toLegacySeconds(cues);
     return {
@@ -39,8 +41,12 @@ export class SubtitleGenerationService {
     };
   }
 
-  async generateSubtitles(owner: string, input: z.infer<typeof transcriptionInput>) {
-    const result = await this.transcribe(owner, input);
+  async generateSubtitles(
+    owner: string,
+    input: z.infer<typeof transcriptionInput>,
+    jobId?: string
+  ) {
+    const result = await this.transcribe(owner, input, jobId);
     return {
       sourceAssetId: result.sourceAssetId,
       subtitles: secondsToLegacyMs(result.segments),
@@ -74,13 +80,22 @@ export class SubtitleGenerationService {
         brandKit,
       },
     };
+    serviceKey(process.env.STUDIO_RENDER_SECRET ?? '');
+    const headers = (scope: string, rendererJobId?: string) =>
+      serviceHeaders({
+        audience: 'video-wizard-renderer',
+        ownerId: owner,
+        scope,
+        jobId: webJobId,
+        rendererJobId,
+      });
     let jobId = await renderAdmission.reserve(owner, webJobId);
     if (!jobId) {
       try {
         const response = await fetch(this.renderOrigin + '/renders', {
           method: 'POST',
           redirect: 'error',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await headers('render.create')), 'Content-Type': 'application/json' },
           body: JSON.stringify(admission),
         });
         if (!response.ok) throw new UnknownRenderAdmissionError();
@@ -96,14 +111,22 @@ export class SubtitleGenerationService {
     let lastProgress = -1;
     for (let attempt = 0; attempt < 900; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      const status = await fetch(resource, { redirect: 'error', cache: 'no-store' });
+      const status = await fetch(resource, {
+        headers: await headers('render.read', jobId),
+        redirect: 'error',
+        cache: 'no-store',
+      });
       if (!status.ok) throw new Error('No se pudo consultar la exportación.');
       const receipt = await status.json();
       if (receipt.status === 'failed' || receipt.status === 'cancelled')
         throw new Error('La exportación falló.');
       if (receipt.status === 'completed') {
         // The renderer controls its receipt URL. Only fetch this exact job's fixed artifact.
-        const file = await fetch(resource + '.mp4', { redirect: 'error', cache: 'no-store' });
+        const file = await fetch(resource + '.mp4', {
+          headers: await headers('render.artifact', jobId),
+          redirect: 'error',
+          cache: 'no-store',
+        });
         if (!file.ok || !file.body) throw new Error('No se pudo recuperar la exportación.');
         const output = await assets.ingest(owner, {
           filename: webJobId + '.mp4',

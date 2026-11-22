@@ -44,3 +44,5 @@ export * from './scene-frames';
 export * from './video-playback';
 
 export * from './native-caption';
+
+export * from './legacy';

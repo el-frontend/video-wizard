@@ -1,3 +1,5 @@
+import { serviceHeaders, type ServicePrincipal } from '@workspace/service-auth';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { IdSchema, ProjectDraftSchema, type Diagnostic } from '@workspace/video-project';
 import { db } from '@/server/db';
@@ -21,27 +23,29 @@ export class StudioRenderError extends Error {
 }
 async function internal(
   ownerId: string,
+  operation: Omit<ServicePrincipal, 'ownerId' | 'audience'>,
   path: string,
   body?: unknown,
   options: {
     signal?: AbortSignal;
-    releaseProject?: string;
+    release?: boolean;
     media?: { method: 'HEAD' | 'GET'; range: string | null; ifRange: string | null };
   } = {}
 ) {
-  const secret = process.env.STUDIO_RENDER_SECRET;
-  if (!secret) throw new StudioRenderError(503);
+  const authorization = await serviceHeaders({
+    ownerId,
+    audience: 'video-wizard-renderer',
+    ...operation,
+  });
   const response = await fetch(
     new URL(path, process.env.REMOTION_SERVER_URL || 'http://localhost:3001'),
     {
-      method: options.releaseProject ? 'DELETE' : body ? 'POST' : (options.media?.method ?? 'GET'),
+      method: options.release ? 'DELETE' : body ? 'POST' : (options.media?.method ?? 'GET'),
       signal: options.signal,
       cache: 'no-store',
       redirect: 'error',
       headers: {
-        Authorization: 'Bearer ' + secret,
-        'X-Studio-Owner': ownerId,
-        ...(options.releaseProject && { 'X-Studio-Project': options.releaseProject }),
+        ...authorization,
         ...(options.media?.range && { Range: options.media.range }),
         ...(options.media?.ifRange && { 'If-Range': options.media.ifRange }),
         'Content-Type': 'application/json',
@@ -83,13 +87,20 @@ export async function startStudioView(
     throw new ValidationError('La vista debe corresponder al proyecto seleccionado.');
   }
   const snapshot = await buildSnapshot(ownerId, { ...record, document: draft }, signal);
+  const previewId =
+    kind === 'preview'
+      ? 'instance' in parsed.data
+        ? String(parsed.data.instance ?? randomUUID())
+        : randomUUID()
+      : undefined;
   return internal(
     ownerId,
+    { scope: kind === 'preview' ? 'preview.create' : 'studio.create', projectId: id, previewId },
     kind === 'preview' ? '/studio/previews' : '/renders',
     {
       compositionId: 'StudioProject',
       snapshot,
-      ...('instance' in parsed.data && { instance: parsed.data.instance }),
+      ...(previewId && { instance: previewId }),
     },
     { signal }
   );
@@ -97,7 +108,13 @@ export async function startStudioView(
 export async function releaseStudioPreview(ownerId: string, id: string, instance: string | null) {
   if (!z.uuidv4().safeParse(instance).success) throw new StudioRenderError(404);
   await projects.get(ownerId, id);
-  return internal(ownerId, '/studio/previews/' + instance, undefined, { releaseProject: id });
+  return internal(
+    ownerId,
+    { scope: 'preview.release', projectId: id, previewId: instance! },
+    '/studio/previews/' + instance,
+    undefined,
+    { release: true }
+  );
 }
 export async function getStudioRender(
   ownerId: string,
@@ -109,16 +126,24 @@ export async function getStudioRender(
   await projects.get(ownerId, id);
   const path = '/studio/renders/' + jobId;
   const status = await (
-    await internal(ownerId, path, undefined, { signal: request.signal })
+    await internal(ownerId, { scope: 'studio.read', projectId: id, jobId }, path, undefined, {
+      signal: request.signal,
+    })
   ).json();
   if (status.projectId !== id) throw new StudioRenderError(404);
   if (new URL(request.url).searchParams.get('artifact') !== 'video') return Response.json(status);
-  return internal(ownerId, path + '/video', undefined, {
-    signal: request.signal,
-    media: {
-      method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-      range: request.headers.get('range'),
-      ifRange: request.headers.get('if-range'),
-    },
-  });
+  return internal(
+    ownerId,
+    { scope: 'studio.artifact', projectId: id, jobId },
+    path + '/video',
+    undefined,
+    {
+      signal: request.signal,
+      media: {
+        method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+        range: request.headers.get('range'),
+        ifRange: request.headers.get('if-range'),
+      },
+    }
+  );
 }

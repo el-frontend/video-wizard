@@ -42,6 +42,7 @@ const renderOrigin = 'http://renderer.test';
 const service = new SubtitleGenerationService(renderOrigin);
 
 beforeEach(() => {
+  vi.stubEnv('STUDIO_RENDER_SECRET', randomUUID());
   vi.useFakeTimers();
   vi.spyOn(renderAdmission, 'reserve').mockResolvedValue(null);
   vi.spyOn(renderAdmission, 'accept').mockResolvedValue(undefined);
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.spyOn(AssetService.prototype, 'ingest').mockResolvedValue({ ...record, id: outputId });
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -74,7 +76,7 @@ it('reports measured duration and preserves each timed word in milliseconds', as
     sourceDurationMs: 8000,
     videoDuration: 8000,
   });
-  expect(transcribe).toHaveBeenCalledWith(owner, sourceId, 'es');
+  expect(transcribe).toHaveBeenCalledWith(owner, sourceId, 'es', undefined);
 });
 it.each(['milliseconds', 'seconds'] as const)(
   'sends full measured duration and edited words to Remotion on the %s input clock',
@@ -100,7 +102,8 @@ it.each(['milliseconds', 'seconds'] as const)(
         brandKit: { textColor: '#ffffff' },
       })
     );
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.waitFor(() => expect(requests).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(2100);
     expect(await render).toEqual({
       jobId: webJobId,
       sourceAssetId: sourceId,
@@ -164,7 +167,10 @@ it('finishes the admitted render when reporting progress fails', async () => {
     }),
     progress
   );
-  await vi.advanceTimersByTimeAsync(6000);
+  for (let i = 1; i <= 3; i++) {
+    await vi.waitFor(() => expect(network).toHaveBeenCalledTimes(i));
+    await vi.advanceTimersByTimeAsync(2100);
+  }
   expect(await render).toMatchObject({ jobId: webJobId, outputAssetId: outputId });
   expect(progress).toHaveBeenCalledExactlyOnceWith(50);
   expect(network.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);

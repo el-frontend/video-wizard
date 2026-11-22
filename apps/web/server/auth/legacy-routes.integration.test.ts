@@ -15,6 +15,7 @@ let bytes: Uint8Array<ArrayBuffer>;
 beforeAll(async () => {
   fixture = await authFixture();
   vi.doMock('@/server/db', () => ({ db: fixture.db }));
+  vi.stubEnv('STUDIO_RENDER_SECRET', randomUUID());
   vi.stubEnv('BETTER_AUTH_URL', baseURL);
   vi.stubEnv('BETTER_AUTH_SECRET', authOptions.secret);
   const { betterAuthServer } = await import('@/auth');

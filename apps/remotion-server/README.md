@@ -14,6 +14,7 @@ Express.js server for rendering Remotion video compositions with a job queue sys
 ## API Endpoints
 
 ### Create Render Job
+
 ```bash
 POST /renders
 Content-Type: application/json
@@ -37,11 +38,13 @@ Content-Type: application/json
 ```
 
 ### Get Render Status
+
 ```bash
 GET /renders/:jobId
 ```
 
 ### Cancel Render Job
+
 ```bash
 DELETE /renders/:jobId
 ```
@@ -111,3 +114,9 @@ Remotion compositions are stored in `packages/remotion-compositions` and include
 ## License
 
 See LICENSE in the root of the monorepo.
+
+## Ejecución local con medios privados
+
+Desde este directorio, `pnpm start` construye y arranca el renderer en Docker. Compose publica únicamente el puerto 3001 en loopback. Configura en el entorno (o en el archivo local `.env`) `STUDIO_RENDER_SECRET`, `STUDIO_EDITOR_ORIGIN` y `STUDIO_PREVIEW_ORIGIN`. El primero es el secreto privado compartido con web y Python, de al menos 32 bytes y distinto de `BETTER_AUTH_SECRET`. El directorio indicado por `STUDIO_DATA_DIR` debe ser el mismo que usa web. Compose lo monta como solo lectura.
+
+Remotion 4.0.405 abre un proxy temporal en una interfaz comodín durante las exportaciones. El contenedor mantiene esos puertos sin publicar. Un arranque nativo directo expone ese proxy según la configuración de red del equipo. Las admisiones y descargas privadas del renderer requieren JWT de servicio. El iframe mantiene su protocolo de ticket y cookie de instancia.

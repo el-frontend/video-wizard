@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { resolveStudioDataDir, stageOwnedMedia } from '@workspace/render-contract/storage';
+import type { LegacyRenderAdmission } from '@workspace/render-contract';
 import { join } from 'node:path';
 import express from 'express';
 
@@ -31,4 +34,54 @@ export async function hostRenderBundle(directory: string) {
       server.close();
     },
   };
+}
+
+export async function hostOwnedMedia(
+  ownerId: string,
+  admission: LegacyRenderAdmission,
+  signal: AbortSignal
+) {
+  const directory = await mkdtemp(join(tmpdir(), 'studio-legacy-'));
+  const app = express().disable('x-powered-by');
+  const add = async (
+    name: string,
+    asset: LegacyRenderAdmission['sourceAsset'] | NonNullable<LegacyRenderAdmission['logoAsset']>
+  ) => {
+    const file = join(directory, name);
+    await stageOwnedMedia(resolveStudioDataDir(), ownerId, asset.hash, file, signal);
+    const route = '/' + randomBytes(32).toString('hex');
+    app.get(route, (_req, res) =>
+      res.set('Cache-Control', 'no-store').type(asset.mediaType).sendFile(file)
+    );
+    return route;
+  };
+  let server: ReturnType<typeof app.listen> | undefined;
+  const close = async () => {
+    server?.closeAllConnections();
+    if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  };
+  try {
+    const source = await add('source', admission.sourceAsset);
+    const logo = admission.logoAsset && (await add('logo', admission.logoAsset));
+    signal.throwIfAborted();
+    server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      server!.once('listening', resolve);
+      server!.once('error', reject);
+    });
+    signal.throwIfAborted();
+    const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
+    return {
+      inputProps: {
+        ...admission.inputProps,
+        videoUrl: base + source,
+        brandKit: { ...admission.inputProps.brandKit, ...(logo && { logoUrl: base + logo }) },
+      },
+      close,
+    };
+  } catch (error) {
+    await close();
+    throw error;
+  }
 }

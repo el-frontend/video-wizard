@@ -99,24 +99,40 @@ export async function stageMedia(
     signal?.throwIfAborted();
     if (seen.has(asset.hash)) continue;
     seen.add(asset.hash);
-    const path = await assetPath(dataDir, snapshot.ownerId, asset.hash);
-    const { file } = await openAssetFile(path);
-    const hash = createHash('sha256');
-    try {
-      await pipeline(
-        file.createReadStream(),
-        new Transform({
-          transform(chunk: Buffer, _encoding, callback) {
-            hash.update(chunk);
-            callback(null, chunk);
-          },
-        }),
-        createWriteStream(join(directory, filename(asset)), { flags: 'wx', mode: 0o600 }),
-        { signal }
-      );
-    } finally {
-      await file.close();
-    }
-    if (hash.digest('hex') !== asset.hash) throw new Error('El contenido del recurso ha cambiado.');
+    await stageOwnedMedia(
+      dataDir,
+      snapshot.ownerId,
+      asset.hash,
+      join(directory, filename(asset)),
+      signal
+    );
   }
+}
+
+export async function stageOwnedMedia(
+  dataDir: string,
+  ownerId: string,
+  expectedHash: string,
+  destination: string,
+  signal?: AbortSignal
+) {
+  const path = await assetPath(dataDir, ownerId, expectedHash);
+  const { file } = await openAssetFile(path);
+  const hash = createHash('sha256');
+  try {
+    await pipeline(
+      file.createReadStream(),
+      new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          hash.update(chunk);
+          callback(null, chunk);
+        },
+      }),
+      createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
+      { signal }
+    );
+  } finally {
+    await file.close();
+  }
+  if (hash.digest('hex') !== expectedHash) throw new Error('El contenido del recurso ha cambiado.');
 }

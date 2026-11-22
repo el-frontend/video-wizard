@@ -1,3 +1,5 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { signServiceToken } from '@workspace/service-auth';
 import express from 'express';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
@@ -34,8 +36,11 @@ it.skipIf(import.meta.env.MODE !== 'native')(
       b = editor.listen(0, '127.0.0.1');
     await Promise.all([once(a, 'listening'), once(b, 'listening')]);
     const origin = (s) => 'http://127.0.0.1:' + s.address().port;
+    const secret = randomBytes(40).toString('hex'),
+      instance = randomUUID();
+    snapshot.document.id = randomUUID();
     const api = installStudioRoutes(backend, {
-      secret: 'fixture',
+      secret,
       editorOrigin: origin(b),
       previewOrigin: origin(a),
       dataDir: join(workspace, 'data'),
@@ -47,11 +52,21 @@ it.skipIf(import.meta.env.MODE !== 'native')(
       const response = await fetch(origin(a) + '/studio/previews', {
         method: 'POST',
         headers: {
-          authorization: 'Bearer fixture',
+          authorization:
+            'Bearer ' +
+            (await signServiceToken(
+              {
+                audience: 'video-wizard-renderer',
+                scope: 'preview.create',
+                ownerId: snapshot.ownerId,
+                projectId: snapshot.document.id,
+                previewId: instance,
+              },
+              { secret }
+            )),
           'content-type': 'application/json',
-          'x-studio-owner': snapshot.ownerId,
         },
-        body: JSON.stringify({ snapshot }),
+        body: JSON.stringify({ snapshot, instance }),
       });
       expect(response.status).toBe(200);
       const session = await response.json(),

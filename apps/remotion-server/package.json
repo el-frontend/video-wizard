@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch server/index.ts",
-    "start": "tsx server/index.ts",
+    "dev": "docker compose -f docker-compose.dev.yml up --build",
+    "start": "docker compose up --build",
     "build": "tsc",
     "remotion:studio": "remotion studio ../../packages/remotion-compositions/src/entry.ts",
     "remotion:render": "remotion render ../../packages/remotion-compositions/src/entry.ts",
@@ -26,7 +26,8 @@
     "react-dom": "19.2.3",
     "tsx": "^4.19.2",
     "@workspace/hyperframes-worker": "workspace:*",
-    "@workspace/hyperframes-compositions": "workspace:*"
+    "@workspace/hyperframes-compositions": "workspace:*",
+    "@workspace/service-auth": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

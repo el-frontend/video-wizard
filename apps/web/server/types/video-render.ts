@@ -1,8 +1,3 @@
-import type {
-  BrandKit,
-  CaptionTemplate as RenderTemplate,
-  SubtitleSegment as RenderCaption,
-} from '@workspace/remotion-compositions';
 import { z } from 'zod';
 
 /**
@@ -63,30 +58,8 @@ export type CaptionTemplate = z.infer<typeof CaptionTemplateSchema>;
 export type RenderRequest = z.infer<typeof RenderRequestSchema>;
 export type RenderResponse = z.infer<typeof RenderResponseSchema>;
 
-// Legacy renderer admission. The receiver derives the owner from the service credential.
-export interface OwnedMediaDescriptor {
-  assetId: string;
-  hash: string;
-  mediaType: string;
-  width?: number;
-  height?: number;
-  hasAudio?: boolean;
-}
-export interface OwnedVideoDescriptor extends OwnedMediaDescriptor {
-  durationMs: number;
-}
-export interface LegacyRenderAdmission {
-  compositionId: 'VideoWithSubtitles';
-  webJobId: string;
-  sourceAsset: OwnedVideoDescriptor;
-  logoAsset?: OwnedMediaDescriptor;
-  inputProps: {
-    subtitles: RenderCaption[];
-    template: RenderTemplate;
-    language: string;
-    aspectRatio: string;
-    backgroundColor: string;
-    durationInFrames: number;
-    brandKit?: Omit<BrandKit, 'logoUrl'>;
-  };
-}
+export type {
+  LegacyRenderAdmission,
+  OwnedMediaDescriptor,
+  OwnedVideoDescriptor,
+} from '@workspace/render-contract';

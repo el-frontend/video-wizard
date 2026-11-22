@@ -1,8 +1,9 @@
+import { signServiceToken } from '@workspace/service-auth';
 import express from 'express';
 import { once } from 'node:events';
 import { dirname } from 'node:path';
 import { access } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { expect, it, vi } from 'vitest';
 import { exampleProject } from '@workspace/video-project/fixtures';
@@ -26,35 +27,49 @@ it('retires one overlapping preview, then cancels an unmounted preview while sta
   const http = app.listen(0, '127.0.0.1');
   await once(http, 'listening');
   const origin = 'http://127.0.0.1:' + (http.address() as AddressInfo).port;
+  const secret = randomBytes(40).toString('hex'),
+    ownerId = randomUUID(),
+    projectId = randomUUID(),
+    otherOwner = randomUUID(),
+    otherProject = randomUUID();
   const api = installStudioRoutes(app, {
-    secret: 'testing',
+    secret,
     previewOrigin: origin,
     editorOrigin: 'http://localhost:3000',
   });
   const snap: ExportSnapshot = {
-    ownerId: 'owner',
+    ownerId,
     revision: 'v',
-    document: exampleProject(),
+    document: { ...exampleProject(), id: projectId },
     dependencies: { assets: {}, libraries: {} },
     bundles: {},
     diagnostics: [],
   };
-  const headers = {
-    authorization: 'Bearer testing',
-    'x-studio-owner': 'owner',
+  const headers = async (
+    scope: string,
+    previewId: string,
+    project = projectId,
+    owner = ownerId
+  ) => ({
+    authorization:
+      'Bearer ' +
+      (await signServiceToken(
+        { scope, previewId, projectId: project, ownerId: owner, audience: 'video-wizard-renderer' },
+        { secret }
+      )),
     'content-type': 'application/json',
-  };
-  const start = (instance: string, signal?: AbortSignal) =>
+  });
+  const start = async (instance: string, signal?: AbortSignal) =>
     fetch(origin + '/studio/previews', {
       method: 'POST',
-      headers,
+      headers: await headers('preview.create', instance),
       body: JSON.stringify({ snapshot: snap, instance }),
       signal,
     });
-  const release = (id: string, project = 'project', owner = 'owner') =>
+  const release = async (id: string, project = projectId, owner = ownerId) =>
     fetch(origin + '/studio/previews/' + id, {
       method: 'DELETE',
-      headers: { ...headers, 'x-studio-project': project, 'x-studio-owner': owner },
+      headers: await headers('preview.release', id, project, owner),
     });
   const staged: { directory: string; signal?: AbortSignal; finish: () => void }[] = [];
   vi.mocked(stageMedia).mockImplementation(async (_s, directory, _config, signal) => {
@@ -73,12 +88,12 @@ it('retires one overlapping preview, then cancels an unmounted preview while sta
     expect((await release(retired)).status).toBe(204);
     expect((await start(retired)).status).toBe(404);
     expect(staged).toHaveLength(0);
-    expect((await release(other, 'other-project')).status).toBe(204);
-    expect((await release(other, 'project', 'other-owner')).status).toBe(204);
+    expect((await release(other, otherProject)).status).toBe(204);
+    expect((await release(other, projectId, otherOwner)).status).toBe(204);
     const valid = start(other);
     await vi.waitFor(() => expect(staged).toHaveLength(1));
-    expect((await release(other, 'other-project')).status).toBe(404);
-    expect((await release(other, 'project', 'other-owner')).status).toBe(404);
+    expect((await release(other, otherProject)).status).toBe(404);
+    expect((await release(other, projectId, otherOwner)).status).toBe(404);
     const finished = staged.pop()!;
     finished.finish();
     const response = await valid;

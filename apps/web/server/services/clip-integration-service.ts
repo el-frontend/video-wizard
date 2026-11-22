@@ -1,12 +1,21 @@
+import { serviceHeaders } from '@workspace/service-auth';
 import { ClipRenderResponseSchema, TranscriptionResponseSchema } from '@/server/types/clip-render';
 import { extractVideoId } from '@/features/video/lib/youtube';
 import { ValidationError, logger } from '@/server/lib/utils';
+export interface ProcessingOperation {
+  ownerId: string;
+  jobId: string;
+  assetId?: string;
+}
+const auth = (op: ProcessingOperation, scope: string) =>
+  serviceHeaders({ ...op, audience: 'video-wizard-processing', scope });
 export class ClipIntegrationService {
   constructor(
     private readonly baseUrl = process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://localhost:8000'
   ) {}
 
   private async postStudioSource(
+    context: ProcessingOperation,
     operation: 'transcribe-source' | 'crop-source',
     file: File,
     fields: Record<string, string> = {}
@@ -16,6 +25,10 @@ export class ClipIntegrationService {
     for (const [key, value] of Object.entries(fields)) form.append(key, value);
     const response = await fetch(this.baseUrl + '/studio/' + operation, {
       method: 'POST',
+      headers: await auth(
+        context,
+        operation === 'crop-source' ? 'source.crop' : 'source.transcribe'
+      ),
       body: form,
       redirect: 'error',
     });
@@ -23,9 +36,10 @@ export class ClipIntegrationService {
     return response.json();
   }
 
-  async transcribeSource(file: File, language?: string) {
+  async transcribeSource(context: ProcessingOperation, file: File, language?: string) {
     return TranscriptionResponseSchema.parse(
       await this.postStudioSource(
+        context,
         'transcribe-source',
         file,
         language && language !== 'auto' ? { language } : {}
@@ -34,10 +48,11 @@ export class ClipIntegrationService {
   }
 
   async cropSource(
+    context: ProcessingOperation,
     file: File,
     input: { startMs: number; endMs: number; crop_mode: string; aspect_ratio: string }
   ) {
-    const response = await this.postStudioSource('crop-source', file, {
+    const response = await this.postStudioSource(context, 'crop-source', file, {
       start_ms: String(input.startMs),
       end_ms: String(input.endMs),
       crop_mode: input.crop_mode,
@@ -46,20 +61,26 @@ export class ClipIntegrationService {
     return ClipRenderResponseSchema.parse(response);
   }
 
-  async openProcessedCrop(filename: string) {
+  async openProcessedCrop(context: ProcessingOperation, filename: string) {
     if (!/^[0-9a-f-]{36}\.mp4$/.test(filename)) throw Error('Invalid internal output name');
-    const response = await fetch(this.baseUrl + '/output/' + filename, { redirect: 'error' });
+    const response = await fetch(this.baseUrl + '/output/' + filename, {
+      headers: await auth(context, 'crop.read'),
+      redirect: 'error',
+    });
     if (!response.ok || !response.body) throw Error('No se pudo leer el recorte procesado.');
     return response.body;
   }
 
-  async downloadYouTube(url: string) {
+  async downloadYouTube(context: ProcessingOperation, url: string) {
     const id = extractVideoId(url);
     if (!id) throw new ValidationError('Introduce un enlace de video de YouTube válido.');
     try {
       const response = await fetch(this.baseUrl + '/download-youtube', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          ...(await auth(context, 'source.download')),
+          'Content-Type': 'application/json',
+        },
         redirect: 'error',
         body: JSON.stringify({ url: 'https://www.youtube.com/watch?v=' + id }),
       });
@@ -72,7 +93,10 @@ export class ClipIntegrationService {
         path !== 'uploads/' + filename
       )
         throw Error('Unexpected download receipt');
-      const file = await fetch(this.baseUrl + '/uploads/' + filename, { redirect: 'error' });
+      const file = await fetch(this.baseUrl + '/uploads/' + filename, {
+        headers: await auth(context, 'download.read'),
+        redirect: 'error',
+      });
       if (!file.ok || !file.body) throw Error('Downloaded source is missing');
       return { filename, stream: file.body, mediaType: 'video/mp4' };
     } catch (cause) {

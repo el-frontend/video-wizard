@@ -59,7 +59,7 @@ services:
     networks:
       - video-wizard-network
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     volumes:
       - ./apps/processing-engine/uploads:/app/uploads
       - ./apps/processing-engine/output:/app/output
@@ -80,7 +80,7 @@ services:
     networks:
       - video-wizard-network
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     # Chromium (via Remotion) needs a large /dev/shm; Docker's 64MB default
     # causes "cannot allocate memory" / "disk space low" render failures.
     shm_size: '2gb'
@@ -90,7 +90,6 @@ services:
       - NODE_ENV=development
       - PORT=3001
       - RENDERS_DIR=./renders
-      - PYTHON_ENGINE_URL=http://processing-engine:8000
       # Cap concurrent Chromium tabs per render to bound memory in the
       # container (see REMOTION_PERFORMANCE.md). Raise/remove on hosts with
       # more RAM; leave unset to use Remotion's default (~half the cores).
@@ -99,15 +98,11 @@ services:
       # concurrency. Total Chromium tabs ≈ this × RENDER_CONCURRENCY (=4 here).
       - MAX_CONCURRENT_RENDERS=2
     volumes:
-      - ./packages/remotion-compositions:/app/packages/remotion-compositions
-      - ./apps/remotion-server/server:/app/apps/remotion-server/server
       - ./apps/remotion-server/renders:/app/apps/remotion-server/renders
       - studio_data:/app/.studio-data:ro
-      - ./apps/processing-engine/output:/app/processing-engine/output
     depends_on:
       - processing-engine
     restart: unless-stopped
-    command: pnpm dev
 
   # Next.js web app (dev mode, hot reload via mounted source).
   web:

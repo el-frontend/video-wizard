@@ -20,12 +20,12 @@ export const handlers: Record<JobType, JobHandler> = {
   async transcription(job) {
     const input = transcriptionInput.safeParse(job.inputData);
     if (!input.success) throw new Error(reingest);
-    return subtitleGenerationService.generateSubtitles(job.userId, input.data);
+    return subtitleGenerationService.generateSubtitles(job.userId, input.data, job.id);
   },
   async clip_creation(job) {
     const input = OwnedClipInputSchema.safeParse(job.inputData);
     if (!input.success) throw new Error(reingest);
-    return shortSource.renderClip(job.userId, input.data);
+    return shortSource.renderClip(job.userId, input.data, job.id);
   },
   async analysis() {
     throw new Error('No worker handler is registered for analysis');

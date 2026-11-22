@@ -26,6 +26,8 @@ python-multipart==0.0.6  # For file uploads
 pydantic==2.5.3
 requests==2.31.0  # For example script
 
+PyJWT==2.15.1
+
 # Testing (optional)
 pytest==7.4.4
 pytest-cov==4.1.0

@@ -1,14 +1,16 @@
+import { verifyServiceToken } from '@workspace/service-auth';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { authFixture, authOptions, baseURL } from '../auth/auth-test-fixture';
-import { studioAssets, users } from '../db/schema';
+import { authSessions, studioAssets, users } from '../db/schema';
 
 let fixture: Awaited<ReturnType<typeof authFixture>>;
 let owner: string, sourceId: string;
 beforeAll(async () => {
   fixture = await authFixture();
   vi.doMock('@/server/db', () => ({ db: fixture.db }));
+  vi.stubEnv('STUDIO_RENDER_SECRET', randomUUID());
   vi.stubEnv('BETTER_AUTH_URL', baseURL);
   vi.stubEnv('BETTER_AUTH_SECRET', authOptions.secret);
 });
@@ -119,7 +121,21 @@ it.each([
     const { publicJob } = await import('../services/owned-media-service');
     const { handlers } = await import('./handlers');
     const { startWorker } = await import('./loop');
+    const sessionId = randomUUID();
+    await fixture.db.insert(authSessions).values({
+      id: sessionId,
+      userId: owner,
+      token: randomUUID(),
+      expiresAt: new Date(Date.now() + 60000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     const webId = (await (await submit()).json()).data.jobId;
+    // The background operation has already been admitted when the human session expires.
+    await fixture.db
+      .update(authSessions)
+      .set({ expiresAt: new Date(Date.now() - 1) })
+      .where(eq(authSessions.id, sessionId));
     const remoteId = randomUUID();
     const output = await new AssetService(fixture.db).get(owner, sourceId);
     const ingest = vi.spyOn(AssetService.prototype, 'ingest').mockResolvedValue(output);
@@ -150,8 +166,28 @@ it.each([
       });
     const calls: string[] = [];
     let failed = false;
+    const tokens = new Set<string>();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       const path = new URL(String(url)).pathname;
+      const token = new Headers(init?.headers).get('authorization')?.slice(7) ?? '';
+      const scope =
+        path === '/renders'
+          ? 'render.create'
+          : path.endsWith('.mp4')
+            ? 'render.artifact'
+            : 'render.read';
+      const principal = await verifyServiceToken(token, {
+        secret: process.env.STUDIO_RENDER_SECRET!,
+        audience: 'video-wizard-renderer',
+        scope,
+      });
+      expect(principal).toMatchObject({
+        ownerId: owner,
+        jobId: webId,
+        ...(scope !== 'render.create' && { rendererJobId: remoteId }),
+      });
+      expect(tokens.has(token)).toBe(false);
+      tokens.add(token);
       calls.push((init?.method ?? 'GET') + ' ' + path);
       if (path === '/renders') {
         if (failure === 'lost-admission') throw new Error('fixture lost admission response');

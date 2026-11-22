@@ -1,10 +1,16 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import { ClipIntegrationService } from '../clip-integration-service';
 import { ShortSourceService } from './short-source';
 import { extractVideoId } from '@/features/video/lib/youtube';
 
 describe('source registration and transcription', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  const context = { ownerId: randomUUID(), jobId: randomUUID() };
+  beforeEach(() => vi.stubEnv('STUDIO_RENDER_SECRET', randomUUID()));
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
   it('accepts exact supported video URLs and forwards only a canonical ID', async () => {
     const fetcher = vi
       .fn()
@@ -17,7 +23,7 @@ describe('source registration and transcription', () => {
       .mockResolvedValueOnce(new Response(new Uint8Array([0, 1])));
     vi.stubGlobal('fetch', fetcher);
     const service = new ClipIntegrationService('http://internal.test');
-    await service.downloadYouTube('https://youtu.be/jNQXAC9IVRw?t=4');
+    await service.downloadYouTube(context, 'https://youtu.be/jNQXAC9IVRw?t=4');
     expect(JSON.parse(fetcher.mock.calls[0]![1].body).url).toBe(
       'https://www.youtube.com/watch?v=jNQXAC9IVRw'
     );
@@ -34,7 +40,7 @@ describe('source registration and transcription', () => {
       );
     vi.stubGlobal('fetch', fetcher);
     await expect(
-      new ClipIntegrationService().downloadYouTube('https://youtu.be/jNQXAC9IVRw')
+      new ClipIntegrationService().downloadYouTube(context, 'https://youtu.be/jNQXAC9IVRw')
     ).rejects.toThrow(/descargar/);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
