@@ -159,7 +159,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
           throw new Error(clipQueued.message || 'Clip creation queue failed');
         }
 
-        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId);
+        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId, ownerId);
         if (finishedClip.status === 'failed') {
           throw new Error(finishedClip.errorMessage || 'Clip creation failed');
         }
@@ -203,6 +203,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
           )
         );
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') break;
         console.error(`Error generating clip ${i + 1}:`, err);
 
         // Mark this clip as error

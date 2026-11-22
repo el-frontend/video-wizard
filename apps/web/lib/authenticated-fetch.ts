@@ -11,6 +11,11 @@ let generation = 0;
 let cached: { token: string; expires: number } | null = null;
 let pending: Promise<string | null> | null = null;
 
+// Long-running readers retain the owner that submitted the job across session renewal.
+export function workspaceIdentity() {
+  return { ownerId: owner, active: !suspended };
+}
+
 export function clearAccessToken(): void {
   generation++;
   cached = null;

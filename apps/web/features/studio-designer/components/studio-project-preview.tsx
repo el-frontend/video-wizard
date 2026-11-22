@@ -1,6 +1,9 @@
 'use client';
 
-import { registerPreviewRetirement } from '@/features/auth/lib/session-events';
+import {
+  previewRetirementTimeoutMs,
+  registerPreviewRetirement,
+} from '@/features/auth/lib/session-events';
 import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useEffect, useRef, useState } from 'react';
 import type { Diagnostic, PreviewHandle, ProjectDraft } from '@workspace/video-project';
@@ -62,6 +65,7 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
       controller.abort();
       retired ??= authenticatedFetch(url + '?instance=' + instance, {
         method: 'DELETE',
+        signal: AbortSignal.timeout(previewRetirementTimeoutMs),
         keepalive: true,
       }).then(
         () => {},

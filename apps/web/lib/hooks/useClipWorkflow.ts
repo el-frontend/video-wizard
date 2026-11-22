@@ -1,6 +1,6 @@
 'use client';
 
-import { authenticatedFetch } from '@/lib/authenticated-fetch';
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import { pollJobUntilDone } from '@/features/video/lib/poll-job';
 import type { SubtitleSegment } from '@/server/types/video-render';
 import { useCallback, useState } from 'react';
@@ -60,6 +60,7 @@ export function useClipWorkflow() {
       }));
 
       // Step 1: Enqueue the vertical clip via the worker queue.
+      const { ownerId } = workspaceIdentity();
       const clipResponse = await authenticatedFetch('/api/create-clip', {
         method: 'POST',
         headers: {
@@ -84,7 +85,7 @@ export function useClipWorkflow() {
         throw new Error('Clip creation queue failed');
       }
 
-      const finished = await pollJobUntilDone(queued.data.jobId);
+      const finished = await pollJobUntilDone(queued.data.jobId, ownerId);
       if (finished.status === 'failed') {
         throw new Error(finished.errorMessage || 'Clip creation failed');
       }

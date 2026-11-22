@@ -1,6 +1,6 @@
 'use client';
 
-import { authenticatedFetch } from '@/lib/authenticated-fetch';
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import { useState } from 'react';
 import type { CaptionTemplate } from '@/remotion/types';
 import type { AspectRatio } from '../lib/aspect-ratios';
@@ -187,6 +187,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         progress: 'Generating subtitles from video...',
       });
 
+      const { ownerId } = workspaceIdentity();
       const subtitleResponse = await authenticatedFetch('/api/generate-subtitles', {
         method: 'POST',
         headers: {
@@ -209,7 +210,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       }
 
       // Worker drains the queue; poll the job until it finishes.
-      const finished = await pollJobUntilDone(subtitleData.data.jobId, (job) => {
+      const finished = await pollJobUntilDone(subtitleData.data.jobId, ownerId, (job) => {
         if (job.status === 'queued' || job.status === 'pending') {
           updateState({ progress: 'Waiting in queue...' });
         } else if (job.status === 'processing') {
@@ -276,6 +277,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         error: '',
       });
 
+      const { ownerId } = workspaceIdentity();
       const renderResponse = await authenticatedFetch('/api/render-video-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -302,7 +304,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
 
       const jobId: string = renderData.data.jobId;
 
-      const finished = await pollJobUntilDone(jobId, (job) => {
+      const finished = await pollJobUntilDone(jobId, ownerId, (job) => {
         if (job.status === 'queued' || job.status === 'pending') {
           updateState({ progress: 'Waiting in queue...' });
         } else if (job.status === 'processing') {

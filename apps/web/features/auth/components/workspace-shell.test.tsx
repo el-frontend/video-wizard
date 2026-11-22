@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WorkspaceShell } from './workspace-shell';
-import { sessionEvents } from '../lib/session-events';
+import { registerPreviewRetirement, sessionEvents } from '../lib/session-events';
 const { signOut, login, live } = vi.hoisted(() => ({
   signOut: vi.fn(),
   login: vi.fn(),
@@ -63,5 +63,26 @@ it('cancelSignoutKeepsEditor', async () => {
     expect(screen.getByLabelText('Título')).toBeTruthy();
   } finally {
     window.removeEventListener(sessionEvents.checkDirty, dirty);
+  }
+});
+
+it('revokes the session when a preview retirement never settles', async () => {
+  vi.useFakeTimers();
+  const retire = vi.fn(() => new Promise<void>(() => {}));
+  const remove = registerPreviewRetirement(retire);
+  signOut.mockReset().mockResolvedValue({ error: null });
+  try {
+    render(shell);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    expect(retire).toHaveBeenCalledOnce();
+    expect(signOut).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText('Título')).toBeNull();
+  } finally {
+    remove();
+    vi.useRealTimers();
   }
 });
