@@ -19,6 +19,7 @@ import { DEFAULT_FONT_OPTIONS } from '../types/brand-kit';
 interface BrandKitSettingsProps {
   brandKit: BrandKit | null;
   onBrandKitChange: (kit: BrandKit | null) => void;
+  onUploadLogo: (file: File) => Promise<void>;
   disabled?: boolean;
 }
 
@@ -33,7 +34,7 @@ const LOGO_POSITIONS: Array<{ value: LogoPosition; label: string }> = [
  * BrandKitSettings Component
  *
  * Allows users to configure brand customization:
- * - Logo URL and positioning
+ * - Owned logo and positioning
  * - Primary, secondary, text, and background colors
  * - Font family selection
  *
@@ -42,10 +43,24 @@ const LOGO_POSITIONS: Array<{ value: LogoPosition; label: string }> = [
 export function BrandKitSettings({
   brandKit,
   onBrandKitChange,
+  onUploadLogo,
   disabled = false,
 }: BrandKitSettingsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const [logoError, setLogoError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  async function uploadLogo(file: File) {
+    setUploading(true);
+    setLogoError('');
+    try {
+      await onUploadLogo(file);
+    } catch {
+      setLogoError('No se pudo importar el logo.');
+    } finally {
+      setUploading(false);
+    }
+  }
   const updateField = (field: keyof BrandKit, value: string | number | undefined) => {
     const updated = { ...(brandKit ?? {}), [field]: value } as BrandKit;
     onBrandKitChange(updated);
@@ -64,7 +79,7 @@ export function BrandKitSettings({
 
   const hasAnyValue =
     brandKit &&
-    (brandKit.logoUrl ||
+    (brandKit.logoAssetId ||
       brandKit.primaryColor ||
       brandKit.secondaryColor ||
       brandKit.textColor ||
@@ -96,14 +111,30 @@ export function BrandKitSettings({
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-muted-foreground">Logo</h4>
             <div className="space-y-2">
-              <Label className="text-xs">Logo URL</Label>
+              <Label htmlFor="brand-logo" className="text-xs">
+                Subir logo
+              </Label>
               <Input
-                placeholder="https://example.com/logo.png"
-                value={brandKit?.logoUrl ?? ''}
-                onChange={(e) => updateField('logoUrl', e.target.value || undefined)}
-                disabled={disabled}
-                className="h-8 text-sm"
+                id="brand-logo"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={disabled || uploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadLogo(file);
+                }}
               />
+              {brandKit?.logoAssetId && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={disabled || uploading}
+                  onClick={() => updateField('logoAssetId', undefined)}
+                >
+                  Quitar logo
+                </Button>
+              )}
+              {logoError && <p role="alert">{logoError}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

@@ -46,7 +46,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipGenerationProgress, setClipGenerationProgress] = useState({ current: 0, total: 0 });
   const [editingClip, setEditingClip] = useState<GeneratedClip | null>(null);
-  const { brandKit, setBrandKit } = useBrandKit(ownerId);
+  const { brandKit, previewBrandKit, setBrandKit, uploadLogo } = useBrandKit(ownerId);
 
   const {
     file,
@@ -171,7 +171,6 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
 
         const clipData = finishedClip.resultData as {
           output_url?: string;
-          output_path?: string;
           sourceDurationMs?: number | null;
         } | null;
 
@@ -198,7 +197,6 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
                   jobId: clipQueued.data.jobId,
                   clipCaptions,
                   videoUrl: clipData.output_url, // Cropped video without subtitles
-                  clipPath: clipData.output_path,
                   sourceDurationMs: clipData.sourceDurationMs ?? undefined,
                   subtitles: clipSubtitles,
                   language: detectedLanguage, // Ensure language is set
@@ -296,7 +294,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
    * This is when we actually call the Remotion server to create the final MP4
    */
   const handleRenderFinal = async (clip: GeneratedClip) => {
-    if (!clip.clipPath || !clip.subtitles) {
+    if (!clip.jobId || !clip.subtitles) {
       toast.error('Cannot render: missing clip or subtitles');
       return;
     }
@@ -310,11 +308,13 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
       console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
 
       // Call Remotion server to render final video
+      const operation = workspaceIdentity();
       const response = await authenticatedFetch('/api/render-with-subtitles', {
+        signal: operation.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clipPath: clip.clipPath,
+          jobId: clip.jobId,
           subtitles: clip.subtitles,
           sourceDurationMs: clip.sourceDurationMs,
           template: clip.template || 'viral',
@@ -334,7 +334,11 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
         throw new Error(result.message || 'Video render failed');
       }
 
-      console.log(`Clip ${clip.index + 1} rendered successfully!`);
+      const finished = await pollJobUntilDone(result.data.jobId, operation);
+      operation.signal.throwIfAborted();
+      const videoUrl = (finished.resultData as { videoUrl?: string } | null)?.videoUrl;
+      if (finished.status !== 'completed' || !videoUrl)
+        throw new Error(finished.errorMessage || 'No se pudo exportar el video.');
 
       // Update the clip with rendered video URL
       setGeneratedClips((prev) =>
@@ -342,7 +346,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
           c.index === clip.index
             ? {
                 ...c,
-                renderedVideoUrl: result.data.videoUrl,
+                renderedVideoUrl: videoUrl,
                 isRendering: false,
               }
             : c
@@ -390,7 +394,11 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
             <AspectRatioSelector selected={aspectRatio} onChange={setAspectRatio} />
           </div>
           <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
-            <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+            <BrandKitSettings
+              brandKit={brandKit}
+              onBrandKitChange={setBrandKit}
+              onUploadLogo={uploadLogo}
+            />
           </div>
         </div>
       )}
@@ -468,7 +476,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
                 template={clip.template}
                 language={clip.language}
                 aspectRatio={clip.aspectRatio || aspectRatio}
-                brandKit={brandKit ?? undefined}
+                brandKit={previewBrandKit}
                 isLoading={clip.isLoading}
                 isRendering={clip.isRendering}
                 openingDesigner={!!openingJob}
@@ -517,7 +525,7 @@ export function VideoContainer({ ownerId }: { ownerId: string }) {
             subtitles={editingClip.subtitles}
             template={editingClip.template || 'viral'}
             aspectRatio={editingClip.aspectRatio || aspectRatio}
-            brandKit={brandKit ?? undefined}
+            brandKit={previewBrandKit}
             onSave={handleSaveEdit}
           />
         )}

@@ -1,8 +1,12 @@
 import { projectResponse, projectService, readJson } from '../../http';
 
 export function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  return projectResponse(async (ownerId) => {
-    const { id } = await params;
-    return projectService.duplicate(ownerId, id, await readJson(request));
-  }, 201);
+  return projectResponse(
+    request,
+    async (ownerId) => {
+      const { id } = await params;
+      return projectService.duplicate(ownerId, id, await readJson(request));
+    },
+    201
+  );
 }

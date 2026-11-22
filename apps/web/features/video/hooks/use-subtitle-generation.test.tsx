@@ -14,6 +14,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const fixtureAsset = {
+  success: true,
+  data: {
+    id: 'fixture-asset',
+    name: 'fixture.mp4',
+    ownerId: 'owner-a',
+    hash: 'a'.repeat(64),
+    mediaType: 'video/mp4',
+    durationMs: 1000,
+  },
+};
+
 function bind(owner: string, sid: string) {
   bindWorkspaceSession(owner, sid);
   token.mockResolvedValue({
@@ -26,7 +38,8 @@ function bind(owner: string, sid: string) {
   });
 }
 
-async function startAcceptedJob() {
+async function startAcceptedJob(isYouTube = false) {
+  const ingestionPath = isYouTube ? '/api/studio/shorts' : '/api/studio/assets';
   bind('owner-a', 'initial');
   const onError = vi.fn();
   const onComplete = vi.fn();
@@ -37,12 +50,26 @@ async function startAcceptedJob() {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), location.href).pathname;
       calls.push((init?.method ?? 'GET') + ' ' + path);
-      if (path === '/upload') return Response.json({ path: 'test-input', filename: 'fixture.mp4' });
-      if (path === '/api/generate-subtitles')
+      if (path === ingestionPath) {
+        expect(new URL(String(input)).origin).toBe(location.origin);
+        expect(new Headers(init?.headers).get('authorization')).toMatch(/^Bearer /);
+        if (isYouTube)
+          expect(JSON.parse(String(init?.body))).toEqual({
+            action: 'download',
+            url: 'https://youtu.be/jNQXAC9IVRw',
+          });
+        return Response.json(fixtureAsset);
+      }
+      if (path === '/api/generate-subtitles') {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          sourceAssetId: 'fixture-asset',
+          language: null,
+        });
         return Response.json(
           { success: true, data: { jobId: 'transcription-id' } },
           { status: 202 }
         );
+      }
       if (path === '/api/jobs/transcription-id') {
         if (++reads === 1) return Response.json({ success: false }, { status: 401 });
         return Response.json({
@@ -61,15 +88,21 @@ async function startAcceptedJob() {
     })
   );
   const view = renderHook(() => useSubtitleGeneration({ onComplete, onError }));
-  act(() =>
-    view.result.current.setFile(new File(['fixture'], 'fixture.mp4', { type: 'video/mp4' }))
-  );
+  if (isYouTube)
+    act(() => {
+      view.result.current.setInputMode('youtube');
+      view.result.current.setYoutubeUrl('https://youtu.be/jNQXAC9IVRw');
+    });
+  else
+    act(() =>
+      view.result.current.setFile(new File(['fixture'], 'fixture.mp4', { type: 'video/mp4' }))
+    );
   let work!: Promise<void>;
   await act(async () => {
     work = view.result.current.generateSubtitles();
   });
   expect(calls).toEqual([
-    'POST /upload',
+    'POST ' + ingestionPath,
     'POST /api/generate-subtitles',
     'GET /api/jobs/transcription-id',
   ]);
@@ -85,7 +118,7 @@ it('keeps an accepted job through a 401 and reads its result with the same owner
     await work;
   });
   expect(calls).toEqual([
-    'POST /upload',
+    'POST /api/studio/assets',
     'POST /api/generate-subtitles',
     'GET /api/jobs/transcription-id',
     'GET /api/jobs/transcription-id',
@@ -169,8 +202,7 @@ it.each(['transcription during retirement', 'render after leaving'])(
     const render = scenario.startsWith('render');
     const accepted = acceptedJobResponse('already-accepted');
     const fetcher = vi.mocked(fetch).mockClear();
-    if (!render)
-      fetcher.mockResolvedValueOnce(Response.json({ path: 'fixture', filename: 'fixture.mp4' }));
+    if (!render) fetcher.mockResolvedValueOnce(Response.json(fixtureAsset));
     fetcher.mockResolvedValueOnce(accepted.response).mockImplementation(async () =>
       Response.json({
         success: true,
@@ -212,3 +244,14 @@ it.each(['transcription during retirement', 'render after leaving'])(
     }
   }
 );
+
+it('subtitleGeneratorUsesOwnedIngestion for YouTube', async () => {
+  const { view, work } = await startAcceptedJob(true);
+  await act(async () => {
+    bind('owner-a', 'renewed');
+    window.dispatchEvent(new Event(sessionEvents.restored));
+    await work;
+  });
+  expect(view.result.current.sourceAssetId).toBe('fixture-asset');
+  expect(view.result.current.currentStep).toBe('editing');
+});

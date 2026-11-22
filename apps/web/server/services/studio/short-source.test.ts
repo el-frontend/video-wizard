@@ -16,7 +16,7 @@ describe('source registration and transcription', () => {
       )
       .mockResolvedValueOnce(new Response(new Uint8Array([0, 1])));
     vi.stubGlobal('fetch', fetcher);
-    const service = new ClipIntegrationService('http://internal.test', 'https://public.test');
+    const service = new ClipIntegrationService('http://internal.test');
     await service.downloadYouTube('https://youtu.be/jNQXAC9IVRw?t=4');
     expect(JSON.parse(fetcher.mock.calls[0]![1].body).url).toBe(
       'https://www.youtube.com/watch?v=jNQXAC9IVRw'

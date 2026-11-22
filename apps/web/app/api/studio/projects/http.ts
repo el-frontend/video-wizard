@@ -26,9 +26,13 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export async function projectResponse<T>(action: (ownerId: string) => Promise<T>, status = 200) {
+export async function projectResponse<T>(
+  request: Request,
+  action: (ownerId: string) => Promise<T>,
+  status = 200
+) {
   try {
-    const user = await requireAuth();
+    const user = await requireAuth(request);
     const data = await action(user.id);
     return NextResponse.json({ success: true, data }, { status });
   } catch (error) {

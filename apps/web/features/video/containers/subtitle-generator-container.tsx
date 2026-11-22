@@ -26,7 +26,7 @@ import { useSubtitleGeneration } from '../hooks/use-subtitle-generation';
 import { getAspectClass } from '../lib/aspect-ratios';
 import { legacyMsToSeconds, secondsToLegacyMs } from '../lib/legacy-timing';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
-import { getPythonEngineUrl, getVideoSourceUrl } from '../lib/utils';
+
 import { isYouTubeUrl } from '../lib/youtube';
 
 const LANGUAGE_OPTIONS = [
@@ -49,7 +49,7 @@ export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
     inputMode,
     aspectRatio,
     currentStep,
-    uploadedPath,
+    sourceAssetId,
     sourceDurationMs,
     subtitles,
     language,
@@ -70,7 +70,7 @@ export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
   } = useSubtitleGeneration();
   const subtitlesSeconds = useMemo(() => legacyMsToSeconds(subtitles), [subtitles]);
 
-  const { brandKit, setBrandKit } = useBrandKit(ownerId);
+  const { brandKit, previewBrandKit, setBrandKit, uploadLogo } = useBrandKit(ownerId);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -285,7 +285,11 @@ export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
                   />
                 </div>
 
-                <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+                <BrandKitSettings
+                  brandKit={brandKit}
+                  onBrandKitChange={setBrandKit}
+                  onUploadLogo={uploadLogo}
+                />
 
                 {sourceDurationMs !== null && (
                   <div className="space-y-2">
@@ -294,13 +298,13 @@ export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
                       className={`${getAspectClass(aspectRatio)} mx-auto w-full max-w-sm overflow-hidden rounded-lg bg-black`}
                     >
                       <RemotionPreview
-                        videoUrl={getVideoSourceUrl(getPythonEngineUrl(), uploadedPath)}
+                        videoUrl={'/api/studio/assets/' + sourceAssetId}
                         sourceDurationMs={sourceDurationMs}
                         subtitles={subtitlesSeconds}
                         template={selectedTemplate}
                         language={language}
                         aspectRatio={aspectRatio}
-                        brandKit={brandKit ?? undefined}
+                        brandKit={previewBrandKit}
                       />
                     </div>
                   </div>

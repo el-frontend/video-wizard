@@ -63,18 +63,27 @@ export class ShortSourceService {
     )
       throw Error('El archivo procesado no cubre el intervalo o su audio.');
     return {
-      ...result,
+      success: true,
+      output_url: '/api/studio/assets/' + derived.id,
+      duration: result.duration,
+      start_time: result.start_time,
+      end_time: result.end_time,
+      crop_dimensions: result.crop_dimensions,
+      file_size: result.file_size,
       sourceAssetId: source.id,
       derivedAssetId: derived.id,
       sourceDurationMs: derived.durationMs,
     };
   }
-  async transcribe(owner: string, assetId: string) {
+  async transcribe(owner: string, assetId: string, language?: string) {
     const asset = await this.assets.get(owner, assetId),
       duration = measuredVideo(asset);
     if (!asset.hasAudio) return { cues: [], language: null };
     try {
-      const result = await this.python.transcribeSource(await this.openSource(owner, asset));
+      const result = await this.python.transcribeSource(
+        await this.openSource(owner, asset),
+        language
+      );
       return { cues: sourceCues(result.segments, duration), language: result.language ?? null };
     } catch {
       throw new ValidationError(

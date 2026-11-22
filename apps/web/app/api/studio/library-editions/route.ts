@@ -3,6 +3,7 @@ import { libraryService, libraryResponse } from '../libraries/http';
 import { readJson } from '../projects/http';
 export function POST(request: Request) {
   return libraryResponse(
+    request,
     async (owner) => publishEdition(libraryService, owner, await readJson(request)),
     201
   );

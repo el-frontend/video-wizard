@@ -1,8 +1,13 @@
+import type {
+  BrandKit,
+  CaptionTemplate as RenderTemplate,
+  SubtitleSegment as RenderCaption,
+} from '@workspace/remotion-compositions';
 import { z } from 'zod';
 
 /**
  * Video Rendering Service Types
- * 
+ *
  * Zod schemas for video rendering and composition
  */
 
@@ -34,7 +39,7 @@ export const CaptionTemplateSchema = z.enum(['default', 'viral', 'minimal', 'mod
  * Render request schema
  */
 export const RenderRequestSchema = z.object({
-  videoUrl: z.string().url(),
+  sourceAssetId: z.uuid(),
   subtitles: z.array(SubtitleSegmentSchema),
   template: CaptionTemplateSchema,
   outputFormat: z.enum(['mp4', 'webm']).default('mp4'),
@@ -47,7 +52,6 @@ export const RenderRequestSchema = z.object({
 export const RenderResponseSchema = z.object({
   success: z.boolean(),
   outputUrl: z.string().optional(),
-  outputPath: z.string().optional(),
   fileSize: z.number().optional(),
   duration: z.number().optional(),
   error: z.string().optional(),
@@ -58,3 +62,30 @@ export type SubtitleSegment = z.infer<typeof SubtitleSegmentSchema>;
 export type CaptionTemplate = z.infer<typeof CaptionTemplateSchema>;
 export type RenderRequest = z.infer<typeof RenderRequestSchema>;
 export type RenderResponse = z.infer<typeof RenderResponseSchema>;
+
+// Legacy renderer admission. The receiver derives the owner from the service credential.
+export interface OwnedMediaDescriptor {
+  assetId: string;
+  hash: string;
+  mediaType: string;
+  width?: number;
+  height?: number;
+  hasAudio?: boolean;
+}
+export interface OwnedVideoDescriptor extends OwnedMediaDescriptor {
+  durationMs: number;
+}
+export interface LegacyRenderAdmission {
+  compositionId: 'VideoWithSubtitles';
+  sourceAsset: OwnedVideoDescriptor;
+  logoAsset?: OwnedMediaDescriptor;
+  inputProps: {
+    subtitles: RenderCaption[];
+    template: RenderTemplate;
+    language: string;
+    aspectRatio: string;
+    backgroundColor: string;
+    durationInFrames: number;
+    brandKit?: Omit<BrandKit, 'logoUrl'>;
+  };
+}

@@ -99,7 +99,6 @@ export interface GeneratedClip {
   duration: number;
   sourceDurationMs?: number;
   videoUrl?: string; // Cropped video without subtitles (for preview)
-  clipPath?: string; // Path to cropped video
   renderedVideoUrl?: string; // Final rendered video with subtitles from Remotion server
   subtitles?: SubtitleSegment[];
   template?: SubtitleTemplate; // Current template selection

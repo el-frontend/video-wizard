@@ -7,7 +7,8 @@ import type { AspectRatio } from '../lib/aspect-ratios';
 import { isSourceDurationMs, type LegacySubtitleMs } from '../lib/legacy-timing';
 import type { BrandKit } from '../types/brand-kit';
 import { pollJobUntilDone } from '../lib/poll-job';
-import { getPythonEngineUrl, validateVideoFile } from '../lib/utils';
+import { registerSource } from '@/features/studio-shorts/lib/api';
+import { validateVideoFile } from '../lib/utils';
 import { isYouTubeUrl } from '../lib/youtube';
 
 export type SubtitleGenerationStep =
@@ -27,7 +28,8 @@ export interface SubtitleGenerationState {
   inputMode: VideoInputMode;
   aspectRatio: AspectRatio;
   currentStep: SubtitleGenerationStep;
-  uploadedPath: string;
+  sourceAssetId: string;
+  transcriptionJobId: string;
   sourceDurationMs: number | null;
   subtitles: LegacySubtitleMs[];
   language: string;
@@ -54,7 +56,8 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
     inputMode: 'file',
     aspectRatio: '9:16' as AspectRatio,
     currentStep: 'idle',
-    uploadedPath: '',
+    sourceAssetId: '',
+    transcriptionJobId: '',
     sourceDurationMs: null,
     subtitles: [],
     language: 'auto',
@@ -63,8 +66,6 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
     error: '',
     progress: '',
   });
-
-  const PYTHON_ENGINE_URL = getPythonEngineUrl();
 
   const setFile = (file: File | null) => {
     if (!file) {
@@ -116,7 +117,8 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       inputMode: 'file',
       aspectRatio: '9:16' as AspectRatio,
       currentStep: 'idle',
-      uploadedPath: '',
+      sourceAssetId: '',
+      transcriptionJobId: '',
       sourceDurationMs: null,
       subtitles: [],
       language: 'auto',
@@ -145,44 +147,16 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         error: '',
       });
 
-      let uploadData: { path: string; filename: string };
-
-      if (isYouTube) {
-        const downloadResponse = await fetch(`${PYTHON_ENGINE_URL}/download-youtube`, {
-          method: 'POST',
-          signal: operation.signal,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: state.youtubeUrl }),
-        });
-
-        if (!downloadResponse.ok) {
-          const errorData = await downloadResponse.json().catch(() => null);
-          throw new Error(errorData?.detail || 'Error downloading YouTube video');
-        }
-
-        uploadData = await downloadResponse.json();
-      } else {
-        const formData = new FormData();
-        formData.append('file', state.file!);
-
-        const uploadResponse = await fetch(`${PYTHON_ENGINE_URL}/upload`, {
-          method: 'POST',
-          signal: operation.signal,
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error('Error uploading video');
-        }
-
-        uploadData = await uploadResponse.json();
-      }
+      const asset = await registerSource(
+        isYouTube ? state.youtubeUrl : state.file!,
+        operation.signal
+      );
 
       operation.signal.throwIfAborted();
       updateState({
-        uploadedPath: uploadData.path,
+        sourceAssetId: asset.id,
         sourceDurationMs: null,
-        progress: `Video ready: ${uploadData.filename}`,
+        progress: `Video ready: ${asset.name}`,
       });
 
       // Step 2: Generate subtitles
@@ -198,7 +172,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          videoPath: uploadData.path,
+          sourceAssetId: asset.id,
           language: state.language === 'auto' ? null : state.language,
         }),
       });
@@ -242,6 +216,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
       }
 
       updateState({
+        transcriptionJobId: subtitleData.data.jobId,
         subtitles: result.subtitles,
         sourceDurationMs: result.sourceDurationMs,
         language: result.language ?? state.language,
@@ -268,7 +243,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
    */
   const renderVideo = async (brandKit?: BrandKit) => {
     const operation = workspaceIdentity();
-    if (!state.uploadedPath || state.sourceDurationMs === null) {
+    if (!state.sourceAssetId || state.sourceDurationMs === null) {
       updateState({
         error: 'No hay un video de origen disponible',
         currentStep: 'error',
@@ -288,7 +263,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         signal: operation.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoPath: state.uploadedPath,
+          jobId: state.transcriptionJobId,
           sourceDurationMs: state.sourceDurationMs,
           subtitles: state.subtitles,
           template: state.selectedTemplate,

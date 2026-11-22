@@ -7,9 +7,12 @@ import { AssetNotFoundError, AssetService } from '@/server/services/studio/asset
 
 export const assetService = new AssetService(db);
 
-export async function assetResponse(action: (ownerId: string) => Promise<Response>) {
+export async function assetResponse(
+  request: Request,
+  action: (ownerId: string) => Promise<Response>
+) {
   try {
-    return await action((await requireAuth()).id);
+    return await action((await requireAuth(request)).id);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json(

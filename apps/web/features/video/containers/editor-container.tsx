@@ -6,17 +6,17 @@ import type { SubtitleSegment } from '@/server/types/video-render';
 import { useState } from 'react';
 
 interface VideoEditorContainerProps {
-  videoUrl: string;
+  sourceAssetId: string;
   subtitles: SubtitleSegment[];
 }
 
 /**
  * Video Editor Container Component
- * 
+ *
  * Client-side container for the video editor
  * Manages state for preview and export
  */
-export function VideoEditorContainer({ videoUrl, subtitles }: VideoEditorContainerProps) {
+export function VideoEditorContainer({ sourceAssetId, subtitles }: VideoEditorContainerProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<CaptionTemplate>('default');
 
   return (
@@ -26,16 +26,14 @@ export function VideoEditorContainer({ videoUrl, subtitles }: VideoEditorContain
         <div className="lg:col-span-2">
           <div className="mb-4">
             <h2 className="text-2xl font-bold mb-2">Preview</h2>
-            <p className="text-gray-600">
-              Choose a caption style and preview your video
-            </p>
+            <p className="text-gray-600">Choose a caption style and preview your video</p>
           </div>
           <VideoEditorPreview
-            videoUrl={videoUrl}
+            videoUrl={'/api/studio/assets/' + sourceAssetId}
             subtitles={subtitles}
             initialTemplate={selectedTemplate}
             onTemplateChange={setSelectedTemplate}
-            className='w-90 h-auto'
+            className="w-90 h-auto"
           />
         </div>
 
@@ -47,7 +45,7 @@ export function VideoEditorContainer({ videoUrl, subtitles }: VideoEditorContain
           </div>
           <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
             <ExportControls
-              videoUrl={videoUrl}
+              sourceAssetId={sourceAssetId}
               subtitles={subtitles}
               template={selectedTemplate}
             />

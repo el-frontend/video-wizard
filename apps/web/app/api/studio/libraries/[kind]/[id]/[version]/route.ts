@@ -9,8 +9,8 @@ export const runtime = 'nodejs';
 
 type Context = { params: Promise<{ kind: string; id: string; version: string }> };
 
-export function GET(_request: Request, { params }: Context) {
-  return libraryResponse(async (ownerId) => {
+export function GET(request: Request, { params }: Context) {
+  return libraryResponse(request, async (ownerId) => {
     const { kind, id, version } = await params;
     const expected = libraryKind(kind);
     const ref = LibraryRefSchema.safeParse({

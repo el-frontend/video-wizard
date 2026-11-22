@@ -4,8 +4,8 @@ import { assetResponse, assetService } from '../../http';
 
 export const runtime = 'nodejs';
 
-export function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  return assetResponse(async (ownerId) => {
+export function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return assetResponse(request, async (ownerId) => {
     const { id } = await params;
     const asset = await assetService.get(ownerId, id);
     return NextResponse.json(

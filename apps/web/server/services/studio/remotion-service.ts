@@ -23,14 +23,18 @@ async function internal(
   ownerId: string,
   path: string,
   body?: unknown,
-  options: { signal?: AbortSignal; releaseProject?: string } = {}
+  options: {
+    signal?: AbortSignal;
+    releaseProject?: string;
+    media?: { method: 'HEAD' | 'GET'; range: string | null; ifRange: string | null };
+  } = {}
 ) {
   const secret = process.env.STUDIO_RENDER_SECRET;
   if (!secret) throw new StudioRenderError(503);
   const response = await fetch(
     new URL(path, process.env.REMOTION_SERVER_URL || 'http://localhost:3001'),
     {
-      method: options.releaseProject ? 'DELETE' : body ? 'POST' : 'GET',
+      method: options.releaseProject ? 'DELETE' : body ? 'POST' : (options.media?.method ?? 'GET'),
       signal: options.signal,
       cache: 'no-store',
       redirect: 'error',
@@ -38,11 +42,22 @@ async function internal(
         Authorization: 'Bearer ' + secret,
         'X-Studio-Owner': ownerId,
         ...(options.releaseProject && { 'X-Studio-Project': options.releaseProject }),
+        ...(options.media?.range && { Range: options.media.range }),
+        ...(options.media?.ifRange && { 'If-Range': options.media.ifRange }),
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
     }
   );
+  if (options.media && response.status === 416) {
+    await response.body?.cancel();
+    const headers = new Headers();
+    for (const name of ['content-range', 'accept-ranges']) {
+      const value = response.headers.get(name);
+      if (value) headers.set(name, value);
+    }
+    return new Response(null, { status: 416, headers });
+  }
   if (!response.ok)
     throw new StudioRenderError(
       response.status === 404 ? 404 : response.status === 422 ? 422 : 503,
@@ -84,11 +99,26 @@ export async function releaseStudioPreview(ownerId: string, id: string, instance
   await projects.get(ownerId, id);
   return internal(ownerId, '/studio/previews/' + instance, undefined, { releaseProject: id });
 }
-export async function getStudioRender(ownerId: string, id: string, jobId: string, video: boolean) {
+export async function getStudioRender(
+  ownerId: string,
+  id: string,
+  jobId: string,
+  request: Request
+) {
   if (!z.uuid().safeParse(jobId).success) throw new StudioRenderError(404);
   await projects.get(ownerId, id);
   const path = '/studio/renders/' + jobId;
-  const status = await (await internal(ownerId, path)).json();
+  const status = await (
+    await internal(ownerId, path, undefined, { signal: request.signal })
+  ).json();
   if (status.projectId !== id) throw new StudioRenderError(404);
-  return video ? internal(ownerId, path + '/video') : Response.json(status);
+  if (new URL(request.url).searchParams.get('artifact') !== 'video') return Response.json(status);
+  return internal(ownerId, path + '/video', undefined, {
+    signal: request.signal,
+    media: {
+      method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+      range: request.headers.get('range'),
+      ifRange: request.headers.get('if-range'),
+    },
+  });
 }

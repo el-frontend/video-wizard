@@ -8,19 +8,16 @@ import type { SubtitleSegment } from '@/server/types/video-render';
 import { useState } from 'react';
 
 interface ClipCreatorFormProps {
-  videoPath: string;
+  sourceAssetId: string;
   onClipCreated?: (clipUrl: string, subtitles: SubtitleSegment[]) => void;
 }
 
 /**
  * Clip Creator Form Component
- * 
+ *
  * UI for creating clips from a video with integration to Python backend
  */
-export function ClipCreatorForm({
-  videoPath,
-  onClipCreated,
-}: ClipCreatorFormProps) {
+export function ClipCreatorForm({ sourceAssetId, onClipCreated }: ClipCreatorFormProps) {
   const [startTime, setStartTime] = useState<number>(0);
   const [endTime, setEndTime] = useState<number>(30);
   const [cropMode, setCropMode] = useState<'dynamic' | 'static'>('dynamic');
@@ -33,7 +30,7 @@ export function ClipCreatorForm({
 
     try {
       const result = await createClip({
-        videoPath,
+        sourceAssetId,
         startTime,
         endTime,
         cropMode,
@@ -108,7 +105,7 @@ export function ClipCreatorForm({
         </select>
         <p className="text-sm text-gray-500 mt-1">
           {cropMode === 'dynamic'
-            ? 'Tracks speaker\'s face for smooth camera movement'
+            ? "Tracks speaker's face for smooth camera movement"
             : 'Fixed crop at center position'}
         </p>
       </div>
@@ -132,9 +129,7 @@ export function ClipCreatorForm({
       {getStepMessage() && (
         <div
           className={`p-4 rounded-lg ${
-            currentStep === 'error'
-              ? 'bg-red-50 text-red-700'
-              : 'bg-blue-50 text-blue-700'
+            currentStep === 'error' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'
           }`}
         >
           <p className="text-sm font-medium">{getStepMessage()}</p>

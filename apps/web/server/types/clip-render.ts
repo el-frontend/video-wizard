@@ -7,18 +7,6 @@ import { z } from 'zod';
  */
 
 /**
- * Request schema for creating clips from Python service
- */
-export const ClipRenderRequestSchema = z.object({
-  video_path: z.string(),
-  start_time: z.number().min(0),
-  end_time: z.number(),
-  crop_mode: z.enum(['dynamic', 'static']).default('dynamic'),
-  output_path: z.string().optional(),
-  aspect_ratio: z.enum(['9:16', '1:1', '4:5', '16:9']).optional().default('9:16'),
-});
-
-/**
  * Response schema from Python service /render-clip
  */
 export const ClipRenderResponseSchema = z.object({
@@ -61,7 +49,6 @@ export const TranscriptionResponseSchema = z.object({
 });
 
 // Type exports
-export type ClipRenderRequest = z.infer<typeof ClipRenderRequestSchema>;
 export type ClipRenderResponse = z.infer<typeof ClipRenderResponseSchema>;
 export type TranscriptionResponse = z.infer<typeof TranscriptionResponseSchema>;
 
@@ -70,7 +57,7 @@ export const OwnedClipInputSchema = z
     sourceAssetId: z.uuid(),
     startMs: z.int().nonnegative(),
     endMs: z.int().positive(),
-    crop_mode: ClipRenderRequestSchema.shape.crop_mode,
-    aspect_ratio: ClipRenderRequestSchema.shape.aspect_ratio,
+    crop_mode: z.enum(['dynamic', 'static']).default('dynamic'),
+    aspect_ratio: z.enum(['9:16', '1:1', '4:5', '16:9']).default('9:16'),
   })
   .refine((r) => r.endMs > r.startMs);

@@ -35,7 +35,7 @@ function disposition(mediaType: string, name: string) {
 }
 
 export function GET(request: Request, { params }: AssetContext) {
-  return assetResponse(async (ownerId) => {
+  return assetResponse(request, async (ownerId) => {
     const { id } = await params;
     const { asset, file, size } = await assetService.openFile(ownerId, id);
     const rangeHeader = request.headers.get('range');
@@ -49,6 +49,11 @@ export function GET(request: Request, { params }: AssetContext) {
 
     if (rangeHeader !== null && !range) {
       await file.close();
+      if (request.method === 'HEAD')
+        return new Response(null, {
+          status: 416,
+          headers: { ...baseHeaders, 'Content-Range': `bytes */${size}` },
+        });
       return NextResponse.json(
         { success: false, error: 'El rango de bytes no es válido.' },
         {
@@ -76,3 +81,5 @@ export function GET(request: Request, { params }: AssetContext) {
     });
   });
 }
+
+export const HEAD = GET;

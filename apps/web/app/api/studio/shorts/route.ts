@@ -9,7 +9,7 @@ const action = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('open-job'), input: z.unknown() }),
 ]);
 export function POST(request: Request) {
-  return projectResponse<unknown>(async (owner) => {
+  return projectResponse<unknown>(request, async (owner) => {
     const parsed = action.safeParse(await readJson(request));
     if (!parsed.success) throw new ValidationError('Solicitud de shorts no válida.');
     const data = parsed.data;

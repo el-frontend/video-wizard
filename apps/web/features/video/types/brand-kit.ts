@@ -12,7 +12,7 @@ import { z } from 'zod';
  */
 export const BrandKitSchema = z.object({
   // Logo
-  logoUrl: z.string().optional(),
+  logoAssetId: z.uuid().optional(),
   logoPosition: z
     .enum(['top-left', 'top-right', 'bottom-left', 'bottom-right'])
     .default('top-right'),

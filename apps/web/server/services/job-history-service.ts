@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/server/db';
@@ -126,6 +127,7 @@ class JobHistoryService {
    * doesn't exist OR belongs to a different user (prevents user enumeration).
    */
   async getById(jobId: string, userId: string): Promise<Job | null> {
+    if (!z.uuid().safeParse(jobId).success) return null;
     const [row] = await db
       .select()
       .from(jobs)

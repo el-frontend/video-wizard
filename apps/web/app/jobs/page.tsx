@@ -1,3 +1,4 @@
+import { publicJob } from '@/server/services/owned-media-service';
 import { History } from 'lucide-react';
 
 import { Badge } from '@workspace/ui/components/badge';
@@ -5,7 +6,6 @@ import { Card } from '@workspace/ui/components/card';
 
 import { workspacePage } from '@/server/auth/page-policy';
 import {
-  type Job,
   type JobStatus,
   type JobType,
   jobHistoryService,
@@ -77,7 +77,7 @@ export default workspacePage('/jobs', async (user, { searchParams }) => {
                 </tr>
               </thead>
               <tbody>
-                {items.map((job) => (
+                {items.map(publicJob).map((job) => (
                   <JobRow key={job.id} job={job} />
                 ))}
               </tbody>
@@ -89,7 +89,7 @@ export default workspacePage('/jobs', async (user, { searchParams }) => {
   );
 });
 
-function JobRow({ job }: { job: Job }) {
+function JobRow({ job }: { job: ReturnType<typeof publicJob> }) {
   return (
     <tr className="border-b last:border-b-0">
       <td className="px-4 py-3">
@@ -106,7 +106,7 @@ function JobRow({ job }: { job: Job }) {
         <ProgressCell progress={job.progress} status={job.status} />
       </td>
       <td className="text-muted-foreground max-w-md px-4 py-3">
-        {job.status === 'failed' && job.errorMessage ? (
+        {job.errorMessage ? (
           <span className="text-destructive line-clamp-2 text-xs">{job.errorMessage}</span>
         ) : (
           <span className="line-clamp-1 text-xs">{summarizeInput(job.inputData)}</span>
@@ -161,10 +161,6 @@ function summarizeInput(input: unknown): string {
   if (typeof obj.language === 'string') parts.push(`lang: ${obj.language}`);
   if (typeof obj.subtitleCount === 'number') parts.push(`${obj.subtitleCount} segs`);
   if (typeof obj.transcriptLength === 'number') parts.push(`${obj.transcriptLength} chars`);
-  if (typeof obj.videoPath === 'string') {
-    const filename = obj.videoPath.split(/[\\/]/).pop();
-    if (filename) parts.push(filename);
-  }
   return parts.join(' · ') || '—';
 }
 

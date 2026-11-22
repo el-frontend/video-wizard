@@ -19,7 +19,7 @@ interface ClipWorkflowState {
 }
 
 interface CreateClipParams {
-  videoPath: string;
+  sourceAssetId: string;
   startTime: number;
   endTime: number;
   cropMode?: 'dynamic' | 'static';
@@ -68,9 +68,9 @@ export function useClipWorkflow() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          video_path: params.videoPath,
-          start_time: params.startTime,
-          end_time: params.endTime,
+          sourceAssetId: params.sourceAssetId,
+          startMs: Math.round(params.startTime * 1000),
+          endMs: Math.round(params.endTime * 1000),
           crop_mode: params.cropMode || 'dynamic',
         }),
       });
@@ -105,15 +105,13 @@ export function useClipWorkflow() {
 
       const clipUrl = clipData.output_url;
 
-      setState((prev) => ({
-        ...prev,
-        clipUrl,
-        clipMetadata: {
-          duration: clipData.duration,
-          cropDimensions: clipData.crop_dimensions,
-          fileSize: clipData.file_size,
-        },
-      }));
+      const metadata = {
+        duration: clipData.duration,
+        cropDimensions: clipData.crop_dimensions,
+        fileSize: clipData.file_size,
+      };
+      setState((prev) => ({ ...prev, clipUrl, clipMetadata: metadata }));
+      let subtitles: SubtitleSegment[] = [];
 
       // Step 2: Get transcription if requested
       if (params.includeTranscription) {
@@ -129,7 +127,7 @@ export function useClipWorkflow() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            video_path: params.videoPath,
+            jobId: queued.data.jobId,
           }),
         });
 
@@ -140,22 +138,9 @@ export function useClipWorkflow() {
         const transcribeResult = await transcribeResponse.json();
         operation.signal.throwIfAborted();
 
-        // Filter segments to match clip time range
-        const filteredSegments = transcribeResult.data.segments
-          .filter(
-            (seg: SubtitleSegment) => seg.start >= params.startTime && seg.end <= params.endTime
-          )
-          .map((seg: SubtitleSegment) => ({
-            ...seg,
-            // Adjust timestamps relative to clip start
-            start: seg.start - params.startTime,
-            end: seg.end - params.startTime,
-          }));
-
-        setState((prev) => ({
-          ...prev,
-          subtitles: filteredSegments,
-        }));
+        // The owned crop is transcribed on its own zero-based clock.
+        subtitles = transcribeResult.data.segments;
+        setState((prev) => ({ ...prev, subtitles }));
       }
 
       // Step 3: Ready for preview/export
@@ -167,8 +152,8 @@ export function useClipWorkflow() {
 
       return {
         clipUrl,
-        subtitles: state.subtitles,
-        metadata: state.clipMetadata,
+        subtitles,
+        metadata,
       };
     } catch (error) {
       console.error('Clip workflow error:', error);

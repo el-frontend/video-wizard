@@ -1,5 +1,7 @@
 'use client';
 
+import { uploadEditorAsset } from '@/features/studio-designer/hooks/use-editor-dependencies';
+import { workspaceIdentity } from '@/lib/authenticated-fetch';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { BrandKitSchema, BRAND_KIT_STORAGE_KEY, type BrandKit } from '../types/brand-kit';
 
@@ -42,5 +44,27 @@ export function useBrandKit(ownerId: string) {
     },
     [read, setBrandKit]
   );
-  return { brandKit, setBrandKit, updateBrandKit, clearBrandKit: () => setBrandKit(null) };
+  const uploadLogo = async (file: File) => {
+    const { signal, ownerId: activeOwner } = workspaceIdentity();
+    if (activeOwner !== ownerId) throw new Error('La cuenta cambió.');
+    const asset = await uploadEditorAsset(file, signal);
+    signal.throwIfAborted();
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(asset.mediaType))
+      throw new Error('Selecciona una imagen PNG, JPEG o WebP.');
+    updateBrandKit({ logoAssetId: asset.id });
+  };
+  const previewBrandKit = brandKit
+    ? {
+        ...brandKit,
+        logoUrl: brandKit.logoAssetId ? '/api/studio/assets/' + brandKit.logoAssetId : undefined,
+      }
+    : undefined;
+  return {
+    brandKit,
+    previewBrandKit,
+    uploadLogo,
+    setBrandKit,
+    updateBrandKit,
+    clearBrandKit: () => setBrandKit(null),
+  };
 }

@@ -1,3 +1,4 @@
+import { publicJob } from '@/server/services/owned-media-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -21,7 +22,7 @@ const listQuerySchema = z.object({
 export async function GET(request: NextRequest) {
   let user;
   try {
-    user = await requireAuth();
+    user = await requireAuth(request);
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
     throw error;
@@ -46,6 +47,6 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    data: { items, total, limit, offset },
+    data: { items: items.map(publicJob), total, limit, offset },
   });
 }

@@ -19,9 +19,13 @@ export function libraryKind(value: string) {
   return parsed.data;
 }
 
-export async function libraryResponse<T>(action: (ownerId: string) => Promise<T>, status = 200) {
+export async function libraryResponse<T>(
+  request: Request,
+  action: (ownerId: string) => Promise<T>,
+  status = 200
+) {
   try {
-    const owner = await requireAuth();
+    const owner = await requireAuth(request);
     const data = await action(owner.id);
     return NextResponse.json({ success: true, data }, { status });
   } catch (error) {

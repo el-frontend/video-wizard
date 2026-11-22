@@ -13,7 +13,7 @@ import type { AnalyzeContentRequest } from '@/server/types/content-analysis';
 export async function POST(request: NextRequest) {
   let user;
   try {
-    user = await requireAuth();
+    user = await requireAuth(request);
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
     throw error;

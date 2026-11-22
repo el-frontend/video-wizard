@@ -7,7 +7,7 @@ import { SubtitleSegment } from '@/server/types/video-render';
 import { useState } from 'react';
 
 interface ExportControlsProps {
-  videoUrl: string;
+  sourceAssetId: string;
   subtitles: SubtitleSegment[];
   template: CaptionTemplate;
   disabled?: boolean;
@@ -20,7 +20,7 @@ interface ExportControlsProps {
  * Calls the /api/render-final endpoint for server-side rendering
  */
 export function ExportControls({
-  videoUrl,
+  sourceAssetId,
   subtitles,
   template,
   disabled = false,
@@ -42,7 +42,7 @@ export function ExportControls({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          videoUrl,
+          sourceAssetId,
           subtitles,
           template,
         }),

@@ -9,7 +9,7 @@ import { assetResponse, assetService } from './http';
 export const runtime = 'nodejs';
 
 export function GET(request: Request) {
-  return assetResponse(async (ownerId) => {
+  return assetResponse(request, async (ownerId) => {
     const params = new URL(request.url).searchParams;
     const data = await assetService.list(
       ownerId,
@@ -24,7 +24,7 @@ export function GET(request: Request) {
 }
 
 export function POST(request: Request) {
-  return assetResponse(async (ownerId) => {
+  return assetResponse(request, async (ownerId) => {
     const mediaType = request.headers.get('content-type');
     const encodedName = request.headers.get('x-studio-filename');
     if (!request.body || !mediaType || !encodedName) {

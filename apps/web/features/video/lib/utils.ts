@@ -49,28 +49,3 @@ export function validateVideoFile(file: File): { valid: boolean; error?: string 
 
   return { valid: true };
 }
-
-/**
- * Gets Python engine URL from environment
- */
-export function getPythonEngineUrl(): string {
-  return process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL || 'http://localhost:8000';
-}
-
-export function getVideoSourceUrl(baseUrl: string, videoPath: string): string {
-  if (typeof videoPath !== 'string') {
-    throw new Error('Invalid video path');
-  }
-  const parts = videoPath.replace(/^\//, '').split('/');
-  if (
-    parts.length < 2 ||
-    !['uploads', 'output'].includes(parts[0]) ||
-    parts.some((part) => part === '' || part === '.' || part === '..') ||
-    videoPath.includes('\\') ||
-    videoPath.includes('\0')
-  ) {
-    throw new Error('Invalid video path');
-  }
-
-  return `${baseUrl.replace(/\/$/, '')}/${parts.map(encodeURIComponent).join('/')}`;
-}
