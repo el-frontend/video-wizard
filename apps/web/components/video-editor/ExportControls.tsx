@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { Button } from '@workspace/ui/components/button';
 import type { CaptionTemplate } from '@/remotion/types';
 import { SubtitleSegment } from '@/server/types/video-render';
@@ -14,7 +15,7 @@ interface ExportControlsProps {
 
 /**
  * Export Controls Component
- * 
+ *
  * Provides export functionality with progress tracking
  * Calls the /api/render-final endpoint for server-side rendering
  */
@@ -35,7 +36,7 @@ export function ExportControls({
       setExportError(null);
       setProgress(0);
 
-      const response = await fetch('/api/render-final', {
+      const response = await authenticatedFetch('/api/render-final', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -99,11 +100,7 @@ export function ExportControls({
       {downloadUrl && (
         <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
           <p className="text-sm text-green-700 mb-2">Export complete!</p>
-          <a
-            href={downloadUrl}
-            download
-            className="text-blue-600 hover:underline font-medium"
-          >
+          <a href={downloadUrl} download className="text-blue-600 hover:underline font-medium">
             Download Video
           </a>
         </div>

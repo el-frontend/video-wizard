@@ -6,6 +6,9 @@ import { exampleProject } from '@workspace/video-project/fixtures';
 import { useProjectSession } from '@/features/studio-designer/hooks/use-project-session';
 import { useProjects } from './use-projects';
 
+vi.mock('@/lib/authenticated-fetch', () => ({
+  authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+}));
 const router = { push: vi.fn() };
 vi.mock('next/navigation', () => ({ useRouter: () => router }));
 const original: ProjectRecord = {

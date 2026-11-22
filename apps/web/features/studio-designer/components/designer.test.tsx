@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('@/lib/authenticated-fetch', () => ({
+  authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+}));
 import { isValidElement } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';

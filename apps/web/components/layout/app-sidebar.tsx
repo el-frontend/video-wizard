@@ -87,7 +87,17 @@ const bottomNavItems: NavItem[] = [
  * Application Sidebar Component
  * Professional dark theme navigation with icons
  */
-export function AppSidebar() {
+export function AppSidebar({
+  userLabel,
+  onSignOut,
+  busy,
+  error,
+}: {
+  userLabel: string;
+  onSignOut: () => void;
+  busy: boolean;
+  error: string;
+}) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
@@ -139,6 +149,22 @@ export function AppSidebar() {
 
         {/* Bottom Navigation */}
         <div className="border-t border-border p-4 space-y-1">
+          <p className="truncate px-3 text-sm" title={userLabel}>
+            {userLabel}
+          </p>
+          <button
+            type="button"
+            className="min-h-12 px-3 text-sm underline"
+            onClick={onSignOut}
+            disabled={busy}
+          >
+            Cerrar sesión
+          </button>
+          {error && (
+            <p role="alert" className="text-sm">
+              {error}
+            </p>
+          )}
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);

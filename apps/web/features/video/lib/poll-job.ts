@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 /**
  * Subset of the `jobs` row that the client cares about. Mirrors the
  * server-side Job type without coupling the client bundle to drizzle.
@@ -39,7 +40,7 @@ export async function pollJobUntilDone(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const res = await fetch(`/api/jobs/${jobId}`);
+    const res = await authenticatedFetch(`/api/jobs/${jobId}`);
     if (!res.ok) {
       throw new Error(`Failed to fetch job status (${res.status})`);
     }

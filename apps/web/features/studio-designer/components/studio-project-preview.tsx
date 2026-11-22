@@ -1,5 +1,7 @@
 'use client';
 
+import { registerPreviewRetirement } from '@/features/auth/lib/session-events';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useEffect, useRef, useState } from 'react';
 import type { Diagnostic, PreviewHandle, ProjectDraft } from '@workspace/video-project';
 
@@ -31,7 +33,7 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
     setError('');
     void (async () => {
       try {
-        const response = await fetch(url, {
+        const response = await authenticatedFetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ baseRevision: revision, document, instance }),
@@ -55,11 +57,22 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
           setError(cause instanceof Error ? cause.message : 'No se pudo abrir la vista previa.');
       }
     })();
-    return () => {
+    let retired: Promise<void> | undefined;
+    const retire = () => {
       controller.abort();
-      void fetch(url + '?instance=' + instance, { method: 'DELETE', keepalive: true }).catch(
+      retired ??= authenticatedFetch(url + '?instance=' + instance, {
+        method: 'DELETE',
+        keepalive: true,
+      }).then(
+        () => {},
         () => {}
       );
+      return retired;
+    };
+    const unregister = registerPreviewRetirement(retire);
+    return () => {
+      unregister();
+      void retire();
     };
   }, [projectId, revision, document]);
   useEffect(() => {

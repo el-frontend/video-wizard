@@ -1,3 +1,4 @@
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   LibraryEntrySchema,
@@ -181,6 +182,7 @@ export function CaptionEditor({
     [newCue, setNewCue] = useState<CaptionCue | null>(null);
   const [presets, setPresets] = useState<{ ref: LibraryRef; name: string }[]>([]),
     [presetError, setPresetError] = useState('');
+  const recovery = useSessionRecovery();
   const importToken = useRef(0);
   useLayoutEffect(
     () => () => {
@@ -195,21 +197,22 @@ export function CaptionEditor({
     })
       .then((raw) => {
         const entries = LibraryEntrySchema.array().parse(raw);
-        if (!controller.signal.aborted)
-          setPresets(
-            entries.flatMap((e) =>
-              e.kind === 'component' && e.engine === engine && e.manifest.builtin
-                ? [{ ref: { id: e.id, version: e.version }, name: e.name }]
-                : []
-            )
-          );
+        if (controller.signal.aborted) return;
+        setPresetError('');
+        setPresets(
+          entries.flatMap((e) =>
+            e.kind === 'component' && e.engine === engine && e.manifest.builtin
+              ? [{ ref: { id: e.id, version: e.version }, name: e.name }]
+              : []
+          )
+        );
       })
       .catch(() => {
         if (!controller.signal.aborted)
           setPresetError('No se pudieron cargar los presets de subtítulos.');
       });
     return () => controller.abort();
-  }, [engine]);
+  }, [engine, recovery]);
   const cues = [...layer.cues].sort((a, b) => a.startMs - b.startMs);
   const selected = cues.find((c) => c.id === selectedId) ?? cues[0];
   const shown = newCue ?? selected;

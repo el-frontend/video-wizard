@@ -1,4 +1,6 @@
 'use client';
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useEffect, useState } from 'react';
 import {
   LibraryEntrySchema,
@@ -31,6 +33,7 @@ export function useLibraryDiagnostics(doc: ProjectDraft, verified: LibraryEntry[
       if (layer.type === 'captions') include('component', layer.templateRef);
     }
   }
+  const recovery = useSessionRecovery();
   const key = JSON.stringify(ready ? [...paths].sort() : []);
   const [result, setResult] = useState<{ key: string; entries: LibraryEntry[]; error?: string }>();
   useEffect(() => {
@@ -38,7 +41,10 @@ export function useLibraryDiagnostics(doc: ProjectDraft, verified: LibraryEntry[
     const controller = new AbortController();
     Promise.all(
       (JSON.parse(key) as string[]).map(async (path) => {
-        const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+        const response = await authenticatedFetch(path, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error('No se pudieron comprobar las referencias fijadas.');
         return LibraryEntrySchema.parse((await response.json()).data);
@@ -57,7 +63,7 @@ export function useLibraryDiagnostics(doc: ProjectDraft, verified: LibraryEntry[
           });
       });
     return () => controller.abort();
-  }, [key]);
+  }, [key, recovery]);
   if (!ready || (key !== '[]' && (result?.key !== key || result.error)))
     return { issues: [], error: result?.key === key ? result.error : undefined };
   const library = [...verified, ...(key === '[]' ? [] : result!.entries)];

@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import type { ContentAnalysis } from '@/lib/types/content-intelligence';
 import { useState } from 'react';
 import { formatTranscriptForAI, validateVideoFile } from '../lib/utils';
@@ -135,7 +136,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
 
       const formattedTranscript = formatTranscriptForAI(transcriptionData.segments);
 
-      const analysisResponse = await fetch('/api/analyze-content', {
+      const analysisResponse = await authenticatedFetch('/api/analyze-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

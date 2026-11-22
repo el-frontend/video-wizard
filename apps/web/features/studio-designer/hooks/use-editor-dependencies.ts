@@ -1,4 +1,5 @@
 'use client';
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AssetDescriptorSchema,
@@ -24,6 +25,7 @@ type Dependencies = {
 };
 
 export function useEditorDependencies(project: ProjectDraft | null) {
+  const recovery = useSessionRecovery();
   const key = useMemo(() => {
     if (!project) return '';
     const refs = new Set<string>();
@@ -76,7 +78,7 @@ export function useEditorDependencies(project: ProjectDraft | null) {
     }
     void load();
     return () => controller.abort();
-  }, [key]);
+  }, [key, recovery]);
   const current = loaded?.key === key ? loaded : undefined;
   return {
     asset: (id: string) => (project?.assetIds.includes(id) ? current?.assets.get(id) : null),

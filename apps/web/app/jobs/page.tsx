@@ -1,10 +1,9 @@
 import { History } from 'lucide-react';
-import { redirect } from 'next/navigation';
 
 import { Badge } from '@workspace/ui/components/badge';
 import { Card } from '@workspace/ui/components/card';
 
-import { auth } from '@/auth';
+import { workspacePage } from '@/server/auth/page-policy';
 import {
   type Job,
   type JobStatus,
@@ -34,19 +33,10 @@ const STATUS_VARIANTS: Record<JobStatus, 'default' | 'secondary' | 'destructive'
   cancelled: 'outline',
 };
 
-interface JobsPageProps {
-  searchParams: Promise<{ type?: string; status?: string }>;
-}
-
-export default async function JobsPage({ searchParams }: JobsPageProps) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect('/signin?callbackUrl=/jobs');
-  }
-
+export default workspacePage('/jobs', async (user, { searchParams }) => {
   const { type, status } = await searchParams;
 
-  const items = await jobHistoryService.listByUser(session.user.id, {
+  const items = await jobHistoryService.listByUser(user.id, {
     type: isJobType(type) ? type : undefined,
     status: isJobStatus(status) ? status : undefined,
     limit: 100,
@@ -97,7 +87,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
       )}
     </div>
   );
-}
+});
 
 function JobRow({ job }: { job: Job }) {
   return (
@@ -178,7 +168,7 @@ function summarizeInput(input: unknown): string {
   return parts.join(' · ') || '—';
 }
 
-function isJobType(value: string | undefined): value is JobType {
+function isJobType(value: unknown): value is JobType {
   return (
     value === 'transcription' ||
     value === 'render' ||
@@ -187,7 +177,7 @@ function isJobType(value: string | undefined): value is JobType {
   );
 }
 
-function isJobStatus(value: string | undefined): value is JobStatus {
+function isJobStatus(value: unknown): value is JobStatus {
   return (
     value === 'pending' ||
     value === 'queued' ||

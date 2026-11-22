@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import type { ProjectRecord } from '@workspace/video-project';
 
 export class ProjectRequestError extends Error {
@@ -25,7 +26,7 @@ export const projectsUrl = '/api/studio/projects';
 export async function projectRequest<T>(url: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, { cache: 'no-store', ...options });
+    response = await authenticatedFetch(url, { cache: 'no-store', ...options });
   } catch {
     throw new ProjectRequestError('No se pudo conectar con el estudio.');
   }

@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useState } from 'react';
 import type { CaptionTemplate } from '@/remotion/types';
 import type { AspectRatio } from '../lib/aspect-ratios';
@@ -186,7 +187,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         progress: 'Generating subtitles from video...',
       });
 
-      const subtitleResponse = await fetch('/api/generate-subtitles', {
+      const subtitleResponse = await authenticatedFetch('/api/generate-subtitles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -275,7 +276,7 @@ export function useSubtitleGeneration(options?: UseSubtitleGenerationOptions) {
         error: '',
       });
 
-      const renderResponse = await fetch('/api/render-video-subtitles', {
+      const renderResponse = await authenticatedFetch('/api/render-video-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

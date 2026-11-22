@@ -42,7 +42,7 @@ const LANGUAGE_OPTIONS = [
   { value: 'ko', label: 'Korean' },
 ];
 
-export function SubtitleGeneratorContainer() {
+export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
   const {
     file,
     youtubeUrl,
@@ -70,7 +70,7 @@ export function SubtitleGeneratorContainer() {
   } = useSubtitleGeneration();
   const subtitlesSeconds = useMemo(() => legacyMsToSeconds(subtitles), [subtitles]);
 
-  const { brandKit, setBrandKit } = useBrandKit();
+  const { brandKit, setBrandKit } = useBrandKit(ownerId);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];

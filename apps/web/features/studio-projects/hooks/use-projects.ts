@@ -1,5 +1,6 @@
 'use client';
 
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EngineId, ProjectPage, ProjectRecord } from '@workspace/video-project';
@@ -7,6 +8,7 @@ import { studioNavigation } from '@/features/studio-designer/hooks/project-navig
 import { onProjectSaved, projectRequest, projectsUrl } from '../project-api';
 
 export function useProjects(initial: ProjectPage, ownerId: string) {
+  const recovery = useSessionRecovery();
   const [page, setPage] = useState(initial);
   const [reading, setReading] = useState<'refresh' | 'more' | null>(null);
   const [creating, setCreating] = useState(false);
@@ -58,7 +60,7 @@ export function useProjects(initial: ProjectPage, ownerId: string) {
       pageRequest.current?.abort();
       createRequest.current?.abort();
     };
-  }, [ownerId, readPage]);
+  }, [ownerId, readPage, recovery]);
 
   async function create(title: string, engine: EngineId) {
     if (createRequest.current) return;

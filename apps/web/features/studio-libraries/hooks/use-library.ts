@@ -1,4 +1,5 @@
 'use client';
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LibraryEntrySchema,
@@ -30,6 +31,7 @@ export function useLibrary(
   engine?: EngineId,
   { enabled = true, generation = 0 }: { enabled?: boolean; generation?: number } = {}
 ) {
+  const recovery = useSessionRecovery();
   const url = '/api/studio/libraries/' + kind + (engine ? '?verified=1&engine=' + engine : '');
   const [result, setResult] = useState<{
     url: string;
@@ -55,12 +57,13 @@ export function useLibrary(
           });
       });
     return () => controller.abort();
-  }, [url, generation, enabled]);
+  }, [url, generation, enabled, recovery]);
   const current =
     enabled && result?.url === url && result.generation === generation ? result : undefined;
   return { entries: current?.entries ?? [], loading: enabled && !current, error: current?.error };
 }
 export function useAssetPage(media?: string) {
+  const recovery = useSessionRecovery();
   const [items, setItems] = useState<AssetDescriptor[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
     [error, setError] = useState(''),
@@ -107,7 +110,7 @@ export function useAssetPage(media?: string) {
   useEffect(() => {
     void read(null);
     return () => flight.current?.abort();
-  }, [read, generation]);
+  }, [read, generation, recovery]);
   return {
     items,
     cursor,

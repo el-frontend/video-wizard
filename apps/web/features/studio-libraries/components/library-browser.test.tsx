@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('@/lib/authenticated-fetch', () => ({
+  authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+}));
 import {
   act,
   cleanup,

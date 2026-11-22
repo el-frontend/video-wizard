@@ -1,5 +1,6 @@
 'use client';
 
+import { sessionEvents } from '@/features/auth/lib/session-events';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   applyCommand,
@@ -89,6 +90,8 @@ function createSession(id: string, initial?: ProjectRecord) {
   let flight: Promise<void> | null = null;
   let read: AbortController | null = null;
   let active = false;
+  let pauseAutosave = false;
+  let leaving = false;
   function update(partial: Partial<SessionState>) {
     const previous = state.saved;
     state = { ...state, ...partial, canUndo: !!past.length, canRedo: !!future.length };
@@ -137,6 +140,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
     const status = state.conflict ? 'conflict' : flight ? 'saving' : 'dirty';
     update({ draft, selection, status, error: '' });
+    pauseAutosave = false;
     if (!state.conflict)
       timer = setTimeout(() => {
         timer = undefined;
@@ -243,7 +247,7 @@ function createSession(id: string, initial?: ProjectRecord) {
   async function writeAfterFlight() {
     if (flight) await flight;
     // A later edit restarted the debounce while this callback waited for the server.
-    if (active && !timer && !flight) await writeNow();
+    if (active && !pauseAutosave && !timer && !flight) await writeNow();
   }
   async function flushDraft() {
     stopTimer();
@@ -335,9 +339,26 @@ function createSession(id: string, initial?: ProjectRecord) {
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') onFocus();
     }, pollInterval);
+    const onExpire = () => {
+      pauseAutosave = true;
+      stopTimer();
+    };
+    const onCheckDirty = (event: Event) => {
+      if (hasUnsavedChanges()) event.preventDefault();
+    };
+    const onLeave = () => {
+      leaving = true;
+      stopTimer();
+      clearTabDrafts();
+    };
+    window.addEventListener(sessionEvents.ending, onExpire);
+    window.addEventListener(sessionEvents.expired, onExpire);
+    window.addEventListener(sessionEvents.restored, onFocus);
+    window.addEventListener(sessionEvents.checkDirty, onCheckDirty);
+    window.addEventListener(sessionEvents.leaving, onLeave);
     window.addEventListener('focus', onFocus);
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges()) event.preventDefault();
+      if (!leaving && hasUnsavedChanges()) event.preventDefault();
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
@@ -346,6 +367,11 @@ function createSession(id: string, initial?: ProjectRecord) {
       read?.abort();
       read = null;
       clearInterval(interval);
+      window.removeEventListener(sessionEvents.ending, onExpire);
+      window.removeEventListener(sessionEvents.expired, onExpire);
+      window.removeEventListener(sessionEvents.restored, onFocus);
+      window.removeEventListener(sessionEvents.checkDirty, onCheckDirty);
+      window.removeEventListener(sessionEvents.leaving, onLeave);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('beforeunload', beforeUnload);
     };
@@ -354,7 +380,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     if (!state.saved) return () => {};
     const slot = { session };
     retainedSessions.set(sessionKey(state.saved), slot);
-    // Full document navigation (including Auth.js sign-out) ends this recovery scope.
+    // Full document navigation (including sign-out) ends this recovery scope.
     window.addEventListener('pagehide', clearTabDrafts, { once: true });
     return () => {
       if (!state.saved) return;
@@ -389,12 +415,16 @@ function createSession(id: string, initial?: ProjectRecord) {
 }
 
 export function useProjectSession(id: string, initial?: ProjectRecord) {
-  const [entry, setEntry] = useState(() => ({ id, session: openSession(id, initial) }));
+  const [entry, setEntry] = useState(() => ({
+    id,
+    owner: initial?.ownerId,
+    session: openSession(id, initial),
+  }));
   let session = entry.session;
   // RSC refreshes can return a fresh object for the same revision.
-  if (entry.id !== id) {
+  if (entry.id !== id || entry.owner !== initial?.ownerId) {
     session = openSession(id, initial?.document.id === id ? initial : undefined);
-    setEntry({ id, session });
+    setEntry({ id, owner: initial?.ownerId, session });
   }
   useEffect(() => session.start(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);

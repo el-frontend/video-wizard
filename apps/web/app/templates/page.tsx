@@ -1,15 +1,13 @@
-import { auth } from '@/auth';
-import { redirect } from 'next/navigation';
+import { workspacePage } from '@/server/auth/page-policy';
 import { LibraryBrowser } from '@/features/studio-libraries/components/library-browser';
 export const metadata = { title: 'Plantillas · Video Wizard' };
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ entry?: string }>;
-}) {
-  const session = await auth();
-  if (!session?.user?.id) redirect('/signin?callbackUrl=/templates');
+export default workspacePage('/templates', async (user, { searchParams }) => {
+  const { entry } = await searchParams;
   return (
-    <LibraryBrowser key={session.user.id} kind="template" initialId={(await searchParams).entry} />
+    <LibraryBrowser
+      key={user.id}
+      kind="template"
+      initialId={typeof entry === 'string' ? entry : undefined}
+    />
   );
-}
+});

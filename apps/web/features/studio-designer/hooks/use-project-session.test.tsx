@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('@/lib/authenticated-fetch', () => ({
+  authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+}));
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ProjectRecord } from '@workspace/video-project';
@@ -359,4 +362,40 @@ it('keeps the flushed draft and remote revision when the audio POST conflicts', 
   expect(result.current.replacingAudio).toBe(false);
   await tick(1500);
   expect(request).toHaveBeenCalledTimes(3);
+});
+
+it('keeps the 401 draft and only refreshes its base on reauthentication until an explicit save', async () => {
+  const result = await open();
+  request.mockResolvedValueOnce(
+    Response.json({ success: false, error: 'Sesión caducada' }, { status: 401 })
+  );
+  act(() => result.current.dispatch({ type: 'set-title', title: 'Edición privada' }));
+  await tick(500);
+  expect(result.current.hasUnsavedChanges()).toBe(true);
+  request.mockResolvedValueOnce(ok(initial));
+  await act(async () => {
+    window.dispatchEvent(new Event('studio:session-restored'));
+  });
+  await tick(1000);
+  expect(result.current.draft?.title).toBe('Edición privada');
+  expect(request.mock.calls.filter(([, options]) => options?.method === 'PUT')).toHaveLength(1);
+  request.mockResolvedValueOnce(ok(record('v2', 'Edición privada')));
+  await act(async () => {
+    await result.current.save();
+  });
+  expect(result.current.hasUnsavedChanges()).toBe(false);
+});
+it('never reuses a dirty session when the same project id is rendered with another owner', async () => {
+  request.mockResolvedValue(ok(initial));
+  const view = renderHook(({ source }) => useProjectSession(source.document.id, source), {
+    initialProps: { source: initial },
+  });
+  await act(async () => {});
+  act(() => view.result.current.dispatch({ type: 'set-title', title: 'Privado de A' }));
+  const other = { ...record('v2', 'De B'), ownerId: 'other' };
+  request.mockResolvedValue(ok(other));
+  view.rerender({ source: other });
+  await tick(1000);
+  expect(view.result.current.draft?.title).toBe('De B');
+  expect(request.mock.calls.filter(([, options]) => options?.method === 'PUT')).toHaveLength(0);
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { pollJobUntilDone } from '@/features/video/lib/poll-job';
 import type { SubtitleSegment } from '@/server/types/video-render';
 import { useCallback, useState } from 'react';
@@ -59,7 +60,7 @@ export function useClipWorkflow() {
       }));
 
       // Step 1: Enqueue the vertical clip via the worker queue.
-      const clipResponse = await fetch('/api/create-clip', {
+      const clipResponse = await authenticatedFetch('/api/create-clip', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,7 +119,7 @@ export function useClipWorkflow() {
           currentStep: 'transcribing',
         }));
 
-        const transcribeResponse = await fetch('/api/transcribe', {
+        const transcribeResponse = await authenticatedFetch('/api/transcribe', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

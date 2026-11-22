@@ -1,4 +1,3 @@
-import { AppSidebar } from '@/components/layout/app-sidebar';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { Toaster } from '@workspace/ui/components/sonner';
 import '@workspace/ui/styles/globals.css';
@@ -38,18 +37,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="es"
       className={`${geist.variable} ${mono.variable} ${headings.variable}`}
       suppressHydrationWarning
     >
       <body className="antialiased dark">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-          <div className="flex h-screen overflow-hidden">
-            <AppSidebar />
-            <main className="flex-1 overflow-y-auto ml-64">
-              <div className="container mx-auto p-6">{children}</div>
-            </main>
-          </div>
+          {children}
           <Toaster />
         </ThemeProvider>
       </body>

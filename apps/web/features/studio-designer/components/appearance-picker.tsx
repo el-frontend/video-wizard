@@ -1,4 +1,5 @@
 'use client';
+import { useSessionRecovery } from '@/features/auth/lib/use-session-recovery';
 import { useEffect, useId, useState } from 'react';
 import {
   AssetDescriptorSchema,
@@ -85,6 +86,7 @@ export function AppearancePicker({
   );
   const logos = brand?.kind === 'brand' ? (brand.logos ?? []) : [],
     logo = logos.find((l) => l.assetId === variant) ?? logos[0];
+  const recovery = useSessionRecovery();
   const logoId = logo?.assetId;
   const [image, setImage] = useState<AssetDescriptor | null>(),
     [imageError, setImageError] = useState<string>();
@@ -115,7 +117,7 @@ export function AppearancePicker({
         }
       });
     return () => controller.abort();
-  }, [logoId]);
+  }, [logoId, recovery]);
   const rows = compatibleEntries(
     [...styles.entries, ...brands.entries, ...components.entries, ...templates.entries],
     d.engine

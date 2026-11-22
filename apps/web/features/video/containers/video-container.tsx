@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import type { GeneratedClip, SubtitleSegment, SubtitleTemplate } from '@/features/video';
 import {
   AspectRatioSelector,
@@ -38,14 +39,14 @@ import { toast } from 'sonner';
  *    - Edit subtitles (updates preview instantly)
  * 5. When ready, click "Render Final" → sends to Remotion server for final render
  */
-export function VideoContainer() {
+export function VideoContainer({ ownerId }: { ownerId: string }) {
   const router = useRouter();
   const [openingJob, setOpeningJob] = useState<string>();
   const [generatedClips, setGeneratedClips] = useState<GeneratedClip[]>([]);
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipGenerationProgress, setClipGenerationProgress] = useState({ current: 0, total: 0 });
   const [editingClip, setEditingClip] = useState<GeneratedClip | null>(null);
-  const { brandKit, setBrandKit } = useBrandKit();
+  const { brandKit, setBrandKit } = useBrandKit(ownerId);
 
   const {
     file,
@@ -136,7 +137,7 @@ export function VideoContainer() {
 
       try {
         // Step 1: Enqueue the vertical clip (CROP ONLY) and poll for it.
-        const clipResponse = await fetch('/api/create-clip', {
+        const clipResponse = await authenticatedFetch('/api/create-clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -293,7 +294,7 @@ export function VideoContainer() {
       console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
 
       // Call Remotion server to render final video
-      const response = await fetch('/api/render-with-subtitles', {
+      const response = await authenticatedFetch('/api/render-with-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

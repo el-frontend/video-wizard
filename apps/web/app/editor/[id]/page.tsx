@@ -1,32 +1,20 @@
+import { workspacePage } from '@/server/auth/page-policy';
 import { VideoEditorContainer } from '@/features/video/containers/editor-container';
 import { clipIntegrationService } from '@/server/services/clip-integration-service';
 import type { SubtitleSegment } from '@/server/types/video-render';
 
-interface EditorPageProps {
-  params: Promise<{
-    id: string;
-  }>;
-  searchParams: Promise<{
-    videoUrl?: string;
-    clipPath?: string;
-  }>;
-}
-
 /**
  * Video Editor Page
- * 
+ *
  * Main editor interface for previewing and exporting videos with subtitles
  * Route: /editor/[id]?videoUrl=...&clipPath=...
- * 
+ *
  * Integration with Python backend:
  * - Receives clip URL from /render-clip endpoint
  * - Fetches transcription from /transcribe endpoint
  * - Displays in Remotion player for preview/export
  */
-export default async function EditorPage({
-  params,
-  searchParams,
-}: EditorPageProps) {
+export default workspacePage('/editor/[id]', async (_user, { params, searchParams }) => {
   const { id } = await params;
   const { videoUrl, clipPath } = await searchParams;
 
@@ -36,15 +24,13 @@ export default async function EditorPage({
   };
 
   // If real data is passed via URL params, use it
-  if (clipPath && videoUrl) {
+  if (typeof clipPath === 'string' && typeof videoUrl === 'string') {
     try {
       // Get full video URL
       const fullVideoUrl = clipIntegrationService.getVideoUrl(videoUrl);
 
       // Fetch transcription
-      const transcription = await clipIntegrationService.transcribeVideo(
-        clipPath
-      );
+      const transcription = await clipIntegrationService.transcribeVideo(clipPath);
 
       editorData = {
         videoUrl: fullVideoUrl,
@@ -59,22 +45,19 @@ export default async function EditorPage({
     } catch (error) {
       console.error('Failed to load video data:', error);
       // Fallback to mock data
-      editorData = getMockVideoData(id);
+      editorData = getMockVideoData(id!);
     }
   } else {
     // Use mock data for development/testing
-    editorData = getMockVideoData(id);
+    editorData = getMockVideoData(id!);
   }
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <VideoEditorContainer
-        videoUrl={editorData.videoUrl}
-        subtitles={editorData.subtitles}
-      />
+      <VideoEditorContainer videoUrl={editorData.videoUrl} subtitles={editorData.subtitles} />
     </main>
   );
-}
+});
 
 /**
  * Mock data function (for development/testing)
@@ -129,13 +112,4 @@ function getMockVideoData(id: string): {
       },
     ],
   };
-}
-
-/**
- * Generate static params for static generation (optional)
- */
-export async function generateStaticParams() {
-  // Return empty array to opt-out of static generation
-  // Or fetch video IDs from your database
-  return [];
 }
