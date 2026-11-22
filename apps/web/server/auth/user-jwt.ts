@@ -63,7 +63,8 @@ export async function resolveIdentity(
     headers.get('origin') !== issuer
   )
     return null;
-  const identity = await server.api.getSession({ headers });
+  // Only a browser-visible session response can deliver the renewed cookie.
+  const identity = await server.api.getSession({ headers, query: { disableRefresh: true } });
   if (!identity) return null;
   const { id, email, name, image } = identity.user;
   return { user: { id, email, name, image: image ?? null }, session: { id: identity.session.id } };

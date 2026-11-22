@@ -120,3 +120,40 @@ it('checks registration boundaries and denies cross-origin signup', async () => 
     await fixture.close();
   }
 });
+
+it('reserves renewal of an aged session for the browser-visible response', async () => {
+  const fixture = await authFixture();
+  try {
+    const server = createAuth(fixture.db, authOptions);
+    const signup = await server.handler(
+      protocol('sign-up/email', {
+        name: 'Renewal',
+        email: 'renew@example.test',
+        password: randomUUID(),
+      })
+    );
+    const cookie = responseCookie(signup);
+    const aged = (
+      await fixture.pool.query(
+        "UPDATE auth_sessions SET expires_at = now() + interval '5 days' RETURNING id, expires_at"
+      )
+    ).rows[0];
+    const guard = await resolveIdentity(fixture.db, server, new Headers({ cookie }));
+    expect(guard?.session.id).toBe(aged.id);
+    const expiration = async () =>
+      (
+        await fixture.pool.query('SELECT expires_at FROM auth_sessions WHERE id=$1', [aged.id])
+      ).rows[0].expires_at.getTime();
+    expect(await expiration()).toBe(aged.expires_at.getTime());
+    const browser = await server.handler(protocol('get-session', undefined, cookie));
+    expect(browser.ok).toBe(true);
+    expect(
+      browser.headers
+        .getSetCookie()
+        .some((value) => value.includes('session_token=') && /Max-Age=604800/i.test(value))
+    ).toBe(true);
+    expect(await expiration()).toBeGreaterThan(aged.expires_at.getTime());
+  } finally {
+    await fixture.close();
+  }
+});
