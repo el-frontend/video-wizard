@@ -56,10 +56,10 @@ pip install -r requirements.txt
 
 ### 3. Configure the private service
 
-Use the same dedicated `STUDIO_RENDER_SECRET` as Next and the worker. For local Whisper set `USE_OPENAI_API=false` and install the base model. Start the host process on loopback or use the [root Compose configuration](../../docs/DOCKER_SETUP.md).
+On the prepared Mac installation, run the following command from the monorepo root. The controller loads the shared `STUDIO_RENDER_SECRET` from the private renderer configuration, loads Python settings from `apps/processing-engine/.env.local`, and binds Uvicorn to `127.0.0.1:8000`. Set `USE_OPENAI_API=false` in the Python environment and install the Whisper base model for local transcription. [Local installation and prerequisites](../../docs/authentication.md#instalación-mac-existente)
 
 ```sh
-.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+node scripts/local-studio.mjs python
 ```
 
 ### HTTP interface
@@ -144,71 +144,17 @@ apps/processing-engine/
 
 ## 🐳 Docker Configuration
 
-### Dockerfile Details
+For the complete studio, follow the root Compose procedure. It passes the shared secret from the private `.env.docker` configuration to the services. Next and the worker reach Python at `http://processing-engine:8000`. [Docker installation](../../docs/DOCKER_SETUP.md)
 
-The service includes a production-ready Dockerfile with:
+To run only the processor with its own Compose file, work in `apps/processing-engine`. Create or update a private regular `.env` file with mode 0600. Set `STUDIO_RENDER_SECRET` to the existing service secret used by Next and the worker and set `USE_OPENAI_API=false` for local Whisper. The service Compose file loads this environment, mounts private `uploads` and `output` directories and publishes port 8000 on host loopback.
 
-- **Base Image**: Python 3.11-slim (optimized for size)
-- **FFmpeg**: Pre-installed for video processing
-- **Dependencies**: All Python packages included
-- **Health Check**: Automatic service monitoring
-- **Volumes**: Persistent storage for uploads/outputs
-- **Port**: Exposes 8000 for API access
-
-### docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  processing-engine:
-    build: .
-    container_name: video-processing-service
-    ports:
-      - '8000:8000'
-    volumes:
-      - ./uploads:/app/uploads
-      - ./output:/app/output
-    environment:
-      - LOG_LEVEL=INFO
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
+```sh
+docker compose up -d --build processing-engine
+docker compose ps processing-engine
+curl --fail --silent --show-error http://127.0.0.1:8000/health
 ```
 
-### Docker Commands Reference
-
-```bash
-# Build
-docker-compose build
-
-# Start in background
-docker-compose up -d
-
-# Start with logs
-docker-compose up
-
-# Stop
-docker-compose down
-
-# Restart
-docker-compose restart
-
-# View logs
-docker-compose logs -f
-
-# Check status
-docker-compose ps
-
-# Execute command in container
-docker-compose exec processing-engine python -c "print('Hello')"
-
-# Remove all (including volumes)
-docker-compose down -v
-```
+The health response is `{"status":"healthy"}`. An authenticated operation from Next or the worker verifies the shared-secret configuration. Stop the standalone service with `docker compose stop processing-engine`.
 
 ## 🐛 Troubleshooting
 
@@ -226,47 +172,9 @@ brew install ffmpeg  # macOS
 
 ### Docker Issues
 
-**Port Already in Use:**
+Check which process owns the host port with `lsof -i :8000`. Use the processor already running for the installation or stop it before starting another. If you choose another host port, keep the binding on loopback (for example, `127.0.0.1:8001:8000`) and update `PYTHON_ENGINE_INTERNAL_URL` for host-side callers.
 
-```bash
-# Check what's using port 8000
-lsof -i :8000
-
-# Use a different port
-docker run -p 8001:8000 video-processing-service
-```
-
-**Container Won't Start:**
-
-```bash
-# Check logs
-docker-compose logs
-
-# Rebuild without cache
-docker-compose build --no-cache
-
-# Remove old containers
-docker-compose down -v
-docker-compose up --build
-```
-
-**Permission Issues with Volumes:**
-
-```bash
-# Ensure directories exist and have correct permissions
-mkdir -p uploads output
-chmod 755 uploads output
-```
-
-**Out of Disk Space:**
-
-```bash
-# Clean up Docker resources
-docker system prune -a
-
-# Remove unused volumes
-docker volume prune
-```
+For standalone Compose, inspect `docker compose ps processing-engine` and the local service logs. A healthy processor returning 401 for a signed operation warrants checking that the shared service secret matches the web/worker configuration. For disk or permission errors, check free space and confirm the service user can write the private mounts.
 
 ### MediaPipe Installation Issues (Local)
 
@@ -324,7 +232,7 @@ pip install opencv-python-headless
 
 ```bash
 export DOCKER_BUILDKIT=1
-docker-compose build
+docker compose build
 ```
 
 **Multi-stage builds (already implemented):**
@@ -359,84 +267,7 @@ volumes:
 
 ## 🚢 Deployment
 
-### Production Deployment with Docker
-
-**1. Build optimized image:**
-
-```bash
-docker build -t video-processor:v1.0 .
-```
-
-**2. Push to registry:**
-
-```bash
-# Docker Hub
-docker tag video-processor:v1.0 yourusername/video-processor:v1.0
-docker push yourusername/video-processor:v1.0
-
-# AWS ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ECR_URL
-docker tag video-processor:v1.0 YOUR_ECR_URL/video-processor:v1.0
-docker push YOUR_ECR_URL/video-processor:v1.0
-```
-
-**3. Deploy to cloud:**
-
-**Docker Swarm:**
-
-```bash
-docker stack deploy -c docker-compose.yml video-processing
-```
-
-**Kubernetes:**
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: video-processor
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: video-processor
-  template:
-    metadata:
-      labels:
-        app: video-processor
-    spec:
-      containers:
-        - name: processor
-          image: yourusername/video-processor:v1.0
-          ports:
-            - containerPort: 8000
-          volumeMounts:
-            - name: storage
-              mountPath: /app/uploads
-            - name: output
-              mountPath: /app/output
-```
-
-**Cloud Platforms:**
-
-- **AWS ECS/Fargate**: Use the Docker image directly
-- **Google Cloud Run**: Fully managed container platform
-- **Azure Container Instances**: Quick deployment option
-- **DigitalOcean App Platform**: Simple PaaS deployment
-
-### Environment-Specific Configurations
-
-**Development:**
-
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
-
-**Production:**
-
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
+Use the root Compose configuration for a complete studio installation. When adapting it to another environment, keep the processor on a private service network reachable by Next and the worker, inject their shared `STUDIO_RENDER_SECRET` through the deployment’s secret store, and give the service persistent private storage for its results. Configure its callers with the internal service URL. [Docker installation](../../docs/DOCKER_SETUP.md)
 
 ## 🔮 Future Enhancements
 
@@ -461,7 +292,7 @@ This service is part of a larger Turborepo monorepo. Follow the main project's c
 
 For issues and questions:
 
-1. Check the interactive API docs: http://localhost:8000/docs
+1. Check the minimal health response with `curl --fail --silent --show-error http://127.0.0.1:8000/health`. For the supported operations and credentials, consult the [service policy](../../docs/authentication.md#procesador-python).
 2. Review logs for error messages
 3. Verify FFmpeg installation
 4. Ensure video file is accessible

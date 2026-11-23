@@ -19,16 +19,57 @@ flowchart LR
 
 ## Qué requiere identidad
 
-| Superficie                                                                                                                                                                                            | Acceso                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/signin`, `/signup`, favicon y recursos estáticos de interfaz de Next                                                                                                                                | Públicos. El shell de entrada muestra el formulario.                                                                                                                                                                                             |
-| `/api/auth/[...all]`                                                                                                                                                                                  | Protocolo Better Auth. Registro, ingreso y `/api/auth/jwks` son públicos. La sesión autoriza la emisión en `/api/auth/token` y la gestión de sesión.                                                                                             |
-| `/`, `/video-wizard`, `/subtitle-generator`, `/content-intelligence`, `/jobs`, `/shorts`, `/projects`, `/templates`, `/assets`, `/styles`, `/brands`, `/components`, `/editor/[id]`, `/designer/[id]` | Sesión web. La redirección a ingreso conserva ruta y consulta locales. Un destino ajeno se reemplaza por `/projects`. Diseñador y editor validan el propietario.                                                                                 |
-| `/remotion`, `/api/render-final`                                                                                                                                                                      | Exigen identidad antes de responder 501.                                                                                                                                                                                                         |
-| `/api/analyze-content`, `/api/create-clip`, `/api/generate-subtitles`, `/api/render-video-subtitles`, `/api/render-with-subtitles`, `/api/transcribe`, `/api/jobs` y `/api/jobs/[id]`                 | Identidad de usuario. Los trabajos y referencias de recursos se resuelven bajo el UUID del dueño.                                                                                                                                                |
-| `/api/studio/assets`, `assets/[id]`, `assets/[id]/metadata`, `catalog`, `libraries/[kind]`, `libraries/[kind]/[id]/[version]`, `library-editions`, `templates/[id]/instantiate`, `shorts`             | Todas bajo `/api/studio`. Listados, archivos, ediciones y operaciones del dueño autenticado.                                                                                                                                                     |
-| `/api/studio/projects`, `projects/[id]` y subrutas `audio`, `duplicate`, `restore`, `revisions`, `template`, `preview`, `renders` y `renders/[jobId]`                                                 | Proyecto propio. Las escrituras y los snapshots sujetos a una revisión base comprueban que siga vigente.                                                                                                                                         |
-| Python y renderer                                                                                                                                                                                     | Salud mínima en `GET /health`. Operaciones y archivos internos requieren JWT de servicio. El frame y el script de bootstrap de preview son públicos y carecen de datos de proyecto. Los medios y documentos de la instancia requieren su cookie. |
+| Superficie                                                                                                                                                                                            | Acceso                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/signin`, `/signup`, favicon y recursos estáticos de interfaz de Next                                                                                                                                | Públicos. El shell de entrada muestra el formulario.                                                                                                             |
+| `/api/auth/[...all]`                                                                                                                                                                                  | Protocolo Better Auth. Registro, ingreso y `/api/auth/jwks` son públicos. La sesión autoriza la emisión en `/api/auth/token` y la gestión de sesión.             |
+| `/`, `/video-wizard`, `/subtitle-generator`, `/content-intelligence`, `/jobs`, `/shorts`, `/projects`, `/templates`, `/assets`, `/styles`, `/brands`, `/components`, `/editor/[id]`, `/designer/[id]` | Sesión web. La redirección a ingreso conserva ruta y consulta locales. Un destino ajeno se reemplaza por `/projects`. Diseñador y editor validan el propietario. |
+| `/remotion`, `/api/render-final`                                                                                                                                                                      | Exigen identidad antes de responder 501.                                                                                                                         |
+| `/api/analyze-content`, `/api/create-clip`, `/api/generate-subtitles`, `/api/render-video-subtitles`, `/api/render-with-subtitles`, `/api/transcribe`, `/api/jobs` y `/api/jobs/[id]`                 | Identidad de usuario. Los trabajos y referencias de recursos se resuelven bajo el UUID del dueño.                                                                |
+| `/api/studio/assets`, `assets/[id]`, `assets/[id]/metadata`, `catalog`, `libraries/[kind]`, `libraries/[kind]/[id]/[version]`, `library-editions`, `templates/[id]/instantiate`, `shorts`             | Todas bajo `/api/studio`. Listados, archivos, ediciones y operaciones del dueño autenticado.                                                                     |
+| `/api/studio/projects`, `projects/[id]` y subrutas `audio`, `duplicate`, `restore`, `revisions`, `template`, `preview`, `renders` y `renders/[jobId]`                                                 | Proyecto propio. Las escrituras y los snapshots sujetos a una revisión base comprueban que siga vigente.                                                         |
+
+### Procesador Python
+
+Python valida los Bearer de servicio con `aud=video-wizard-processing`. Para cada operación firmada exige el `scope` indicado, el UUID `ownerId` y exactamente las referencias de la última columna.
+
+| Método y ruta                     | Acceso                                    | Referencias adicionales |
+| --------------------------------- | ----------------------------------------- | ----------------------- |
+| `GET /health`                     | Público. Devuelve `{"status":"healthy"}`. | Ninguna                 |
+| `POST /studio/transcribe-source`  | `source.transcribe`                       | `jobId`, `assetId`      |
+| `POST /studio/crop-source`        | `source.crop`                             | `jobId`, `assetId`      |
+| `POST /download-youtube`          | `source.download`                         | `jobId`                 |
+| `GET`, `HEAD /output/{filename}`  | `crop.read`. Recibo del recorte.          | `jobId`, `assetId`      |
+| `GET`, `HEAD /uploads/{filename}` | `download.read`. Recibo de la descarga.   | `jobId`                 |
+
+El lector busca el archivo del recibo dentro del directorio del propietario y trabajo autorizados, y del recurso para los recortes. El recibo vence una hora después de crear el resultado. Cada lectura requiere su propio JWT vigente.
+
+### Renderer
+
+El renderer valida los Bearer de servicio con `aud=video-wizard-renderer`, el `scope` indicado, `ownerId` y exactamente las referencias de la última columna. Express también acepta `HEAD` en las rutas de lectura `GET` con la misma autorización.
+
+| Método y ruta                   | Acceso                               | Referencias adicionales                                                |
+| ------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `GET /health`                   | Público. Devuelve `{"status":"ok"}`. | Ninguna                                                                |
+| `POST /renders` (legacy)        | `render.create`                      | `jobId` igual a `webJobId` del cuerpo                                  |
+| `GET /renders/:id`              | `render.read`                        | `jobId`, `rendererJobId` igual a `:id`                                 |
+| `DELETE /renders/:id`           | `render.cancel`                      | `jobId`, `rendererJobId` igual a `:id`                                 |
+| `GET /renders/:id.mp4`          | `render.artifact`. MP4 terminado.    | `jobId`, `rendererJobId` igual a `:id`                                 |
+| `POST /renders` (StudioProject) | `studio.create`                      | `projectId` del snapshot                                               |
+| `GET /studio/renders/:id`       | `studio.read`                        | `projectId`, `jobId` igual a `:id`                                     |
+| `GET /studio/renders/:id/video` | `studio.artifact`. MP4 terminado.    | `projectId`, `jobId` igual a `:id`                                     |
+| `POST /studio/previews`         | `preview.create`                     | `projectId` del snapshot y `previewId` igual a la instancia solicitada |
+| `DELETE /studio/previews/:id`   | `preview.release`                    | `projectId`, `previewId` igual a `:id`                                 |
+
+Para Remotion y HyperFrames, el iframe usa las siguientes rutas del renderer bajo `/studio/previews/:id/`. El editor entrega el ticket al frame mediante `postMessage` con el origen exacto.
+
+| Método y ruta relativa      | Acceso                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET frame`, `GET shell.js` | Bootstrap público sin datos del proyecto.                                                                                                               |
+| `POST session`              | Ticket de un solo uso de esa instancia en el cuerpo JSON y `Origin` igual a `STUDIO_PREVIEW_ORIGIN`. Responde 204 y entrega la cookie `studio_preview`. |
+| `GET player.js`             | Cookie de la instancia vigente.                                                                                                                         |
+| `GET native/*`              | Cookie de la instancia HyperFrames y archivo incluido en su manifiesto.                                                                                 |
+| `GET media/:hash`           | Cookie de la instancia Remotion y hash de un recurso referenciado por su snapshot.                                                                      |
 
 ## Sesión, JWT y medios
 
@@ -40,7 +81,7 @@ Las peticiones JSON de la interfaz usan el cliente autenticado. SSR y medios del
 
 Las entradas de procesamiento son `sourceAssetId` o `jobId` propios con procedencia verificable. Se miden los archivos durante la ingesta. Un trabajo antiguo sin procedencia requiere volver a importar la fuente. Los clips y MP4 terminados se entregan por una ruta web del dueño. Se admite GET/HEAD, rango de bytes (206), 416 para un intervalo insatisfacible y caché privada. Los kits de marca que guarda el navegador se identifican por UUID. Los kits antiguos sin atribución quedan en su clave original.
 
-Next y el worker emiten JWT HS256 nuevos por operación, con validez de cinco minutos, `iss=video-wizard-backend`, `sub=video-wizard-worker`, `token_use=service`, `ownerId`, scope exacto, referencias de trabajo/proyecto/instancia/recurso según proceda y `aud=video-wizard-processing` o `video-wizard-renderer`. El plazo controla la admisión de la operación. Un trabajo aceptado puede finalizar después de que caduque la sesión humana. El renderer comprueba los hashes y sirve temporalmente al codificador solo el original y el logo autorizados. Su contenedor publica únicamente el puerto principal en loopback. Remotion tiene un proxy efímero que puede escuchar en todas las interfaces del contenedor. Localmente se usa Docker para aislarlo.
+Next y el worker emiten JWT HS256 nuevos por operación, con `iat` (emisión), `exp=iat+300` en segundos, un UUID `jti` por emisión, `iss=video-wizard-backend`, `sub=video-wizard-worker`, `token_use=service`, `ownerId`, `scope` exacto, referencias de trabajo/proyecto/instancia/recurso según proceda y `aud=video-wizard-processing` o `video-wizard-renderer`. El plazo controla la admisión de la operación. Un trabajo aceptado puede finalizar después de que caduque la sesión humana. El renderer comprueba los hashes y sirve temporalmente al codificador solo el original y el logo autorizados. Su contenedor publica únicamente el puerto principal en loopback. Remotion tiene un proxy efímero que puede escuchar en todas las interfaces del contenedor. Localmente se usa Docker para aislarlo.
 
 Los previews Remotion y HyperFrames usan el mismo intercambio. Next autoriza un snapshot y entrega al editor un ticket de un solo uso válido por dos minutos. El frame comprueba origen e instancia con `postMessage` y canjea el ticket en el origen de preview. La cookie HttpOnly, SameSite=Strict y Secure en HTTPS se limita a la ruta de esa instancia, con una duración de hasta una hora. El editor retira el preview al salir o cerrar sesión cuando sigue montado. Al perder la sesión ya no puede renovarlo. Una capacidad emitida puede seguir siendo válida hasta su retiro o caducidad.
 
@@ -58,7 +99,7 @@ Los previews Remotion y HyperFrames usan el mismo intercambio. Next autoriza un 
 | `USE_OPENAI_API=false`                                    | Activa Whisper base local en Python. El análisis de contenido y la transcripción alojada requieren configuración del proveedor.                     |
 | `SEED_USER_EMAIL`, `SEED_USER_NAME`, `SEED_USER_PASSWORD` | Opcionales y exclusivos del seed explícito. Omite la contraseña para que se genere un archivo privado.                                              |
 
-Genera cada secreto de forma independiente con `openssl rand -base64 48` y guárdalo en la configuración privada con permisos 0600. En Docker usa los orígenes y nombres de servicio del ejemplo de entorno raíz. La imagen configura la ruta Linux de Chromium. [Instalación con Compose](./DOCKER_SETUP.md)
+Genera cada secreto de forma independiente con un gestor de contraseñas y guárdalo en la configuración privada con permisos 0600. En Docker usa los orígenes y nombres de servicio del ejemplo de entorno raíz. La imagen configura la ruta Linux de Chromium. [Instalación con Compose](./DOCKER_SETUP.md)
 
 ## Base nueva o existente
 
@@ -106,10 +147,12 @@ Abre <http://localhost:3000/signin>. Con los servicios en ejecución, `node scri
 
 ## Aceptación aislada
 
-Configura `STUDIO_TEST_DATABASE_URL` en el entorno o en el archivo privado `.env.studio-test`. Usa una base dedicada cuyo nombre termine en `_test`. La prueba consulta el nombre efectivo de PostgreSQL antes de crear un esquema aleatorio. Requiere FFmpeg/ffprobe, Chrome instalado, Python local con Whisper base precargado, una compilación de web y la imagen local del renderer. No necesita claves de proveedores. Desde la raíz.
+Configura `STUDIO_TEST_DATABASE_URL` en el entorno o en el archivo privado `.env.studio-test`. Usa una base dedicada cuyo nombre termine en `_test`. La prueba consulta el nombre efectivo de PostgreSQL antes de crear un esquema aleatorio. Requiere FFmpeg/ffprobe, Chrome instalado, Python local con Whisper base precargado, una compilación de web y la imagen local del renderer. El recorrido funciona con Whisper local y rangos manuales.
+
+Para compilar en una copia de trabajo aislada, configura `apps/web/.env.local` con permisos 0600. Next necesita `DATABASE_URL` apuntando a la base de pruebas, `BETTER_AUTH_URL` con un origen exacto (por ejemplo, `http://localhost:3000`), y los secretos independientes de pruebas `BETTER_AUTH_SECRET` y `STUDIO_RENDER_SECRET` de al menos 32 bytes cada uno. `STUDIO_TEST_DATABASE_URL` selecciona la base del recorrido en ejecución. El comando directo de pnpm evita el filtrado de variables de la tarea de build de Turbo. En la instalación Mac ya preparada, puedes usar `node scripts/local-studio.mjs build` para compilar con su configuración privada. Ejecuta desde la raíz.
 
 ```sh
-pnpm build --filter=web
+pnpm --filter web build
 docker build -f apps/remotion-server/Dockerfile -t video-wizard-renderer:local .
 pnpm test --filter=web -- --mode journey test/auth-journey.test.mjs
 ```
