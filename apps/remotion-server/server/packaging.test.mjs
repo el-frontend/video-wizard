@@ -102,7 +102,7 @@ packageTest(
           '4s',
           '--health-retries',
           '50',
-          'video-wizard-auth-task4-test',
+          process.env.STUDIO_TEST_RENDER_IMAGE || 'video-wizard-renderer:local',
         ],
         { env: { ...process.env, STUDIO_RENDER_SECRET: randomUUID() } }
       );

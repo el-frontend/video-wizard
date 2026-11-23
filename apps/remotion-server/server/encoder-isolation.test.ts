@@ -1,6 +1,6 @@
 import { fork, type ChildProcess, type ForkOptions } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { it, expect, vi, afterEach } from 'vitest';
@@ -30,8 +30,10 @@ it.each(['failure', 'cancel'])(
     await writeFile(
       script,
       `
+    import { writeFileSync } from 'node:fs';
     process.on('message',m=>{
       if(typeof m!=='object')return;
+      writeFileSync(m.outputLocation, 'partial');
       const url=m.inputProps.videoUrl;
       process.stdout.write(url);process.stderr.write(url);
       process.send(url);
@@ -86,6 +88,7 @@ it.each(['failure', 'cancel'])(
         ).toBe(true)
       );
       expect(job.status).toBe(mode === 'failure' ? 'failed' : 'cancelled');
+      await expect(access(join(directory, id + '.mp4'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(JSON.stringify(job).includes(mediaUrl)).toBe(false);
       expect(logs).not.toHaveBeenCalled();
     } finally {

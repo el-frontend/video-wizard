@@ -149,7 +149,7 @@ For the complete studio, follow the root Compose procedure. It passes the shared
 To run only the processor with its own Compose file, work in `apps/processing-engine`. Create or update a private regular `.env` file with mode 0600. Set `STUDIO_RENDER_SECRET` to the existing service secret used by Next and the worker and set `USE_OPENAI_API=false` for local Whisper. The service Compose file loads this environment, mounts private `uploads` and `output` directories and publishes port 8000 on host loopback.
 
 ```sh
-docker compose up -d --build processing-engine
+docker compose up -d --wait --build processing-engine
 docker compose ps processing-engine
 curl --fail --silent --show-error http://127.0.0.1:8000/health
 ```

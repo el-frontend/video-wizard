@@ -223,6 +223,9 @@ def test_private_single_ranges(machine, tmp_path, monkeypatch, prefix, scope):
     full = client.get(url, headers=auth)
     assert full.status_code == 200 and full.content == b"0123456789"
     for method in ("GET", "HEAD"):
+        unknown = client.request(method, url, headers={**auth, "Range": "frames=0-3"})
+        assert unknown.status_code == 200 and "Content-Range" not in unknown.headers
+        assert unknown.content == (b"0123456789" if method == "GET" else b"")
         for request_range, expected_interval, expected in [
             ("bytes=2-4", "2-4", b"234"),
             ("bytes=-3", "7-9", b"789"),

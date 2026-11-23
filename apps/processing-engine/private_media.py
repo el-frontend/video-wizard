@@ -58,7 +58,7 @@ def private_media(request: Request, path: Path):
         selection = request.headers.get("range")
         validator = request.headers.get("if-range")
         status, start, end = 200, 0, size - 1
-        if selection is not None and (
+        if selection is not None and selection.partition("=")[0].lower() == "bytes" and (
             validator is None or validator in (etag, modified)
         ):
             interval = byte_range(selection, size)

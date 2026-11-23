@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { LegacyRenderAdmission } from '@workspace/render-contract';
 import { hostOwnedMedia } from './render-bundle-host.js';
 import path from 'node:path';
+import { rm } from 'node:fs/promises';
 
 /**
  * Reads a positive-integer env var. An invalid value warns loudly and falls
@@ -132,6 +133,7 @@ export const makeRenderQueue = ({
     schedule(id, async () => {
       if (abort.signal.aborted) return;
       job.status = 'in-progress';
+      const outputLocation = path.join(rendersDir, id + '.mp4');
       let media: Awaited<ReturnType<typeof hostOwnedMedia>> | undefined;
       try {
         media = await hostOwnedMedia(data.ownerId, data.admission, abort.signal);
@@ -143,7 +145,7 @@ export const makeRenderQueue = ({
             offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
             timeoutInMilliseconds: RENDER_TIMEOUT_MS,
             concurrency: RENDER_CONCURRENCY,
-            outputLocation: path.join(rendersDir, id + '.mp4'),
+            outputLocation,
           },
           abort.signal,
           (progress) => {
@@ -154,6 +156,7 @@ export const makeRenderQueue = ({
         job.status = 'completed';
       } catch {
         job.status = abort.signal.aborted ? 'cancelled' : 'failed';
+        await rm(outputLocation, { force: true });
       } finally {
         await media?.close();
       }
