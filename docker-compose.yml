@@ -5,11 +5,6 @@ networks:
 volumes:
   pgdata:
     driver: local
-  web_node_modules:
-  web_app_node_modules:
-  web_next_cache:
-  worker_node_modules:
-  worker_app_node_modules:
   studio_data:
 
 services:
@@ -88,8 +83,8 @@ services:
     shm_size: '2gb'
     environment:
       - STUDIO_RENDER_SECRET=${STUDIO_RENDER_SECRET:?Set the private service secret}
-      - STUDIO_EDITOR_ORIGIN=${STUDIO_EDITOR_ORIGIN:-http://localhost:3000}
-      - STUDIO_PREVIEW_ORIGIN=${STUDIO_PREVIEW_ORIGIN:-http://localhost:3001}
+      - STUDIO_EDITOR_ORIGIN=${STUDIO_EDITOR_ORIGIN:-http://app.video-wizard.localhost:3000}
+      - STUDIO_PREVIEW_ORIGIN=${STUDIO_PREVIEW_ORIGIN:-http://preview.video-wizard.localhost:3001}
       - NODE_ENV=production
       - PORT=3001
       - RENDERS_DIR=./renders
@@ -107,7 +102,7 @@ services:
       - processing-engine
     restart: unless-stopped
 
-  # Next.js web app (dev mode, hot reload via mounted source).
+  # Web and worker use the workspace links installed in the image.
   web:
     build:
       context: .
@@ -120,13 +115,6 @@ services:
     env_file:
       - .env.docker
     volumes:
-      # Hot reload: mount source. node_modules and .next stay inside the
-      # container (named volumes) so pnpm install isn't re-run on every up.
-      - ./apps/web:/app/apps/web
-      - ./packages:/app/packages
-      - web_node_modules:/app/node_modules
-      - web_app_node_modules:/app/apps/web/node_modules
-      - web_next_cache:/app/apps/web/.next
       - studio_data:/app/.studio-data
     depends_on:
       migrate:
@@ -149,10 +137,6 @@ services:
     env_file:
       - .env.docker
     volumes:
-      - ./apps/web:/app/apps/web
-      - ./packages:/app/packages
-      - worker_node_modules:/app/node_modules
-      - worker_app_node_modules:/app/apps/web/node_modules
       - studio_data:/app/.studio-data
     depends_on:
       migrate:

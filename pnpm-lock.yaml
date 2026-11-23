@@ -179,6 +179,9 @@ importers:
       '@workspace/style-packs':
         specifier: workspace:*
         version: link:../../packages/style-packs
+      '@workspace/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@workspace/video-project':
         specifier: workspace:*
         version: link:../../packages/video-project
