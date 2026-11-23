@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import dns from 'node:dns';
 import { createServer } from 'node:net';
 import { mkdir, mkdtemp, open, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -9,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { hash } from 'bcryptjs';
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { authFixture } from '../server/auth/auth-test-fixture';
 
 async function port() {
@@ -123,8 +124,16 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
     await mkdir(data);
     const fixture = await authFixture(7);
     const [webPort, pythonPort, rendererPort] = await Promise.all([port(), port(), port()]);
-    const web = 'http://127.0.0.1:' + webPort,
-      renderer = 'http://127.0.0.1:' + rendererPort;
+    const web = 'http://app.video-wizard.localhost:' + webPort,
+      renderer = 'http://preview.video-wizard.localhost:' + rendererPort;
+    // Chrome resolves *.localhost itself. Keep the Node test client independent of OS DNS.
+    const lookup = dns.lookup.bind(dns);
+    const localHosts = new Set([new URL(web).hostname, new URL(renderer).hostname]);
+    const localLookup = vi
+      .spyOn(dns, 'lookup')
+      .mockImplementation((hostname, ...args) =>
+        lookup(localHosts.has(hostname) ? '127.0.0.1' : hostname, ...args)
+      );
     const owner = randomUUID(),
       email = 'a-' + owner + '@example.test',
       emailB = 'b-' + owner + '@example.test';
@@ -134,11 +143,13 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
       ...process.env,
       DATABASE_URL: fixture.connectionString,
       BETTER_AUTH_URL: web,
+      STUDIO_EDITOR_ORIGIN: web,
+      STUDIO_PREVIEW_ORIGIN: renderer,
       BETTER_AUTH_SECRET: randomBytes(48).toString('hex'),
       STUDIO_RENDER_SECRET: secret,
       STUDIO_DATA_DIR: data,
       PYTHON_ENGINE_INTERNAL_URL: 'http://127.0.0.1:' + pythonPort,
-      REMOTION_SERVER_URL: renderer,
+      REMOTION_SERVER_URL: 'http://127.0.0.1:' + rendererPort,
       NEXT_TELEMETRY_DISABLED: '1',
       USE_OPENAI_API: 'false',
       OPENAI_API_KEY: '',
@@ -213,9 +224,9 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
           '-e',
           'STUDIO_RENDER_SECRET',
           '-e',
-          'STUDIO_EDITOR_ORIGIN=' + web,
+          'STUDIO_EDITOR_ORIGIN',
           '-e',
-          'STUDIO_PREVIEW_ORIGIN=' + renderer,
+          'STUDIO_PREVIEW_ORIGIN',
           '-e',
           'RENDER_CONCURRENCY=2',
           image,
@@ -327,17 +338,39 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
       });
       const tab = await browser.newPage();
       await tab.bringToFront();
-      await tab.goto(web + '/signin');
+      await tab.goto('http://localhost:' + webPort + '/signin?entry=local');
+      expect(tab.url()).toBe(web + '/signin?entry=local');
       for (const value of cookie.split('; ')) {
         const split = value.indexOf('=');
         await browser.setCookie({
           name: value.slice(0, split),
           value: value.slice(split + 1),
-          domain: '127.0.0.1',
+          domain: new URL(web).hostname,
           path: '/',
           httpOnly: true,
         });
       }
+      const network = await tab.createCDPSession();
+      await network.send('Network.enable');
+      // ExtraInfo reports the actual request headers, including HttpOnly cookies.
+      // Retain only names, and correlate by request ID since the events can arrive in either order.
+      const previewRequests = new Map();
+      const cookieNames = new Map();
+      network.on('Network.requestWillBeSent', ({ requestId, request }) => {
+        const url = new URL(request.url);
+        if (url.origin === renderer && url.pathname.startsWith('/studio/previews/'))
+          previewRequests.set(requestId, url.pathname);
+      });
+      network.on('Network.requestWillBeSentExtraInfo', ({ requestId, headers }) => {
+        const cookie = headers.Cookie ?? headers.cookie ?? '';
+        cookieNames.set(
+          requestId,
+          cookie
+            .split(';')
+            .filter(Boolean)
+            .map((pair) => pair.trim().split('=', 1)[0])
+        );
+      });
       const caption = { id: 'manual', startMs: 100, endMs: 900, text: 'Prueba técnica' };
       // The catalog uses the same storage and scoped database as this installation.
       execFileSync('pnpm', ['--filter', 'web', 'auth:seed'], {
@@ -346,6 +379,8 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
         stdio: 'ignore',
       });
       for (const engine of ['remotion', 'hyperframes']) {
+        previewRequests.clear();
+        cookieNames.clear();
         const shorts = await (
           await status(
             await api('/api/studio/shorts', cookie, {
@@ -424,6 +459,14 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
             },
             { timeout: 10000, polling: 'mutation' }
           );
+          const observed = [...previewRequests].map(([id, path]) => [path, cookieNames.get(id)]);
+          expect(
+            observed.some(([path, names]) => path.endsWith('/frame') && names?.length === 0)
+          ).toBe(true);
+          expect(observed.some(([, names]) => names?.includes('studio_preview'))).toBe(true);
+          expect(
+            observed.every(([, names]) => names?.every((name) => name === 'studio_preview'))
+          ).toBe(true);
           await tab.screenshot({ path: join(workspace, engine + '.png') });
         } catch (error) {
           const ui = await tab.evaluate(() => ({
@@ -612,6 +655,7 @@ it.skipIf(import.meta.env.MODE !== 'journey')(
       await second.screenshot({ path: join(workspace, 'second-account.png') });
       console.info('Two tabs hid the old workspace and switched to the new owner.');
     } finally {
+      localLookup.mockRestore();
       await browser?.close();
       const stops = await Promise.allSettled(
         children.reverse().map(async (child) => {

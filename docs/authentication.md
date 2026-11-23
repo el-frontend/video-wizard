@@ -61,7 +61,7 @@ El renderer valida los Bearer de servicio con `aud=video-wizard-renderer`, el `s
 | `POST /studio/previews`         | `preview.create`                     | `projectId` del snapshot y `previewId` igual a la instancia solicitada |
 | `DELETE /studio/previews/:id`   | `preview.release`                    | `projectId`, `previewId` igual a `:id`                                 |
 
-Para Remotion y HyperFrames, el iframe usa las siguientes rutas del renderer bajo `/studio/previews/:id/`. El editor entrega el ticket al frame mediante `postMessage` con el origen exacto.
+Para Remotion y HyperFrames, el iframe usa las siguientes rutas del renderer bajo `/studio/previews/:id/`. La cookie humana pertenece exclusivamente al host del editor. El navegador envía al host hermano del renderer la cookie Strict de la instancia. El editor entrega el ticket al frame mediante `postMessage` con el origen exacto.
 
 | Método y ruta relativa      | Acceso                                                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -87,17 +87,17 @@ Los previews Remotion y HyperFrames usan el mismo intercambio. Next autoriza un 
 
 ## Configuración
 
-| Variable                                                  | Dónde y para qué                                                                                                                                    |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                            | Next, migraciones, seed y worker. URL de PostgreSQL con la base y puerto correctos.                                                                 |
-| `BETTER_AUTH_URL`                                         | Origen público exacto de Next, sin barra final. Para el estudio local, `http://localhost:3000`.                                                     |
-| `BETTER_AUTH_SECRET`                                      | Secreto privado de Better Auth de al menos 32 bytes.                                                                                                |
-| `STUDIO_RENDER_SECRET`                                    | Segundo secreto independiente de al menos 32 bytes, compartido por Next, worker, Python y renderer.                                                 |
-| `STUDIO_EDITOR_ORIGIN`, `STUDIO_PREVIEW_ORIGIN`           | Orígenes exactos de editor y renderer visibles al navegador. Usa el mismo nombre de host, p. ej. `http://localhost:3000` y `http://localhost:3001`. |
-| `REMOTION_SERVER_URL`, `PYTHON_ENGINE_INTERNAL_URL`       | Direcciones internas de Next/worker. En host, `http://127.0.0.1:3001` y `http://127.0.0.1:8000`; en Compose, nombres de servicio.                   |
-| `STUDIO_DATA_DIR`                                         | Directorio privado absoluto de recursos del estudio, compartido por web y worker y montado en modo lectura en el renderer.                          |
-| `USE_OPENAI_API=false`                                    | Activa Whisper base local en Python. El análisis de contenido y la transcripción alojada requieren configuración del proveedor.                     |
-| `SEED_USER_EMAIL`, `SEED_USER_NAME`, `SEED_USER_PASSWORD` | Opcionales y exclusivos del seed explícito. Omite la contraseña para que se genere un archivo privado.                                              |
+| Variable                                                  | Dónde y para qué                                                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                            | Next, migraciones, seed y worker. URL de PostgreSQL con la base y puerto correctos.                                                                                                         |
+| `BETTER_AUTH_URL`                                         | Origen público exacto de Next, sin barra final. Para el estudio local, `http://app.video-wizard.localhost:3000`.                                                                            |
+| `BETTER_AUTH_SECRET`                                      | Secreto privado de Better Auth de al menos 32 bytes.                                                                                                                                        |
+| `STUDIO_RENDER_SECRET`                                    | Segundo secreto independiente de al menos 32 bytes, compartido por Next, worker, Python y renderer.                                                                                         |
+| `STUDIO_EDITOR_ORIGIN`, `STUDIO_PREVIEW_ORIGIN`           | Orígenes exactos de editor y renderer visibles al navegador. Usa dos hosts del mismo sitio, p. ej. `http://app.video-wizard.localhost:3000` y `http://preview.video-wizard.localhost:3001`. |
+| `REMOTION_SERVER_URL`, `PYTHON_ENGINE_INTERNAL_URL`       | Direcciones internas de Next/worker. En host, `http://127.0.0.1:3001` y `http://127.0.0.1:8000`; en Compose, nombres de servicio.                                                           |
+| `STUDIO_DATA_DIR`                                         | Directorio privado absoluto de recursos del estudio, compartido por web y worker y montado en modo lectura en el renderer.                                                                  |
+| `USE_OPENAI_API=false`                                    | Activa Whisper base local en Python. El análisis de contenido y la transcripción alojada requieren configuración del proveedor.                                                             |
+| `SEED_USER_EMAIL`, `SEED_USER_NAME`, `SEED_USER_PASSWORD` | Opcionales y exclusivos del seed explícito. Omite la contraseña para que se genere un archivo privado.                                                                                      |
 
 Genera cada secreto de forma independiente con un gestor de contraseñas y guárdalo en la configuración privada con permisos 0600. En Docker usa los orígenes y nombres de servicio del ejemplo de entorno raíz. La imagen configura la ruta Linux de Chromium. [Instalación con Compose](./DOCKER_SETUP.md)
 
@@ -135,11 +135,11 @@ node scripts/local-studio.mjs worker
 node scripts/local-studio.mjs web
 ```
 
-Abre <http://localhost:3000/signin>. Con los servicios en ejecución, `node scripts/local-studio.mjs smoke` abre Chrome con el usuario demo, verifica la página privada y los controles de cuenta a 800 y 1280 píxeles y cierra la sesión. Guarda las capturas de la barra lateral en un directorio temporal privado. Para volver a iniciar un renderer ya creado con la misma configuración ejecuta `docker start video-wizard-studio-renderer`.
+Abre <http://localhost:3000/signin>. Las entradas por localhost y 127.0.0.1 conservan ruta y query al redirigir al editor canónico. En el primer arranque con los nuevos hosts vuelve a iniciar sesión. Chrome resuelve los subdominios de localhost en loopback. Para clientes CLI sin esa resolución, usa una asignación por solicitud como `curl --resolve app.video-wizard.localhost:3000:127.0.0.1 http://app.video-wizard.localhost:3000/signin`. Con los servicios en ejecución, `node scripts/local-studio.mjs smoke` abre Chrome con el usuario demo, verifica la página privada y los controles de cuenta a 800 y 1280 píxeles y cierra la sesión. Guarda las capturas de la barra lateral en un directorio temporal privado. Para volver a iniciar un renderer ya creado con la misma configuración ejecuta `docker start video-wizard-studio-renderer`.
 
 ## Diagnóstico
 
-- **401**. Comprueba el origen exacto, la sesión activa y la caducidad del JWT. Web y renderer deben usar el mismo nombre de host público en el navegador. Ante una caducidad en el diseñador, vuelve a entrar con la misma cuenta para recuperar el documento en memoria. Las lecturas pueden reintentarse. Comprueba el estado antes de repetir una escritura de resultado desconocido.
+- **401**. Comprueba el origen exacto, la sesión activa y la caducidad del JWT. Web y renderer necesitan dos hosts distintos bajo el mismo sitio y esquema. Ante una caducidad en el diseñador, vuelve a entrar con la misma cuenta para recuperar el documento en memoria. Las lecturas pueden reintentarse. Comprueba el estado antes de repetir una escritura de resultado desconocido.
 - **404**. Una referencia de otro usuario o inexistente produce la misma respuesta. Verifica el propietario, la revisión y la procedencia del recurso. Un ticket consumido o vencido requiere abrir un preview nuevo.
 - **409**. El servidor incluye la revisión vigente para que el editor resuelva el conflicto antes de guardar.
 - **Trabajo aceptado sin resultado**. Revisa `/jobs` y la disponibilidad de Python, worker y renderer. Las asociaciones de los renders legacy en curso se conservan en memoria del renderer. Un reinicio puede dejar el identificador remoto inaccesible. Reconcilia la operación por el UUID durable antes de volver a enviarla. Un MP4 que el worker ya registró en Studio sigue disponible bajo su propietario.

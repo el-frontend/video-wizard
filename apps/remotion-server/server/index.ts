@@ -11,7 +11,7 @@ const {
   PORT = 3001,
   REMOTION_SERVE_URL,
   RENDERS_DIR = './renders',
-  PUBLIC_URL = `http://localhost:${PORT}`,
+  PUBLIC_URL = `http://preview.video-wizard.localhost:${PORT}`,
 } = process.env;
 
 /**
@@ -54,7 +54,7 @@ async function main() {
     queue: makeRenderQueue({ serveUrl: remotionBundleUrl, rendersDir }),
     secret: process.env.STUDIO_RENDER_SECRET!,
     rendersDir,
-    editorOrigin: process.env.STUDIO_EDITOR_ORIGIN || 'http://localhost:3000',
+    editorOrigin: process.env.STUDIO_EDITOR_ORIGIN || 'http://app.video-wizard.localhost:3000',
     previewOrigin: process.env.STUDIO_PREVIEW_ORIGIN || PUBLIC_URL,
   });
 

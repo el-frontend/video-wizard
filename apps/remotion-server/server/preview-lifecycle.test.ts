@@ -127,3 +127,13 @@ it('retires one overlapping preview, then cancels an unmounted preview while sta
     http.close();
   }
 });
+
+it('requires distinct hosts for the editor session and preview capability', () => {
+  expect(() =>
+    installStudioRoutes(express(), {
+      secret: randomBytes(40).toString('hex'),
+      editorOrigin: 'http://localhost:3000',
+      previewOrigin: 'http://localhost:3001',
+    })
+  ).toThrow('orígenes separados');
+});

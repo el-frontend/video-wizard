@@ -52,7 +52,7 @@ export function installStudioRoutes(
   const editor = new URL(config.editorOrigin).origin,
     origin = new URL(config.previewOrigin).origin;
   serviceKey(config.secret);
-  if (editor === origin)
+  if (new URL(editor).hostname === new URL(origin).hostname)
     throw new Error('Configura los orígenes separados y la credencial interna de Studio.');
   const sessions = new Map<string, Session>();
   // DELETE can arrive before Next finishes resolving the snapshot for POST.

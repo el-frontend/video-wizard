@@ -78,9 +78,9 @@ async function main() {
     BETTER_AUTH_SECRET: envFile(privateEnv).BETTER_AUTH_SECRET ?? webEnv.BETTER_AUTH_SECRET,
     STUDIO_RENDER_SECRET: render.STUDIO_RENDER_SECRET,
     STUDIO_DATA_DIR: data,
-    BETTER_AUTH_URL: 'http://localhost:3000',
-    STUDIO_EDITOR_ORIGIN: 'http://localhost:3000',
-    STUDIO_PREVIEW_ORIGIN: 'http://localhost:3001',
+    BETTER_AUTH_URL: 'http://app.video-wizard.localhost:3000',
+    STUDIO_EDITOR_ORIGIN: 'http://app.video-wizard.localhost:3000',
+    STUDIO_PREVIEW_ORIGIN: 'http://preview.video-wizard.localhost:3001',
     REMOTION_SERVER_URL: 'http://127.0.0.1:3001',
     PYTHON_ENGINE_INTERNAL_URL: 'http://127.0.0.1:8000',
   };

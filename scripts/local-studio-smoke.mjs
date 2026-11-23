@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const origin = 'http://localhost:3000';
+const origin = 'http://app.video-wizard.localhost:3000';
 const authWrites = new Set([
   '/api/auth/sign-in/email',
   '/api/auth/sign-out',

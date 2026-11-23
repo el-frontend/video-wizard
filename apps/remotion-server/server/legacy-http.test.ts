@@ -38,7 +38,7 @@ it('admits one job and limits status, cancellation and ranged artifacts to its t
     secret,
     rendersDir: directory,
     editorOrigin: 'http://localhost:3000',
-    previewOrigin: 'http://localhost:3001',
+    previewOrigin: 'http://preview.video-wizard.localhost:3001',
   });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');

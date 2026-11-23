@@ -255,3 +255,61 @@ it('subtitleGeneratorUsesOwnedIngestion for YouTube', async () => {
   expect(view.result.current.sourceAssetId).toBe('fixture-asset');
   expect(view.result.current.currentStep).toBe('editing');
 });
+
+it.each(['renew', 'switch', 'leave'])(
+  'handles %s while the admission fetch is still waiting for 202 headers',
+  async (action) => {
+    bind('owner-a', 'admitting');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let admit!: (value: Response) => void;
+    const awaitingHeaders = new Promise<Response>((resolve) => {
+      admit = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(fixtureAsset))
+      .mockReturnValueOnce(awaitingHeaders)
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          data: { status: 'completed', resultData: { subtitles: [], sourceDurationMs: 1000 } },
+        })
+      );
+    vi.stubGlobal('fetch', fetcher);
+    const view = renderHook(() => useSubtitleGeneration());
+    act(() =>
+      view.result.current.setFile(new File(['fixture'], 'test.mp4', { type: 'video/mp4' }))
+    );
+    let work!: Promise<void>;
+    await act(async () => {
+      work = view.result.current.generateSubtitles();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    suspendWorkspace();
+    if (action === 'switch') bind('owner-b', 'different');
+    if (action === 'leave') window.dispatchEvent(new Event(sessionEvents.ending));
+    await act(async () => {
+      admit(Response.json({ success: true, data: { jobId: 'accepted' } }, { status: 202 }));
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    if (action === 'renew') {
+      await act(async () => {
+        bind('owner-a', 'restored');
+        window.dispatchEvent(new Event(sessionEvents.restored));
+        await work;
+      });
+      expect(view.result.current.transcriptionJobId).toBe('accepted');
+      expect(view.result.current.currentStep).toBe('editing');
+    } else {
+      await work;
+      expect(view.result.current.currentStep).toBe('error');
+    }
+    expect(
+      fetcher.mock.calls.map(([url, init]) => [init?.method ?? 'GET', new URL(url).pathname])
+    ).toEqual([
+      ['POST', '/api/studio/assets'],
+      ['POST', '/api/generate-subtitles'],
+      ...(action === 'renew' ? [['GET', '/api/jobs/accepted']] : []),
+    ]);
+  }
+);

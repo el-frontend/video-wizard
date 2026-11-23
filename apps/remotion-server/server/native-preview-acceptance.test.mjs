@@ -36,13 +36,15 @@ it.skipIf(import.meta.env.MODE !== 'native')(
       b = editor.listen(0, '127.0.0.1');
     await Promise.all([once(a, 'listening'), once(b, 'listening')]);
     const origin = (s) => 'http://127.0.0.1:' + s.address().port;
+    const editorUrl = 'http://app.video-wizard.localhost:' + b.address().port;
+    const previewUrl = 'http://preview.video-wizard.localhost:' + a.address().port;
     const secret = randomBytes(40).toString('hex'),
       instance = randomUUID();
     snapshot.document.id = randomUUID();
     const api = installStudioRoutes(backend, {
       secret,
-      editorOrigin: origin(b),
-      previewOrigin: origin(a),
+      editorOrigin: editorUrl,
+      previewOrigin: previewUrl,
       dataDir: join(workspace, 'data'),
     });
     const req = createRequire(join(cliPackage, 'package.json'));
@@ -93,7 +95,7 @@ it.skipIf(import.meta.env.MODE !== 'native')(
       page.on('console', (m) => {
         if (m.type() === 'error') console.error('browser', m.text());
       });
-      await page.goto(origin(b));
+      await page.goto(editorUrl);
       await page.waitForFunction(
         () => events.some((m) => ['studio.ready', 'studio.error'].includes(m.type)),
         { timeout: 20000 }
@@ -112,7 +114,7 @@ it.skipIf(import.meta.env.MODE !== 'native')(
         (
           await fetch(origin(a) + path + '/session', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Origin: origin(a) },
+            headers: { 'Content-Type': 'application/json', Origin: previewUrl },
             body: JSON.stringify({ ticket: session.ticket }),
           })
         ).status

@@ -144,7 +144,17 @@ export async function authenticatedFetch(
     credentials: 'same-origin',
     redirect: 'error',
   });
-  if (version !== generation) return unauthorized();
+  // Only the operation that submitted a job may keep its admission across renewal.
+  // Explicit sign-out and owner changes abort that lifetime, even if fetch resolves late.
+  signal?.throwIfAborted();
+  if (version !== generation) {
+    const acceptedJob =
+      response.status === 202 &&
+      (init?.method ?? request?.method)?.toUpperCase() === 'POST' &&
+      signal &&
+      signal === jobLifetime?.signal;
+    if (!acceptedJob) return unauthorized();
+  }
   if (response.status === 401) rejectSession(sessionEvents.expired);
   return response;
 }
