@@ -44,6 +44,7 @@ const sourceScene = z
   .catchall(z.json());
 const model = z.object({
   hash: z.string(),
+  revisionStatus: z.enum(['unversioned', 'verified', 'missing-captions']),
   meta: z.object({
     title: z.string().optional(),
     styleId: z.string().optional(),
@@ -232,6 +233,13 @@ export async function prepareMotion(
       pending('style', 'Selecciona una edición compatible del estilo de origen.');
     if (capture.captions === null)
       pending('captions', 'Falta el archivo de subtítulos del episodio.');
+    if (capture.revisionStatus === 'missing-captions')
+      context.diagnostics.push({
+        code: 'source-revision-incomplete',
+        severity: 'warning',
+        message:
+          'Se recuperaron las escenas. Faltan los subtítulos necesarios para verificar la revisión completa del origen.',
+      });
     const changed = (scene: z.infer<typeof sourceScene>) =>
       dirty(scene) ||
       (!!scene.audio &&

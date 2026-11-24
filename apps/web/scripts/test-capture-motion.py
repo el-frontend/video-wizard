@@ -44,6 +44,35 @@ class SourceCapture(unittest.TestCase):
                 capture.main()
                 self.assertEqual(json.loads((stage / "model.json").read_text())["captions"], captions)
 
+    def test_missing_committed_captions_preserve_the_stable_episode_without_fabricating_cues(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            video = root / "videos/demo"
+            video.mkdir(parents=True)
+            state = root / ".studio/projects/demo/state.json"
+            state.parent.mkdir(parents=True)
+            stage = root / "capture"
+            stage.mkdir()
+            episode = {"scenes": [{"duration": 2}]}
+            captions = [{"start": 0, "end": 1, "text": "Original"}]
+            model = {"title": "Demo", "styleId": None, "episode": episode, "captions": captions}
+            revision = hashlib.sha256(json.dumps(model, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
+            state.write_text(json.dumps({"title": "Demo", "revision": revision}))
+            episode_path = video / "episode.json"
+            episode_path.write_text(json.dumps(episode))
+            captions_path = video / "captions.json"
+            captions_path.write_text(json.dumps(captions))
+            captions_path.unlink()
+            before = (episode_path.read_bytes(), state.read_bytes())
+            with patch.object(sys, "argv", ["capture", str(root), "demo", str(stage), "30"]):
+                capture.main()
+            result = json.loads((stage / "model.json").read_text())
+            self.assertEqual(result["episode"], episode)
+            self.assertIsNone(result["captions"])
+            self.assertEqual(result["revisionStatus"], "missing-captions")
+            self.assertFalse(captions_path.exists())
+            self.assertEqual(before, (episode_path.read_bytes(), state.read_bytes()))
+
     def test_change_between_passes_retries_then_uses_complete_new_capture(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()

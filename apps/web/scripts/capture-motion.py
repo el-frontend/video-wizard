@@ -96,16 +96,23 @@ def capture(root, slug, stage, fps, keep):
                 if "name: " + label in frame:
                     style, style_frame = candidate, frame_bytes
                     break
-        committed = True
-        if meta.get("revision") is not None:
+        revision = meta.get("revision")
+        revision_status = "unversioned"
+        if revision is not None and not re.fullmatch(r"[0-9a-f]{24}", revision):
+            raise ValueError("invalid committed revision")
+        if revision is not None and model is not None and captions_bytes is None:
+            # The available episode can be recovered, but the full commit cannot be reconstructed.
+            revision_status = "missing-captions"
+            entries["unverifiedRevision"] = revision
+        elif revision is not None:
             # saveUnlocked hashes the raw model prior to any presentation conversion.
             state = {"title": meta.get("title") or (model or {}).get("title") or (model or {}).get("series") or slug.replace("-", " "),
                      "styleId": meta.get("styleId", style), "episode": episode,
-                     "captions": [] if captions_bytes is None else captions}
+                     "captions": captions}
             result = subprocess.run(["node", str(Path(__file__).with_name("motion-revision.mjs"))],
                                     input=json.dumps(state).encode(), stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, timeout=10, check=True)
-            committed = result.stdout.decode() == meta["revision"]
+            revision_status = "verified" if result.stdout.decode() == revision else "mismatch"
         if style:
             public["styleId"] = style
         else:
@@ -142,7 +149,7 @@ def capture(root, slug, stage, fps, keep):
                 entries["style"] = hashlib.sha256(style_frame).hexdigest()
         state = {"version":1,"fps":fps,"files":entries}
         fingerprint = hashlib.sha256(json.dumps(state,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        return {"committed":committed,"hash":fingerprint,"episode":episode,"captions":captions,"meta":public,"frame":frame,
+        return {"revisionStatus":revision_status,"hash":fingerprint,"episode":episode,"captions":captions,"meta":public,"frame":frame,
                 "styleFrame":style_frame.decode() if style_frame else None, "fonts":fonts,
                 "media":{k:hashlib.sha256(k.encode()).hexdigest() if entries[k] else None
                          for k in (media_refs if model else ["original.mp4"])}}
@@ -156,7 +163,9 @@ def main():
     for _ in range(3):
         first = capture(root,slug,stage,float(fps),True)
         second = capture(root,slug,stage,float(fps),False)
-        if first.pop("committed") and second["committed"] and first["hash"] == second["hash"]:
+        if (first["revisionStatus"] != "mismatch"
+                and first["revisionStatus"] == second["revisionStatus"]
+                and first["hash"] == second["hash"]):
             (stage/"model.json").write_text(json.dumps(first))
             return
     raise ValueError("source changed")

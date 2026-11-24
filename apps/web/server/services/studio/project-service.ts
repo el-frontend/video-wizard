@@ -518,7 +518,6 @@ export class ProjectService {
             assetId: asset.id,
             startMs: slot.startMs,
             durationMs: asset.durationMs,
-            spokenText: slot.spokenText,
             stale: true,
           });
         }

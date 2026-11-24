@@ -5,7 +5,7 @@ import { provisionCatalog } from './provision-catalog';
 import { Readable } from 'node:stream';
 import { importDiagnostics } from '@workspace/video-project';
 import { AssetService } from './asset-service';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -90,6 +90,13 @@ describe('registered Motion Studio imports', () => {
     expect(await projects.get(owner, doc.id)).toEqual(edit);
   });
   it('repairs one missing take in the same revision history, preserves edits, and restores the trusted error', async () => {
+    const originalWords = 'Texto de la toma original';
+    const metaDir = join(root, '.studio/projects/demo');
+    await mkdir(metaDir, { recursive: true });
+    await writeFile(
+      join(metaDir, 'state.json'),
+      JSON.stringify({ audioBindings: { 'assets/missing.wav': originalWords } })
+    );
     const imported = (await service.import(owner, request)).project;
     const projects = new ProjectService(fixture.db, join(root, 'managed')),
       id = imported.document.id;
@@ -124,6 +131,14 @@ describe('registered Motion Studio imports', () => {
       ...repair,
       baseRevision: manual.revision,
     });
+    expect(slot.spokenText).toBe(originalWords);
+    expect(fixed.importContext?.slots.find((s) => s.id === slot.id)).toMatchObject({
+      resolution: 'replaced',
+      spokenText: originalWords,
+    });
+    const replacement = fixed.importContext?.narration?.takes.find((t) => t.assetId === asset.id);
+    expect(replacement).toMatchObject({ sceneId: slot.sceneId, stale: true });
+    expect(replacement).not.toHaveProperty('spokenText');
     expect(fixed.document.title).toBe(manual.document.title);
     expect(fixed.document.scenes[0]?.layers.find((l) => l.type === 'audio')).toMatchObject({
       assetId: asset.id,
@@ -145,7 +160,10 @@ describe('registered Motion Studio imports', () => {
       baseRevision: fixed.revision,
       targetRevision: manual.revision,
     });
-    expect(restored.importContext!.slots[0]?.resolution).toBe('pending');
+    expect(restored.importContext!.slots[0]).toMatchObject({
+      resolution: 'pending',
+      spokenText: originalWords,
+    });
     const omitted = await projects.repairImport(owner, id, {
       baseRevision: restored.revision,
       slotId: slot.id,
@@ -204,6 +222,47 @@ describe('registered Motion Studio imports', () => {
     });
     return { video, run: () => imports.import(owner, { kind: 'motion-studio', sourceId: slug }) };
   }
+  it('keeps a committed episode editable with explicit diagnostics when its captions file disappears', async () => {
+    const slug = 'missing-committed-captions',
+      title = 'Episodio';
+    const episode = { scenes: [{ duration: 2, headline: 'Titular' }] };
+    const captions = [{ end: 1, start: 0, text: 'Subtítulo' }];
+    const revision = createHash('sha256')
+      .update(JSON.stringify({ captions, episode, styleId: null, title }))
+      .digest('hex')
+      .slice(0, 24);
+    const f = await source(slug, episode),
+      path = join(f.video, 'captions.json'),
+      meta = join(root, '.studio/projects', slug);
+    await mkdir(meta, { recursive: true });
+    await writeFile(join(meta, 'state.json'), JSON.stringify({ title, revision }));
+    await writeFile(path, JSON.stringify(captions));
+    const complete = await f.run();
+    expect(complete.diagnostics).toEqual([]);
+    await rm(path);
+    const incomplete = await f.run(),
+      { project } = incomplete;
+    expect(project.document.scenes[0]).toMatchObject({
+      durationMs: 2000,
+      editorial: { headline: 'Titular' },
+    });
+    expect(project.document.scenes[0]?.layers.some((l) => l.type === 'captions')).toBe(false);
+    expect(project.importContext).toMatchObject({
+      mode: 'editable',
+      slots: [{ kind: 'captions', resolution: 'pending' }],
+    });
+    expect(incomplete.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'source-revision-incomplete', severity: 'warning' })
+    );
+    expect(incomplete.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'import-slot', severity: 'error' })
+    );
+    expect((await f.run()).project).toEqual(project);
+    expect(
+      (await new ProjectService(fixture.db).get(owner, project.document.id)).importContext
+    ).toEqual(project.importContext);
+    await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
   it('preserves the alternate headline independently of narration and keeps the episode header', async () => {
     const fixture = await source('headline', {
       title: 'Project',
