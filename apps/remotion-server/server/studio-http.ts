@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Express, Request, Response } from 'express';
-import type { ExportSnapshot } from '@workspace/render-contract';
+import type { EngineAdapter, ExportSnapshot } from '@workspace/render-contract';
 import { ProjectRecordSchema } from '@workspace/video-project';
 import { HyperframesProjectAdapter } from '@workspace/hyperframes-worker';
 import { readNativeManifest, type NativeManifest } from '@workspace/hyperframes-compositions';
@@ -31,6 +31,29 @@ interface Session {
   abort: AbortController;
   done?: Promise<void>;
   kind: 'preview' | 'render';
+}
+export async function executeStudioRender(
+  active: Pick<Session, 'abort' | 'status' | 'snapshot' | 'workspace' | 'progress'>,
+  adapter: Pick<EngineAdapter, 'prepare' | 'render'>
+) {
+  try {
+    active.abort.signal.throwIfAborted();
+    active.status = 'running';
+    const prepared = await adapter.prepare(active.snapshot, active.workspace, active.abort.signal);
+    await adapter.render(prepared, {
+      signal: active.abort.signal,
+      onProgress: (p) => {
+        active.progress = p;
+      },
+    });
+    if (active.abort.signal.aborted) {
+      await rm(join(active.workspace, 'video.mp4'), { force: true });
+      active.abort.signal.throwIfAborted();
+    }
+    active.status = 'completed';
+  } catch {
+    active.status = 'failed';
+  }
 }
 const previewTicketLifetime = 120_000;
 const instanceId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -153,8 +176,8 @@ export function installStudioRoutes(
         deny(res);
         return;
       }
-      const adapter = snapshot.document.engine === 'hyperframes' ? native : remotion;
-      const diagnostics = await adapter.validate(snapshot);
+      const adapter: EngineAdapter = snapshot.document.engine === 'hyperframes' ? native : remotion;
+      const diagnostics = await adapter.validate(snapshot, abort.signal);
       abort.signal.throwIfAborted();
       if (
         diagnostics.some(
@@ -219,20 +242,7 @@ export function installStudioRoutes(
       }
       active.status = 'queued';
       const execute = async () => {
-        try {
-          active.abort.signal.throwIfAborted();
-          active.status = 'running';
-          const prepared = await adapter.prepare(snapshot, active.workspace, active.abort.signal);
-          await adapter.render(prepared, {
-            signal: active.abort.signal,
-            onProgress: (p) => {
-              active.progress = p;
-            },
-          });
-          active.status = 'completed';
-        } catch {
-          active.status = 'failed';
-        }
+        await executeStudioRender(active, adapter);
         active.expires = expires();
       };
       const run = () => {

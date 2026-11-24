@@ -1,3 +1,4 @@
+import { checkFontWeight, fontWeightRange } from '@workspace/render-contract/font';
 import { isDeepStrictEqual } from 'node:util';
 import {
   type EntryOf,
@@ -95,6 +96,17 @@ export class LibraryService {
     }
   }
 
+  async verifyEditionFonts(ownerId: string, entry: EntryOf<'style'>) {
+    for (const font of entry.fonts ?? []) {
+      const asset = await this.assets.get(ownerId, font.assetId);
+      const path = await this.assets.resolveFile(ownerId, font.assetId);
+      try {
+        checkFontWeight(await fontWeightRange(path, asset.hash), font.weight);
+      } catch (error) {
+        throw new ValidationError(error instanceof Error ? error.message : 'Fuente no válida.');
+      }
+    }
+  }
   async publish(ownerId: string, entry: LibraryEntry, bundle?: Uint8Array): Promise<LibraryEntry> {
     const parsed = LibraryEntrySchema.safeParse(entry);
     if (!parsed.success) {

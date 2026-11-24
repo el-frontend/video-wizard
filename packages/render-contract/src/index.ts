@@ -27,8 +27,12 @@ export interface RenderOptions {
   onProgress: (progress: number) => void;
 }
 export interface EngineAdapter {
-  validate(snapshot: ExportSnapshot): Promise<Diagnostic[]>;
-  prepare(snapshot: ExportSnapshot, workspace: string): Promise<PreparedComposition>;
+  validate(snapshot: ExportSnapshot, signal?: AbortSignal): Promise<Diagnostic[]>;
+  prepare(
+    snapshot: ExportSnapshot,
+    workspace: string,
+    signal?: AbortSignal
+  ): Promise<PreparedComposition>;
   snapshots(
     prepared: PreparedComposition,
     timesMs: number[],

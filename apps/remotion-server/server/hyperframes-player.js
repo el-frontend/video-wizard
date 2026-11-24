@@ -42,6 +42,8 @@
       runtime.onload = ok;
       runtime.onerror = fail;
     });
+    // The pinned runtime reads its canonical FPS once at boot. Restore preview media sync afterwards.
+    win.__HF_EXPORT_RENDER_SEEK_CONFIG = { fps, fpsSource: 'render-options' };
     runtime.src = './runtime.js';
     doc.body.append(runtime);
     await boot;
@@ -53,12 +55,19 @@
       }
     };
     await until(() => win.__playerReady && win.__renderReady && win.__player);
-    await doc.fonts.ready;
+    delete win.__HF_EXPORT_RENDER_SEEK_CONFIG;
+    try {
+      await Promise.all([...doc.fonts].map((face) => face.load()));
+    } catch {
+      send('studio.error', { code: 'native-font' });
+      return;
+    }
     const player = win.__player;
     let generation = 0,
       animation = 0,
       playing = false,
-      current = 0;
+      current = 0,
+      ended = false;
     const pause = () => {
       playing = false;
       cancelAnimationFrame(animation);
@@ -75,7 +84,8 @@
       if (!playing) return;
       const index = Math.min(frames - 1, Math.max(0, Math.floor(player.getTime() * fps + 1e-7)));
       if (index !== current) publish(index);
-      if (index === frames - 1 || !player.isPlaying()) {
+      if (player.getTime() >= frames / fps || !player.isPlaying()) {
+        ended = true;
         pause();
         return;
       }
@@ -83,6 +93,7 @@
     };
     const seek = async (ms, boundary) => {
       pause();
+      ended = false;
       const serial = ++generation;
       const index = Math.min(
         frames - 1,
@@ -130,6 +141,11 @@
       }
       if (m.type === 'studio.play' && !playing) {
         ++generation;
+        if (ended) {
+          player.seek(0);
+          publish(0);
+          ended = false;
+        }
         player.play();
         playing = true;
         animation = requestAnimationFrame(tick);

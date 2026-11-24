@@ -1,5 +1,5 @@
-import { it, expect } from 'vitest';
-import { mkdtemp, mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
+import { it, expect, vi } from 'vitest';
+import { access, mkdtemp, mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -8,6 +8,7 @@ import {
   libraryKey,
   nativeCaptionSource,
   type ExportSnapshot,
+  type PreparedComposition,
   type ResolvedAsset,
 } from '@workspace/render-contract';
 import { type EntryOf, type Layer } from '@workspace/video-project';
@@ -17,6 +18,55 @@ import {
   stylePackIds,
 } from '../../../packages/style-packs/src/index';
 import { HyperframesProjectAdapter } from './adapter';
+import {
+  descendants,
+  processTable,
+} from '../../../packages/hyperframes-compositions/src/process-tree';
+
+async function cancelRealRender(
+  adapter: HyperframesProjectAdapter,
+  project: PreparedComposition,
+  target: RegExp
+) {
+  const controller = new AbortController();
+  let rendering = false;
+  const pending = adapter.render(project, {
+    signal: controller.signal,
+    onProgress(progress) {
+      if (progress === 0.1) rendering = true;
+    },
+  });
+  const settled = Promise.allSettled([pending]);
+  let tracked: ReturnType<typeof descendants> = [];
+  try {
+    await vi.waitFor(
+      () => {
+        expect(rendering).toBe(true);
+        tracked = descendants(process.pid).filter((p) =>
+          /chrome|headless_shell|ffmpeg/i.test(p.name)
+        );
+        expect(tracked.some((p) => target.test(p.name))).toBe(true);
+      },
+      { timeout: 30000, interval: 10 }
+    );
+  } finally {
+    controller.abort();
+    expect((await settled)[0]?.status).toBe('rejected');
+  }
+  await vi.waitFor(
+    () =>
+      expect(
+        processTable().filter((p) => tracked.some((t) => t.pid === p.pid && t.name === p.name))
+      ).toEqual([]),
+    { timeout: 3000 }
+  );
+  await expect(access(join(project.workspace, 'video.mp4'))).rejects.toThrow();
+  return {
+    processes: tracked.length,
+    groups: new Set(tracked.map((p) => p.group)).size,
+    targetGroupLeader: tracked.some((p) => target.test(p.name) && p.pid === p.group),
+  };
+}
 
 const run = (import.meta as ImportMeta & { env: { MODE: string } }).env.MODE === 'native';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -71,11 +121,11 @@ it.skipIf(!run)(
       '-f',
       'lavfi',
       '-i',
-      'color=blue:s=160x160:r=25:d=0.5',
+      'color=blue:s=160x160:r=60:d=0.5,drawbox=color=yellow:t=fill:enable=gte(t\\,0.02)',
       '-f',
       'lavfi',
       '-i',
-      'color=green:s=160x160:r=25:d=1.5',
+      'color=green:s=160x160:r=60:d=1.5',
       '-f',
       'lavfi',
       '-i',
@@ -223,24 +273,115 @@ it.skipIf(!run)(
       const dir = join(workspace, id);
       const prepared = await adapter.prepare(snapshot, dir);
       if (id === stylePackIds[0]) {
+        if (process.platform !== 'win32') {
+          const chrome = await cancelRealRender(adapter, prepared, /chrome|headless_shell/i);
+          const ffmpeg = await cancelRealRender(adapter, prepared, /ffmpeg/i);
+          await writeFile(
+            join(evidence, 'real-cancel.json'),
+            JSON.stringify({ chrome, ffmpeg }, null, 2)
+          );
+        }
         const repeated = await adapter.prepare(snapshot, join(workspace, 'repeat'));
         expect(repeated.manifestHash).toBe(prepared.manifestHash);
+        // Corrupt only a private staged copy after validation to exercise the browser decoder.
+        const corrupt = deps.assets['ArchivoBlack-400.woff2']!;
+        await writeFile(
+          join(repeated.workspace, 'native', 'media', corrupt.hash + '.woff2'),
+          'invalid font'
+        );
+        await expect(adapter.check(repeated, signal)).rejects.toThrow(
+          /decodificar la fuente vinculada/
+        );
+
         await writeFile(
           join(evidence, 'determinism.json'),
           JSON.stringify({ first: prepared.manifestHash, repeat: repeated.manifestHash }, null, 2)
         );
       }
       await writeFile(join(dir, 'fixture.json'), JSON.stringify(snapshot));
+      if (id === stylePackIds[0]) {
+        const cut = structuredClone(snapshot);
+        const first = cut.document.scenes[0]!;
+        first.durationMs = 1017;
+        first.layers = first.layers.filter((l) => l.type === 'video');
+        first.layers[0]!.endMs = 1017;
+        const firstPicture = first.layers[0]!;
+        if (firstPicture.type !== 'video') throw new Error();
+        const next = { ...firstPicture, id: 'cut-video', endMs: 583, sourceInMs: 1000 };
+        cut.document.scenes.push({ id: 'after-cut', durationMs: 583, layers: [next] });
+        cut.document.canvas.fps = 30;
+        const cutDir = join(workspace, 'fractional');
+        const project = await adapter.prepare(cut, cutDir);
+        await writeFile(join(cutDir, 'fixture.json'), JSON.stringify(cut));
+        // 967ms floors to 29, 1000ms to 30, 1034ms to 31.
+        const captures = await adapter.snapshots(project, [967, 1000, 1034], signal);
+        await adapter.render(project, { signal, onProgress() {} });
+        for (const [i, capture] of captures.entries()) {
+          const index = 29 + i;
+          const pixel = (file: string, select: string[]) => [
+            ...execFileSync('ffmpeg', [
+              '-v',
+              'error',
+              '-i',
+              file,
+              '-vf',
+              [...select, 'crop=10:10:70:130', 'scale=1:1'].join(','),
+              '-frames:v',
+              '1',
+              '-pix_fmt',
+              'rgb24',
+              '-f',
+              'rawvideo',
+              'pipe:1',
+            ]),
+          ];
+          const shot = pixel(join(cutDir, capture.relativePath), []);
+          const rendered = pixel(join(cutDir, 'video.mp4'), ['select=eq(n\\,' + index + ')']);
+          for (const p of [shot, rendered]) {
+            if (i === 0) expect(p[1]!).toBeGreaterThan(p[2]! + 55);
+            else if (i === 1) expect(p[2]!).toBeGreaterThan(p[0]! + 100);
+            else expect(p[0]!).toBeGreaterThan(p[2]! + 100);
+          }
+          await copyFile(
+            join(cutDir, capture.relativePath),
+            join(evidence, 'cut-' + index + '.png')
+          );
+        }
+      }
       console.log('native strict check', id, dir);
       const checked = await adapter.check(prepared, signal);
       await writeFile(join(evidence, id + '-check.json'), checked);
       const [frame] = await adapter.snapshots(prepared, [1000], signal);
       await copyFile(join(dir, frame!.relativePath), join(evidence, id + '.png'));
-      if (id !== stylePackIds[0]) continue;
+
       const result = await adapter.render(prepared, { signal, onProgress() {} });
       expect(result).toMatchObject({ width: 480, height: 380, hasAudio: true });
       expect(Math.abs(result.durationMs - 2000)).toBeLessThanOrEqual(40);
       const mp4 = join(dir, 'video.mp4');
+      const extracted = join(evidence, id + '-mp4.png');
+      ff(['-ss', '1', '-i', mp4, '-frames:v', '1', extracted]);
+      const pixels = (input: string) =>
+        execFileSync('ffmpeg', [
+          '-v',
+          'error',
+          '-i',
+          input,
+          '-vf',
+          'scale=96:76',
+          '-f',
+          'rawvideo',
+          '-pix_fmt',
+          'rgb24',
+          'pipe:1',
+        ]);
+      const captured = pixels(join(dir, frame!.relativePath)),
+        rendered = pixels(extracted);
+      expect(rendered.length).toBe(captured.length);
+      expect(
+        rendered.reduce((sum, v, i) => sum + Math.abs(v - captured[i]!), 0) / rendered.length
+      ).toBeLessThan(7);
+      await copyFile(mp4, join(evidence, id + '.mp4'));
+      if (id !== stylePackIds[0]) continue;
       await copyFile(mp4, join(evidence, 'native.mp4'));
       const probe = execFileSync('ffprobe', [
         '-v',

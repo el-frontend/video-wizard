@@ -60,3 +60,41 @@ describe('native compiler', () => {
     expect(html).toBe(await readFile(second!.entry, 'utf8'));
   });
 });
+
+it('assigns the picture to its first scene frame and keeps embedded sound on the document clock', async () => {
+  const { nativeDocument } = await import('./runtime');
+  const fixture = structuredClone(snapshot);
+  const video = {
+    id: 'picture',
+    type: 'video' as const,
+    assetId: 'crop',
+    fit: 'cover' as const,
+    focalPoint: { x: 0.5, y: 0.5 },
+    sourceInMs: 250,
+    volume: 0.5,
+    startMs: 0,
+    endMs: 183,
+    endAnchor: 'fixed' as const,
+    visible: true,
+    zIndex: 0,
+    box: { x: 0, y: 0, width: 50, height: 50 },
+  };
+  fixture.dependencies.assets.crop = {
+    id: 'crop',
+    name: 'crop',
+    hash: 'a'.repeat(64),
+    mediaType: 'video/mp4',
+    url: 'media/crop',
+    hasAudio: true,
+  };
+  fixture.document.scenes = [
+    { id: 'first', durationMs: 1017, layers: [] },
+    { id: 'second', durationMs: 183, layers: [video] },
+  ];
+  const { html } = nativeDocument(
+    fixture,
+    new Map([['picture', { src: 'media/crop', sourceInMs: 250, volume: 0.5 }]])
+  );
+  expect(html).toMatch(/<video [^>]*data-start="1"[^>]*data-media-start="0.25"[^>]*muted/);
+  expect(html).toMatch(/<audio [^>]*data-start="1.017"[^>]*data-media-start="0.25"/);
+});

@@ -139,28 +139,25 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
             : layer.assetId
         ]!;
       const audible = layer.volume > 0 && (layer.type === 'audio' || asset.hasAudio);
-      // Sound lives on the exact document clock; the video decoder uses its actual source offset.
-      const timed = {
-        from: Math.max(bounds.from, start / 1000),
-        end: Math.min(bounds.end, end / 1000),
-      };
-      if (timed.end <= timed.from) return;
-      const attributes =
-        attrs(timed) +
+      const mediaAttrs = (window: Window, volume: number) =>
+        attrs(window) +
         ' src="' +
         playback.src +
         '" data-media-start="' +
-        (playback.sourceInMs / 1000 + timed.from - start / 1000) +
+        playback.sourceInMs / 1000 +
         '" data-volume="' +
-        playback.volume +
+        volume +
         '"';
-      if (layer.type === 'audio') blocks.push('<audio ' + attributes + ' preload="auto"></audio>');
-      else
+      // Keep embedded audio sample-accurate even when its picture begins on an earlier frame.
+      if (audible) {
+        const exact = { from: start / 1000, end: end / 1000 };
+        blocks.push('<audio ' + mediaAttrs(exact, playback.volume) + ' preload="auto"></audio>');
+      }
+      if (layer.type === 'video')
         blocks.push(
           '<video ' +
-            attributes +
-            ' playsinline preload="auto" ' +
-            (audible ? 'data-has-audio="true"' : 'muted') +
+            mediaAttrs(range, 0) +
+            ' playsinline preload="auto" muted' +
             ' style="' +
             box +
             'object-fit:' +
@@ -271,7 +268,12 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
         '")}'
     )
     .join('\n');
+  // The native checker treats console errors as diagnostics, including an OTS rejection in Chrome.
+  const fontCheck = fonts.length
+    ? 'Promise.all(Array.from(document.fonts,face=>face.load())).catch(()=>console.error("No se pudo decodificar la fuente vinculada."));\n'
+    : '';
   const timeline =
+    fontCheck +
     'window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});\n' +
     motion.join('\n') +
     '\nwindow.__timelines["main"]=tl;';

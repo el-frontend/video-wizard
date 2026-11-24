@@ -13,6 +13,8 @@ import {
   type ExportSnapshot,
   type PreparedComposition,
 } from '@workspace/render-contract';
+import { assetPath, openAssetFile, resolveStudioDataDir } from '@workspace/render-contract/storage';
+import { mediaDiagnostics } from './media-capabilities';
 import { nativeDocument } from './runtime';
 import { materialize, mediaFilename } from './media';
 
@@ -91,6 +93,28 @@ export function validateNative(snapshot: ExportSnapshot) {
         });
     }
   return diagnostics;
+}
+export async function validateNativeAssets(
+  snapshot: ExportSnapshot,
+  dataDir = resolveStudioDataDir(),
+  signal = new AbortController().signal
+) {
+  const diagnostics = validateNative(snapshot);
+  if (diagnostics.some((d) => d.severity === 'error' && d.code !== 'scene-no-frame'))
+    return diagnostics;
+  return [
+    ...diagnostics,
+    ...(await mediaDiagnostics(
+      snapshot,
+      async (asset) => {
+        const path = await assetPath(dataDir, snapshot.ownerId, asset.hash);
+        const { file } = await openAssetFile(path);
+        await file.close();
+        return path;
+      },
+      signal
+    )),
+  ];
 }
 export interface NativeManifest {
   fps: number;

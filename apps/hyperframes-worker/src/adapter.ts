@@ -4,7 +4,7 @@ import {
   compileProject,
   fpsArgument,
   readNativeManifest,
-  validateNative,
+  validateNativeAssets,
 } from '@workspace/hyperframes-compositions';
 import type {
   Artifact,
@@ -19,8 +19,8 @@ import { runProcess } from './process';
 
 export class HyperframesProjectAdapter implements EngineAdapter {
   constructor(private readonly dataDir?: string) {}
-  async validate(snapshot: ExportSnapshot) {
-    return validateNative(snapshot);
+  async validate(snapshot: ExportSnapshot, signal?: AbortSignal) {
+    return validateNativeAssets(snapshot, this.dataDir, signal);
   }
   prepare(snapshot: ExportSnapshot, workspace: string, signal?: AbortSignal) {
     return compileProject(snapshot, workspace, { signal, dataDir: this.dataDir });
@@ -74,6 +74,9 @@ export class HyperframesProjectAdapter implements EngineAdapter {
     const { fps } = await readNativeManifest(p.workspace);
     const temp = await mkdtemp(join(p.workspace, 'render-')),
       file = join(temp, 'output.mp4');
+    const relativePath = 'video.mp4',
+      destination = join(p.workspace, relativePath);
+    let promoted = false;
     try {
       await this.check(p, signal);
       onProgress(0.1);
@@ -109,15 +112,14 @@ export class HyperframesProjectAdapter implements EngineAdapter {
       } = JSON.parse(bytes);
       const video = probe.streams.find((s) => s.codec_type === 'video');
       if (!video) throw new Error('El archivo generado no contiene video.');
-      const relativePath = 'video.mp4',
-        sha256 = await fileHash(file, signal);
+      const sha256 = await fileHash(file, signal);
       signal.throwIfAborted();
-      await rename(file, join(p.workspace, relativePath));
-      if (signal.aborted) {
-        await rm(join(p.workspace, relativePath), { force: true });
-        signal.throwIfAborted();
-      }
+      await rename(file, destination);
+      promoted = true;
+      await rm(temp, { recursive: true, force: true });
+      signal.throwIfAborted();
       onProgress(1);
+      signal.throwIfAborted();
       return {
         artifacts: [{ kind: 'video' as const, relativePath, sha256 }],
         durationMs: Math.round(Number(probe.format.duration) * 1000),
@@ -125,8 +127,10 @@ export class HyperframesProjectAdapter implements EngineAdapter {
         height: video.height,
         hasAudio: probe.streams.some((s) => s.codec_type === 'audio'),
       };
-    } finally {
+    } catch (error) {
+      if (promoted) await rm(destination, { force: true });
       await rm(temp, { recursive: true, force: true });
+      throw error;
     }
   }
 }

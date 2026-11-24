@@ -123,7 +123,12 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
       }
       if (!nonce || msg.nonce !== nonce) return;
       if (msg.type === 'studio.ready') ready.current?.(handle);
-      if (msg.type === 'studio.error') setError('La sesión de vista previa no está disponible.');
+      if (msg.type === 'studio.error')
+        setError(
+          msg.code === 'native-font'
+            ? 'El navegador no pudo cargar la fuente. Vincula un archivo de fuente válido.'
+            : 'La sesión de vista previa no está disponible.'
+        );
       if (msg.type === 'studio.time' && Number.isSafeInteger(msg.timeMs) && msg.timeMs >= 0) {
         time = msg.timeMs;
         const cueStartMs =

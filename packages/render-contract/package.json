@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./storage": "./src/storage.ts"
+    "./storage": "./src/storage.ts",
+    "./font": "./src/font.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -13,7 +14,8 @@
   },
   "dependencies": {
     "@workspace/video-project": "workspace:*",
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "fontkit": "2.0.4"
   },
   "devDependencies": {
     "vitest": "^4.1.12",

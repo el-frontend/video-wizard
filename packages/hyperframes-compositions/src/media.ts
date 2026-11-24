@@ -3,6 +3,7 @@ import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ExportSnapshot, type ResolvedAsset, videoPlayback } from '@workspace/render-contract';
 import { fileHash, stageMedia } from '@workspace/render-contract/storage';
+import { mediaDiagnostics } from './media-capabilities';
 import { runProcess } from './process';
 
 const extensions: Record<string, string> = {
@@ -51,6 +52,12 @@ export async function materialize(
   signal: AbortSignal
 ) {
   await stageMedia(snapshot, join(directory, 'media'), dataDir, signal, mediaFilename);
+  const diagnostics = await mediaDiagnostics(
+    snapshot,
+    async (asset) => join(directory, 'media', mediaFilename(asset)),
+    signal
+  );
+  if (diagnostics[0]) throw new Error(diagnostics[0].message);
   const layers = new Map<string, MaterializedMedia>();
   const streams = new Map<string, { codec_type: string; codec_name: string; pix_fmt?: string }[]>();
   async function codecs(src: string) {

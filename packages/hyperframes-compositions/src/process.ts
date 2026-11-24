@@ -1,3 +1,4 @@
+import { descendants } from './process-tree';
 import { spawn } from 'node:child_process';
 
 /** The CLI spawns Chrome and FFmpeg. On cancellation terminate the entire process group. */
@@ -16,19 +17,37 @@ export function runProcess(
     });
     let stdout = '',
       stderr = '',
-      timer: NodeJS.Timeout | undefined;
+      cleanup: Promise<void> | undefined;
+    let cleanupError: Error | undefined;
+    const groups = new Set<number>();
     const kill = (sig: NodeJS.Signals) => {
-      if (!child.pid) return;
-      try {
-        if (process.platform === 'win32') child.kill(sig);
-        else process.kill(-child.pid, sig);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      if (process.platform === 'win32') {
+        child.kill(sig);
+        return;
+      }
+      for (const group of groups) {
+        try {
+          process.kill(-group, sig);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
       }
     };
     const abort = () => {
+      if (child.pid && process.platform !== 'win32') {
+        groups.add(child.pid);
+        // Chromium may own a separate process group. Capture its group while the CLI still owns it.
+        try {
+          for (const entry of descendants(child.pid)) {
+            if (entry.pid === entry.group) groups.add(entry.group);
+          }
+        } catch {
+          // A restricted host may deny process enumeration. Still stop the group we created.
+          cleanupError = new Error('El sistema impidió verificar los subprocesos del render.');
+        }
+      }
       kill('SIGTERM');
-      timer = setTimeout(() => kill('SIGKILL'), 750);
+      cleanup = new Promise<void>((done) => setTimeout(done, 1250)).then(() => kill('SIGKILL'));
     };
     signal.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (chunk) => {
@@ -38,13 +57,11 @@ export function runProcess(
       stderr = (stderr + chunk).slice(-200_000);
     });
     child.once('error', reject);
-    child.once('close', (code) => {
+    child.once('close', async (code) => {
       signal.removeEventListener('abort', abort);
-      if (timer) {
-        clearTimeout(timer);
-        kill('SIGKILL');
-      }
-      if (signal.aborted) reject(signal.reason);
+      await cleanup;
+      if (cleanupError) reject(cleanupError);
+      else if (signal.aborted) reject(signal.reason);
       else if (code !== 0)
         reject(new Error(command + ' falló (' + code + '): ' + stderr + ' ' + stdout));
       else resolve(stdout);

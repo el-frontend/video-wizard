@@ -324,8 +324,49 @@ describe('seed-studio-libraries CLI and HTTP library routes', () => {
     expect(await fixture.db.$count(studioLibraries, eq(studioLibraries.ownerId, owner))).toBe(24);
     expect(await fixture.db.$count(studioAssets, eq(studioAssets.ownerId, owner))).toBe(4);
 
+    const { publishEdition } = await import('./library-editions');
+    const archivo = glass.fonts!.find((f) => f.family === 'Archivo Black')!;
+    const edition = {
+      kind: 'style',
+      id: 'prueba-alias',
+      version: 1,
+      name: 'Prueba fuente',
+      family: { id: glass.id, version: 1 },
+      tokens: {
+        colors: {
+          background: '#ffffff',
+          foreground: '#000000',
+          accent: '#229966',
+          surface: '#ffffff',
+        },
+        typography: { display: { fontFamily: 'Mi alias', weight: 700, cqw: 9, lineHeight: 1 } },
+      },
+      fonts: [{ ...archivo, family: 'Mi alias', weight: { min: 400, max: 900 } }],
+    };
+    await expect(publishEdition(library, owner, edition)).rejects.toThrow(/400–400/);
+    await expect(
+      publishEdition(library, owner, { ...edition, fonts: [{ ...geist!, family: 'Mi alias' }] })
+    ).resolves.toMatchObject({ id: edition.id, engines: ['remotion', 'hyperframes'] });
     const newOwner = await fixture.createOwner();
+    const editedStyle = { ...style, version: 3, name: 'Edición propia D4' };
+    const { initialTemplates } = await import('./initial-templates');
+    const editedTemplate = { ...initialTemplates()[0]!, version: 2, name: 'Plantilla propia D4' };
+    await library.publish(newOwner, editedStyle);
+    await library.publish(newOwner, editedTemplate);
     await runSeed(newOwner);
+    await runSeed(newOwner);
+    expect(await library.get(newOwner, editedStyle)).toEqual(editedStyle);
+    expect(await library.get(newOwner, editedTemplate)).toEqual(editedTemplate);
+    expect(await library.list(newOwner, { kind: 'style', engine: 'hyperframes' })).toHaveLength(3);
+    expect(await library.get(newOwner, { id: editedStyle.id, version: 4 })).toMatchObject({
+      family: { id: editedStyle.id },
+    });
+    expect(await library.get(newOwner, { id: editedTemplate.id, version: 3 })).toMatchObject({
+      engine: 'hyperframes',
+    });
+    expect(await library.list(newOwner, { kind: 'template', engine: 'hyperframes' })).toHaveLength(
+      2
+    );
     const ref = { id: 'viral', version: 1 };
     expect(await library.readBundle(newOwner, ref)).toEqual(viral);
     const newOwnerGlass = await library.get(newOwner, { id: glass.id, version: 1 });

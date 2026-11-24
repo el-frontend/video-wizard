@@ -80,5 +80,6 @@ export async function publishEdition(library: LibraryService, owner: string, dat
     )
   )
     throw new ValidationError('Vincula una fuente que cubra el peso de texto indicado.');
+  await library.verifyEditionFonts(owner, entry);
   return library.publish(owner, entry);
 }

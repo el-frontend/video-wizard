@@ -4,10 +4,10 @@ import { builtinSource, captionSource, packagesDirectory } from './catalog-sourc
 import { initialTemplates } from './initial-templates';
 import type { db as database } from '@/server/db';
 import { loadStylePack, stylePackFonts, stylePackIds } from '@workspace/style-packs';
-import { RemotionCaptionPresetSchema } from '@workspace/video-project';
+import { RemotionCaptionPresetSchema, type LibraryEntry } from '@workspace/video-project';
 import type { CaptionTemplate } from '@workspace/remotion-compositions';
 import { AssetService } from '@/server/services/studio/asset-service';
-import { LibraryService } from '@/server/services/studio/library-service';
+import { LibraryConflictError, LibraryService } from '@/server/services/studio/library-service';
 
 const captionPresets = {
   default: { name: 'Predeterminado' },
@@ -24,6 +24,17 @@ const captionPresets = {
 export async function provisionCatalog(db: typeof database, ownerId: string) {
   const assets = new AssetService(db);
   const library = new LibraryService(db);
+  // A D4 edition may already occupy the next seed version. Immutable publish also
+  // recognizes the identical seed on retries and serializes concurrent publishers.
+  async function publishEdition(entry: LibraryEntry) {
+    for (let version = entry.version; ; version++) {
+      try {
+        return await library.publish(ownerId, { ...entry, version });
+      } catch (error) {
+        if (!(error instanceof LibraryConflictError)) throw error;
+      }
+    }
+  }
   const fonts = await Promise.all(
     stylePackFonts.map(async ({ family, filename, weight }) => {
       const asset = await assets.ingest(ownerId, {
@@ -44,7 +55,7 @@ export async function provisionCatalog(db: typeof database, ownerId: string) {
     };
     await library.publish(ownerId, archived);
     await library.publish(ownerId, { ...archived, version: 2, engines: ['remotion'] });
-    await library.publish(ownerId, {
+    await publishEdition({
       ...archived,
       version: 3,
       family: { id, version: 1 },
@@ -99,7 +110,7 @@ export async function provisionCatalog(db: typeof database, ownerId: string) {
   });
 
   const templates = [...initialTemplates(), ...initialTemplates('hyperframes')];
-  for (const template of templates) await library.publish(ownerId, template);
+  for (const template of templates) await publishEdition(template);
   return {
     styles: stylePackIds.length,
     components: RemotionCaptionPresetSchema.options.length + 1,
