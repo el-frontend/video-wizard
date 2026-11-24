@@ -1,5 +1,13 @@
 // Host-owned facade. A factory receives opaque handles, never the DOM or the GSAP instance.
-globalThis.mountStudioVisual = function (container, sourceHash, props, context, parent, origin) {
+globalThis.mountStudioVisual = function (
+  container,
+  sourceHash,
+  props,
+  context,
+  parent,
+  origin,
+  appearanceFont = context.appearance.family
+) {
   const factory = globalThis.__studioVisualModules[sourceHash];
   const child = gsap.timeline({ paused: true });
   const nodes = new Map();
@@ -23,7 +31,8 @@ globalThis.mountStudioVisual = function (container, sourceHash, props, context, 
       if (key === 'fontFamily') {
         if (!context.fontFamilies.includes(value))
           throw Error('La fuente del componente no está declarada.');
-        result[key] = value;
+        // Author props and context use the catalog name. CSS uses the registered native face.
+        result[key] = value === context.appearance.family ? appearanceFont : value;
         continue;
       }
       if (

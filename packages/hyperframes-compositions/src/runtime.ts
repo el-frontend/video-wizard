@@ -227,7 +227,6 @@ export function nativeDocument(
           start,
           (id) => 'media/' + mediaFilename(dependencies.assets[id]!)
         );
-        context.appearance.family = font(look.family);
         const literal = (v: unknown) => JSON.stringify(v).replaceAll('<', '\\u003c');
         motion.push(
           'mountStudioVisual(document.getElementById(' +
@@ -240,6 +239,8 @@ export function nativeDocument(
             literal(context) +
             ',tl,' +
             start / 1000 +
+            ',' +
+            literal(font(context.appearance.family)) +
             ');'
         );
         return;

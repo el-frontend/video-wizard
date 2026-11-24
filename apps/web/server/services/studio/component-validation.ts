@@ -107,6 +107,10 @@ export async function compileAtRenderer(
   return SealedModuleSchema.parse(data);
 }
 export function changedReviewLayers(base: ProjectDraft, draft: ProjectDraft) {
+  const globalVisualChange =
+    !isDeepStrictEqual(base.canvas, draft.canvas) ||
+    !isDeepStrictEqual(base.styleRef, draft.styleRef) ||
+    !isDeepStrictEqual(base.brandSnapshot, draft.brandSnapshot);
   const previous = new Map<string, { layer: Layer; origin: number; duration: number }>();
   let origin = 0;
   for (const scene of base.scenes) {
@@ -127,6 +131,7 @@ export function changedReviewLayers(base: ProjectDraft, draft: ProjectDraft) {
       const key = JSON.stringify([scene.id, layer.id]),
         old = previous.get(key);
       if (
+        globalVisualChange ||
         !old ||
         old.origin !== origin ||
         old.duration !== scene.durationMs ||

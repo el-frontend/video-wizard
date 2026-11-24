@@ -241,6 +241,43 @@ it.skipIf(import.meta.env.MODE !== 'r3-journey')(
           expect(eighth.diagnostics).toEqual([]);
           const detail = await request(endpoint + '/proposals/' + eighth.proposalId);
           expect(detail.samples.some((s) => s.frame >= 145 && s.frame < 155)).toBe(true);
+          const mixed = await request('/api/studio/projects', {
+            title: 'Contexto mixto',
+            engine,
+            canvas: { width: 320, height: 180, fps: 25 },
+          });
+          const mixedPath = '/api/studio/projects/' + mixed.document.id + '/proposals';
+          const a = { ...input.commands[0].scene.layers[0], id: 'A', startMs: 800, endMs: 1200 };
+          const aStage = await request(mixedPath, {
+            ...input,
+            requestId: randomUUID(),
+            baseRevision: mixed.revision,
+            files: {
+              [ex.manifest.entry]:
+                'export default function Title({context,timeMs,props}) { if(context.canvas.width < context.canvas.height && timeMs > 80 && timeMs < 300) {return <img assetId="imagen-ausente"/>;} return <strong>{props.title}</strong>; }',
+            },
+            commands: [
+              { type: 'add-scene', scene: { id: 'mixed', durationMs: 4000, layers: [a] } },
+            ],
+          });
+          expect(aStage.diagnostics).toEqual([]);
+          const aApplied = await request(mixedPath + '/' + aStage.proposalId + '/apply', {
+            baseRevision: mixed.revision,
+          });
+          const b = { ...a, id: 'B', startMs: 2200, endMs: 2600 };
+          const vertical = await request(mixedPath, {
+            ...input,
+            requestId: randomUUID(),
+            baseRevision: aApplied.revision,
+            commands: [
+              { type: 'set-canvas', canvas: { width: 180, height: 320, fps: 25 } },
+              { type: 'add-layer', sceneId: 'mixed', layer: b },
+            ],
+          });
+          expect(vertical.diagnostics).toContainEqual(
+            expect.objectContaining({ code: 'component-mount', severity: 'error' })
+          );
+          expect((await request(mixedPath + '/' + vertical.proposalId)).status).toBe('invalid');
         }
       }
       console.info('Evidencia R3', space);

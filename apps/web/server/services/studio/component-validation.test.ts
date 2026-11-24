@@ -1,3 +1,6 @@
+import { changedReviewLayers } from './component-validation';
+import { visualContext, libraryKey } from '@workspace/render-contract';
+import { exampleProject } from '@workspace/video-project/fixtures';
 import { describe, expect, it } from 'vitest';
 import {
   ComponentManifestSchema,
@@ -78,3 +81,43 @@ describe('versioned visual components', () => {
     ).toBe(false);
   });
 });
+
+it.each(['style', 'brand'] as const)(
+  'includes an existing visible window when %s changes its resolved appearance and another layer is added',
+  (kind) => {
+    const base = exampleProject();
+    base.styleRef = null;
+    base.brandSnapshot = null;
+    const first = base.scenes[0]!.layers.find((l) => l.type === 'component')!;
+    if (first.type !== 'component') throw Error('fixture');
+    const second = { ...first, id: 'B' },
+      pin = { id: 'paleta', version: 1 },
+      tokens = { colors: { accent: '#FF2200' } };
+    const next = structuredClone(base);
+    next.scenes[0]!.layers.push(second);
+    const manifest = componentExample('remotion').manifest;
+    manifest.exposedRoles = ['colors.accent'];
+    const component = {
+      ...first.componentRef,
+      kind: 'component' as const,
+      name: 'Título',
+      engine: 'remotion' as const,
+      assetIds: [],
+      manifest,
+    };
+    const style = { ...pin, kind: 'style' as const, name: 'Paleta', assetIds: [], tokens };
+    if (kind === 'style') next.styleRef = pin;
+    else next.brandSnapshot = { ref: pin, values: tokens };
+    const deps = {
+      assets: {},
+      libraries: { [libraryKey(component)]: component, [libraryKey(style)]: style },
+    };
+    const before = visualContext(base, deps, first, manifest, 0),
+      after = visualContext(next, deps, first, manifest, 0);
+    expect(before.appearance.accent).not.toBe(after.appearance.accent);
+    expect(after.appearance.accent).toBe('#FF2200');
+    expect(changedReviewLayers(base, next)).toContain(
+      JSON.stringify([next.scenes[0]!.id, first.id])
+    );
+  }
+);
