@@ -351,7 +351,11 @@ it('legacyEditorIgnoresRawQueryPaths and never transcribes on navigation', async
   });
   try {
     const shell = await page(params(cropId));
-    expect(shell.props.children.props.children.props).toEqual({
+    const { VideoEditorContainer } = await import('@/features/video/containers/editor-container');
+    const editor = shell.props.children.props.children.find(
+      (child: { type: unknown }) => child.type === VideoEditorContainer
+    );
+    expect(editor?.props).toEqual({
       sourceAssetId: derivedId,
       sourceDurationMs: 1000,
       subtitles: [],

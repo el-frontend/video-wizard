@@ -1,4 +1,5 @@
 import { validateSnapshot } from '@workspace/render-contract';
+import { repairMaster } from './import-narration';
 import { AssetService } from './asset-service';
 import { LibraryService } from './library-service';
 import { randomUUID } from 'node:crypto';
@@ -454,6 +455,7 @@ export class ProjectService {
         slotId: IdSchema,
         repair: z.discriminatedUnion('action', [
           z.strictObject({ action: z.literal('omit') }),
+          z.strictObject({ action: z.literal('recheck') }),
           z.strictObject({ action: z.literal('replace'), assetId: z.uuid() }),
           z.strictObject({ action: z.literal('select-style'), ref: LibraryRefSchema }),
         ]),
@@ -471,7 +473,16 @@ export class ProjectService {
         throw new ValidationError('El recurso pendiente ya no está disponible.');
       const { repair } = request,
         doc = structuredClone(base.document);
-      if (repair.action === 'select-style') {
+      if (repair.action === 'recheck') {
+        if (
+          slot.kind !== 'video' ||
+          !slot.assetId ||
+          (await new AssetService(tx, this.dataDir).verify(ownerId, [slot.assetId])).length
+        )
+          throw new ValidationError('Vuelve a subir el mismo archivo de video en Recursos.');
+      } else if (repair.action === 'omit' && slot.kind === 'video' && slot.assetId) {
+        throw new ValidationError('Repón el video para conservar el fragmento acreditado.');
+      } else if (repair.action === 'select-style') {
         const entry = await new LibraryService(this.db).get(ownerId, repair.ref);
         if (slot.kind !== 'style' || entry.kind !== 'style' || !entry.engines?.includes(doc.engine))
           throw new ValidationError('Elige un estilo compatible.');
@@ -507,13 +518,39 @@ export class ProjectService {
             assetId: asset.id,
             startMs: slot.startMs,
             durationMs: asset.durationMs,
+            spokenText: slot.spokenText,
             stale: true,
           });
         }
-        if (!slot.inactiveTake) {
-          if (scene) scene.layers.push(audio);
-          else doc.globalAudio.push(audio);
-        }
+        if (!slot.sceneId && context.narration) {
+          // The immutable first import is also the source of truth for historical draft copies.
+          const [original] = await tx
+            .select({ document: studioProjectRevisions.document })
+            .from(studioImports)
+            .innerJoin(
+              studioProjectRevisions,
+              and(
+                eq(studioImports.projectId, studioProjectRevisions.projectId),
+                eq(studioProjectRevisions.sequence, 1)
+              )
+            )
+            .where(
+              and(
+                eq(studioImports.ownerId, ownerId),
+                eq(studioImports.kind, context.kind),
+                eq(studioImports.sourceId, context.sourceId),
+                eq(studioImports.hash, context.hash)
+              )
+            );
+          repairMaster(
+            doc,
+            context,
+            audio,
+            asset.durationMs,
+            original?.document,
+            !!slot.inactiveTake
+          );
+        } else if (scene && !slot.inactiveTake) scene.layers.push(audio);
         if (!doc.assetIds.includes(asset.id)) doc.assetIds.push(asset.id);
         doc.durationMs = projectDurationMs(doc);
       }

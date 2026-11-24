@@ -44,6 +44,7 @@ afterEach(() => {
 it.each(['before', 'after'])(
   'refreshes a mounted library after a save when its old GET finishes %s the PUT',
   async (order) => {
+    localStorage.clear();
     const oldGet = deferred(),
       put = deferred();
     const list = vi
@@ -82,5 +83,8 @@ it.each(['before', 'after'])(
       });
     expect(library.result.current.page.items[0]?.title).toBe(saved.document.title);
     expect(list).toHaveBeenCalledTimes(2);
+    expect(Object.keys(localStorage).filter((key) => key.startsWith('studio:draft:'))).toHaveLength(
+      0
+    );
   }
 );

@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { cp, readFile } from 'node:fs/promises';
+import { packagesDirectory } from './catalog-source';
+import { provisionCatalog } from './provision-catalog';
 import { Readable } from 'node:stream';
 import { importDiagnostics } from '@workspace/video-project';
 import { AssetService } from './asset-service';
@@ -5,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { authFixture } from '@/server/auth/auth-test-fixture';
 import { users } from '@/server/db/schema';
 import { ProjectService } from './project-service';
@@ -41,12 +45,15 @@ describe('registered Motion Studio imports', () => {
       join(root, 'videos/demo/captions.json'),
       JSON.stringify([{ start: 1.8, end: 2.2, text: 'Cruce' }])
     );
+    vi.stubEnv('STUDIO_DATA_DIR', join(root, 'managed'));
+    vi.doMock('@/server/db', () => ({ db: fixture.db }));
     service = new ImportService(fixture.db, {
       sources: [{ ownerId: owner, sourceId: 'fixture', root, slug: 'demo', fps: 30 }],
       dataDir: join(root, 'managed'),
     });
   });
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await fixture?.close();
     if (root) await rm(root, { recursive: true, force: true });
   });
@@ -185,6 +192,226 @@ describe('registered Motion Studio imports', () => {
         document: project.document,
       })
     ).rejects.toThrow();
+  });
+  async function source(slug: string, episode: object) {
+    const video = join(root, 'videos', slug);
+    await mkdir(join(video, 'assets'), { recursive: true });
+    await writeFile(join(video, 'episode.json'), JSON.stringify(episode));
+    await writeFile(join(video, 'captions.json'), '[]');
+    const imports = new ImportService(fixture.db, {
+      sources: [{ ownerId: owner, sourceId: slug, slug, root, fps: 30 }],
+      dataDir: join(root, 'managed'),
+    });
+    return { video, run: () => imports.import(owner, { kind: 'motion-studio', sourceId: slug }) };
+  }
+  it('preserves the alternate headline independently of narration and keeps the episode header', async () => {
+    const fixture = await source('headline', {
+      title: 'Project',
+      series: 'Noticias',
+      date: '2026-11-11',
+      dateLabel: 'Miércoles',
+      scenes: [{ duration: 2, headline: 'Titular alternativo' }],
+    });
+    const { project } = await fixture.run();
+    expect(project.document.title).toBe('Project');
+    expect(project.importContext).toMatchObject({
+      editorial: { series: 'Noticias', date: '2026-11-11', dateLabel: 'Miércoles' },
+    });
+    expect(project.document.scenes[0]?.editorial?.headline).toBe('Titular alternativo');
+    expect(project.document.scenes[0]?.layers.find((l) => l.type === 'text')?.text).toBe(
+      'Titular alternativo'
+    );
+    expect(project.document.scenes[0]?.editorial?.narration).toBeUndefined();
+  });
+  it('fingerprints and verifies the inferred source style fonts', async () => {
+    const fixtureSource = await source('infer', { scenes: [{ duration: 2 }] });
+    const archive = join(packagesDirectory(), 'style-packs/packs'),
+      style = 'noticias-liquid-glass',
+      installed = join(root, 'styles', style);
+    await mkdir(join(installed, 'assets'), { recursive: true });
+    await cp(join(archive, style, 'frame.md'), join(installed, 'frame.md'));
+    await cp(join(archive, style, 'frame.md'), join(fixtureSource.video, 'frame.md'));
+    await cp(join(archive, 'fonts'), join(installed, 'assets/fonts'), { recursive: true });
+    await provisionCatalog(fixture.db, owner);
+    const original = (await fixtureSource.run()).project;
+    expect(original.document.styleRef?.id).toBe(style);
+    await writeFile(join(installed, 'assets/fonts/ArchivoBlack-400.woff2'), 'changed');
+    const changed = (await fixtureSource.run()).project;
+    expect(changed.importContext?.hash).not.toBe(original.importContext?.hash);
+    expect(changed.document.styleRef).toBeNull();
+    expect(changed.importContext?.slots).toContainEqual(
+      expect.objectContaining({ kind: 'style', resolution: 'pending' })
+    );
+  });
+  it.each(['master', 'fallback', 'reordered', 'retimed', 'edited', 'repaired'] as const)(
+    'repairs a missing master and preserves approved timing and manual audio (%s)',
+    async (mode) => {
+      const fallback = mode !== 'master';
+      const f = await source('repair-' + mode, {
+        audioMaster: 'assets/master.wav',
+        scenes: [
+          { duration: 2, ...(fallback && { audio: 'assets/voice.wav', narration: 'Toma' }) },
+          { duration: 3 },
+        ],
+      });
+      const wav = (length: number) =>
+        execFileSync('ffmpeg', [
+          '-loglevel',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          'anullsrc=r=8000:cl=mono',
+          '-t',
+          String(length),
+          '-f',
+          'wav',
+          'pipe:1',
+        ]);
+      if (fallback && mode !== 'repaired')
+        await writeFile(join(f.video, 'assets/voice.wav'), wav(1));
+      let { project } = await f.run();
+      const id = project.document.id;
+      const masterSlot = project.importContext?.slots.find((s) => s.kind === 'audio' && !s.sceneId);
+      expect(masterSlot).toBeDefined();
+      const projects = new ProjectService(fixture.db, join(root, 'managed'));
+      const asset = await new AssetService(fixture.db, join(root, 'managed')).ingest(owner, {
+        filename: 'replacement.wav',
+        mediaType: 'audio/wav',
+        stream: Readable.from(wav(8)),
+      });
+      if (mode === 'repaired') {
+        const take = await new AssetService(fixture.db, join(root, 'managed')).ingest(owner, {
+          filename: 'scene.wav',
+          mediaType: 'audio/wav',
+          stream: Readable.from(wav(1)),
+        });
+        const slot = project.importContext!.slots.find((s) => s.sceneId)!;
+        project = await projects.repairImport(owner, id, {
+          baseRevision: project.revision,
+          slotId: slot.id,
+          repair: { action: 'replace', assetId: take.id },
+        });
+      }
+      const doc = structuredClone(project.document),
+        music = {
+          id: randomUUID(),
+          type: 'audio' as const,
+          assetId: asset.id,
+          startMs: 0,
+          endMs: 500,
+          endAnchor: 'fixed' as const,
+          volume: 0.2,
+          visible: true,
+          zIndex: 0,
+          sourceInMs: 0,
+        };
+      doc.globalAudio.push(music);
+      if (!doc.assetIds.includes(asset.id)) doc.assetIds.push(asset.id);
+      if (mode === 'reordered') doc.scenes.reverse();
+      if (mode === 'retimed') {
+        doc.scenes[0]!.durationMs += 100;
+        doc.scenes[1]!.durationMs -= 100;
+      }
+      if (mode === 'edited') {
+        const take = doc.scenes[0]!.layers.find((l) => l.type === 'audio')!;
+        take.volume = 0.4;
+      }
+      const saved = await projects.save(owner, id, {
+        baseRevision: project.revision,
+        document: doc,
+      });
+      const repaired = await projects.repairImport(owner, id, {
+        baseRevision: saved.revision,
+        slotId: masterSlot!.id,
+        repair: { action: 'replace', assetId: asset.id },
+      });
+      const activate = mode === 'master' || mode === 'fallback';
+      expect(repaired.document.durationMs).toBe(5000);
+      expect(repaired.document.globalAudio).toContainEqual(music);
+      expect(repaired.importContext?.narration).toMatchObject({
+        playback: activate ? 'master' : 'scenes',
+        masterAssetId: asset.id,
+      });
+      expect(
+        repaired.document.scenes.flatMap((s) => s.layers.filter((l) => l.type === 'audio'))
+      ).toEqual(
+        activate ? [] : doc.scenes.flatMap((s) => s.layers.filter((l) => l.type === 'audio'))
+      );
+      if (activate) {
+        expect(repaired.document.globalAudio).toContainEqual(
+          expect.objectContaining({ endMs: 5000, assetId: asset.id })
+        );
+        expect(repaired.importContext?.diagnostics.map((d) => d.code)).toContain('master-tail');
+      } else expect(repaired.document.globalAudio).toEqual([music]);
+    }
+  );
+  it('reopens an accredited transcript with missing bytes and repairs its exact asset after reingestion', async () => {
+    const { jobHistoryService: jobs } = await import('../job-history-service');
+    const file = join(root, 'owned.mp4');
+    execFileSync('ffmpeg', [
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=s=32x32:r=10:d=1',
+      '-c:v',
+      'libx264',
+      file,
+    ]);
+    const bytes = await readFile(file),
+      assets = new AssetService(fixture.db, join(root, 'managed'));
+    const ingest = () =>
+      assets.ingest(owner, {
+        filename: 'owned.mp4',
+        mediaType: 'video/mp4',
+        stream: Readable.from(bytes),
+      });
+    const asset = await ingest();
+    const job = await jobs.create({
+      userId: owner,
+      type: 'transcription',
+      inputData: { sourceAssetId: asset.id },
+    });
+    await jobs.complete(job.id, {
+      sourceAssetId: asset.id,
+      subtitles: [{ id: 1, text: 'Palabra', start: 100, end: 300 }],
+      language: 'es',
+      videoDuration: 1,
+      sourceDurationMs: 1000,
+      totalSegments: 1,
+    });
+    await rm(await assets.resolveFile(owner, asset.id));
+    const request = { kind: 'legacy-job', sourceId: job.id };
+    const { project } = await service.import(owner, request);
+    const slot = project.importContext!.slots.find((s) => s.kind === 'video')!;
+    expect(slot).toMatchObject({ resolution: 'pending', assetId: asset.id });
+    expect(project.document.scenes[0]?.durationMs).toBe(1000);
+    expect(
+      project.document.scenes[0]?.layers.find((l) => l.type === 'captions')?.cues
+    ).toContainEqual(expect.objectContaining({ text: 'Palabra', startMs: 100, endMs: 300 }));
+    expect((await service.import(owner, request)).project).toEqual(project);
+    const projects = new ProjectService(fixture.db, join(root, 'managed'));
+    const edit = await projects.save(owner, project.document.id, {
+      baseRevision: project.revision,
+      document: { ...project.document, title: 'Edición conservada' },
+    });
+    const repair = { slotId: slot.id, baseRevision: edit.revision, repair: { action: 'recheck' } };
+    await expect(projects.repairImport(owner, project.document.id, repair)).rejects.toThrow();
+    expect((await ingest()).id).toBe(asset.id);
+    const fixed = await projects.repairImport(owner, project.document.id, repair);
+    expect(fixed.document).toEqual(edit.document);
+    expect(fixed.importContext?.slots[0]?.resolution).toBe('replaced');
+    const unproven = await jobs.create({
+      userId: owner,
+      type: 'transcription',
+      inputData: { video_path: 'uploads/historical.mp4' },
+    });
+    await jobs.complete(unproven.id, { output_url: 'http://engine/old.mp4' });
+    await expect(service.import(owner, { ...request, sourceId: unproven.id })).rejects.toThrow(
+      /verificar el origen/
+    );
   });
   it('rejects unregistered sources, browser-selected paths and linked dependency files', async () => {
     await expect(service.import(stranger, request)).rejects.toThrow();

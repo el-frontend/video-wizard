@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { AssetDescriptor, ImportSlot, ProjectRecord } from '@workspace/video-project';
 import { projectRequest } from '@/features/studio-projects/project-api';
@@ -81,13 +82,28 @@ export function ImportResources({
                       ))}
                 </select>
               )}
-              <button
-                className="studio-secondary"
-                disabled={busy}
-                onClick={() => repair(slot.id, { action: 'omit' })}
-              >
-                Omitir este recurso
-              </button>
+              {slot.kind === 'video' && slot.assetId ? (
+                <>
+                  <Link className="edit-button" href="/assets">
+                    Abrir Recursos
+                  </Link>
+                  <button
+                    className="studio-secondary"
+                    disabled={busy}
+                    onClick={() => repair(slot.id, { action: 'recheck' })}
+                  >
+                    Comprobar archivo repuesto
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="studio-secondary"
+                  disabled={busy}
+                  onClick={() => repair(slot.id, { action: 'omit' })}
+                >
+                  Omitir este recurso
+                </button>
+              )}
             </>
           ) : (
             <small>

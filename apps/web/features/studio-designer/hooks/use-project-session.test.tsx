@@ -6,6 +6,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ProjectRecord } from '@workspace/video-project';
 import { exampleProject } from '@workspace/video-project/fixtures';
+import * as recovery from '../lib/draft-recovery';
 import { useProjectSession } from './use-project-session';
 
 const initial: ProjectRecord = {
@@ -422,4 +423,47 @@ it('fences an earlier audio response when explicitly reloading a fresh head', as
   expect(editor.current.draft?.title).toBe(fresh.document.title);
   expect(editor.current.canUndo).toBe(false);
   expect(editor.current.replacingAudio).toBe(false);
+});
+it('retains an unacknowledged local draft when the account changes after editor navigation', async () => {
+  localStorage.clear();
+  request.mockResolvedValueOnce(ok(initial));
+  const editor = renderHook(() => useProjectSession('project', initial));
+  await act(async () => {});
+  act(() => editor.result.current.dispatch({ type: 'set-title', title: 'A' }));
+  const put = deferred();
+  request.mockReturnValueOnce(put.promise);
+  const pending = editor.result.current.save();
+  editor.unmount();
+  window.dispatchEvent(new Event('studio:account-changed'));
+  put.resolve(ok(record('v2', 'A')));
+  await expect(pending).rejects.toThrow();
+  expect(Object.values(localStorage).some((value) => JSON.parse(value).draft?.title === 'A')).toBe(
+    true
+  );
+});
+it('recovers the offered same-tab draft after saving a different edit on the same head', async () => {
+  localStorage.clear();
+  const writer = vi.spyOn(recovery, 'tabDraftWriter').mockResolvedValue('same-tab');
+  try {
+    request.mockResolvedValueOnce(ok(initial));
+    const first = renderHook(() => useProjectSession('project', initial));
+    await act(async () => {});
+    act(() => first.result.current.dispatch({ type: 'set-title', title: 'A' }));
+    first.unmount();
+    request.mockResolvedValueOnce(ok(initial));
+    const next = renderHook(() => useProjectSession('project', initial));
+    await act(async () => {});
+    const offered = next.result.current.candidates.find((c) => c.draft.title === 'A')!;
+    expect(offered.writer).toBe('same-tab');
+    act(() => next.result.current.dispatch({ type: 'set-title', title: 'B' }));
+    request.mockResolvedValueOnce(ok(record('v2', 'B')));
+    await act(async () => {
+      await next.result.current.save();
+    });
+    act(() => next.result.current.recover(offered));
+    expect(next.result.current.draft?.title).toBe('A');
+    expect(next.result.current.conflict?.revision).toBe('v2');
+  } finally {
+    writer.mockRestore();
+  }
 });

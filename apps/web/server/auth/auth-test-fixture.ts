@@ -18,7 +18,7 @@ while (!existsSync(join(workspace, 'pnpm-workspace.yaml'))) {
 }
 const migrations = join(workspace, 'apps/web/server/db/migrations');
 
-export async function authFixture(lastMigration = 8) {
+export async function authFixture(lastMigration = Infinity) {
   config({
     path: join(workspace, '.env.studio-test'),
     quiet: true,

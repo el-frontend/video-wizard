@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ImportKindSchema, importDiagnostics, type ImportContext } from '@workspace/video-project';
 import type { db } from '@/server/db';
@@ -44,12 +44,10 @@ export class ImportService {
         asset = await assets.get(owner, media.sourceAssetId);
       const crop = completedCrop(job);
       const refs = [asset, ...(crop ? [await assets.get(owner, crop.sourceAssetId)] : [])];
-      const issues = await assets.verify(
-        owner,
-        refs.map((a) => a.id)
-      );
-      if (issues.length)
-        throw new ValidationError('Falta el archivo registrado. Vuelve a importar el video.');
+      const missing = [];
+      for (const ref of new Map(refs.map((a) => [a.id, a])).values()) {
+        if ((await assets.verify(owner, [ref.id])).length) missing.push(ref);
+      }
       const captions = editedClipCues(media.subtitles, media.sourceDurationMs);
       const render =
         job.type === 'render' ? storedRenderInput.safeParse(job.inputData).data : undefined;
@@ -69,7 +67,16 @@ export class ImportService {
             })
           )[0]!;
       const hash = createHash('sha256')
-        .update(JSON.stringify([1, media, crop, refs.map((a) => [a.id, a.hash]), render ?? null]))
+        .update(
+          JSON.stringify([
+            1,
+            media,
+            crop,
+            refs.map((a) => [a.id, a.hash]),
+            render ?? null,
+            ...(missing.length ? [missing.map((a) => a.id)] : []),
+          ])
+        )
         .digest('hex');
       const context: ImportContext = {
         version: 1,
@@ -77,7 +84,17 @@ export class ImportService {
         sourceId,
         hash,
         mode: 'editable',
-        slots: [],
+        slots: missing.map((asset) => ({
+          id: randomUUID(),
+          kind: 'video',
+          assetId: asset.id,
+          startMs: 0,
+          resolution: 'pending',
+          label:
+            'Vuelve a subir el archivo original «' +
+            asset.name +
+            '» en Recursos para recuperar el video.',
+        })),
         diagnostics: [],
       };
       if (render) {

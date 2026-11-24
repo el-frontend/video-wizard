@@ -18,6 +18,7 @@ import {
 import { captionLayer, titleLayer } from '@/features/studio-designer/lib/editor-commands';
 import { ValidationError } from '@/server/lib/utils';
 import { packagesDirectory } from './catalog-source';
+import { masterLengthDiagnostic } from './import-narration';
 import { AssetService } from './asset-service';
 import { LibraryService } from './library-service';
 import type { MotionSource } from './import-registry';
@@ -32,6 +33,7 @@ const dirtyFields = {
 const sourceScene = z
   .object({
     duration: seconds.positive().max(3600),
+    headline: z.string().optional(),
     titleLines: z.array(z.string()).optional(),
     narration: z.string().optional(),
     audio: z.string().optional(),
@@ -55,6 +57,8 @@ const model = z.object({
     .object({
       title: z.string().optional(),
       series: z.string().optional(),
+      date: z.string().optional(),
+      dateLabel: z.string().optional(),
       audioMaster: z.string().optional(),
       scenes: z.array(sourceScene).min(1).max(100),
       ...dirtyFields,
@@ -94,12 +98,7 @@ async function resolveStyle(
       id,
       join(packagesDirectory(), 'style-packs/packs', id, 'frame.md')
     );
-    if (
-      capture.meta.styleId
-        ? capture.meta.styleId !== id || capture.styleFrame !== archive.frameMarkdown
-        : capture.frame !== archive.frameMarkdown
-    )
-      continue;
+    if (capture.meta.styleId !== id || capture.styleFrame !== archive.frameMarkdown) continue;
     for (const entry of candidates) {
       if (
         entry.kind !== 'style' ||
@@ -126,7 +125,7 @@ async function resolveStyle(
           )
           .digest('hex');
         if (
-          (capture.meta.styleId && capture.fonts[font.filename] !== expected) ||
+          capture.fonts[font.filename] !== expected ||
           (await assets.get(owner, binding.assetId)).hash !== expected
         ) {
           match = false;
@@ -226,6 +225,8 @@ export async function prepareMotion(
       if (!context.originalAssetId) pending('video', 'Falta el archivo de video original.');
       return { document, context };
     }
+    if (ep.series !== undefined || ep.dateLabel !== undefined || ep.date !== undefined)
+      context.editorial = { series: ep.series, dateLabel: ep.dateLabel, date: ep.date };
     document.styleRef = await resolveStyle(owner, capture, library, assets);
     if (!document.styleRef && (capture.meta.styleId || capture.frame))
       pending('style', 'Selecciona una edición compatible del estilo de origen.');
@@ -249,7 +250,16 @@ export async function prepareMotion(
     const masterLayerId = useMaster ? randomUUID() : undefined;
     let secondsElapsed = 0;
     for (const item of ep.scenes) {
-      const { audio, audioOffset, titleLines, narration, duration, ...editorial } = item;
+      const {
+        audio,
+        audioOffset,
+        titleLines,
+        headline: alternate,
+        narration,
+        duration,
+        ...editorial
+      } = item;
+      const title = titleLines?.join('\n') || alternate;
       const start = ms(secondsElapsed);
       secondsElapsed += duration;
       const end = ms(secondsElapsed),
@@ -261,15 +271,14 @@ export async function prepareMotion(
         durationMs,
         layers: [],
         editorial: {
-          headline: titleLines?.join('\n'),
+          headline: title,
           narration,
           content: JsonObjectSchema.parse(editorial),
         },
       };
       document.scenes.push(scene);
       const headline = titleLayer(scene, document.canvas);
-      if (headline.type === 'text' && titleLines?.length)
-        scene.layers.push({ ...headline, text: titleLines.join('\n') });
+      if (headline.type === 'text' && title) scene.layers.push({ ...headline, text: title });
       const captions = captionLayer(scene, document.canvas);
       const cues = (capture.captions ?? []).flatMap((c) => {
         const a = Math.max(start, ms(c.start)),
@@ -346,21 +355,16 @@ export async function prepareMotion(
         zIndex: 0,
         endAnchor: 'fixed',
       });
-      if (master.durationMs > document.durationMs)
-        context.diagnostics.push({
-          severity: 'warning',
-          code: 'master-tail',
-          message:
-            'El archivo maestro contiene audio posterior al final de la secuencia. Se conservó el archivo completo.',
-        });
-      if (master.durationMs < document.durationMs)
-        context.diagnostics.push({
-          severity: 'warning',
-          code: 'master-length',
-          message: 'La pista maestra termina antes del final del episodio.',
-        });
-    } else if (ep.audioMaster && !ep.scenes.some((s) => s.audio))
-      pending('audio', 'Falta la pista maestra.');
+      const issue = masterLengthDiagnostic(master.durationMs, document.durationMs);
+      if (issue) context.diagnostics.push(issue);
+    } else if (
+      ep.audioMaster &&
+      !(media.get(ep.audioMaster)?.hasAudio && media.get(ep.audioMaster)?.durationMs)
+    ) {
+      pending('audio', 'Falta la pista maestra.', 0, undefined, {
+        inactiveTake: !!dirty(ep) || ep.scenes.some(changed),
+      });
+    }
     if (capture.captions?.some((c) => c.words !== undefined))
       context.diagnostics.push({
         severity: 'warning',

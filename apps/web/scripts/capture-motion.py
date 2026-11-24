@@ -4,6 +4,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 from contextlib import ExitStack
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MAX_MODEL = 16 * 1024 * 1024
 MAX_CAPTURE = 2 * 1024**3
-STYLE_IDS = {"noticias-liquid-glass", "noticias-elfrontend-web", "noticias-modern-editorial"}
+STYLE_IDS = ("noticias-liquid-glass", "noticias-elfrontend-web", "noticias-modern-editorial")
 
 
 def regular(stack, anchor, parts):
@@ -81,6 +82,34 @@ def capture(root, slug, stage, fps, keep):
             raise ValueError("invalid state")
         model = episode if isinstance(episode,dict) and isinstance(episode.get("scenes"),list) else None
         public = {k:meta[k] for k in ("styleId","title") if k in meta}
+        frame = (read(base+["frame.md"],"frame") or b"").decode()
+        style = public.get("styleId")
+        style_frame = None
+        if not style and frame:
+            for candidate in STYLE_IDS:
+                frame_bytes = read(["styles",candidate,"frame.md"], "candidate")
+                entries.pop("candidate")
+                if frame_bytes is None:
+                    continue
+                name = re.search(r"^name:\s*(.+)$", frame_bytes.decode(), re.M)
+                label = name.group(1).strip("\"'") if name else candidate
+                if "name: " + label in frame:
+                    style, style_frame = candidate, frame_bytes
+                    break
+        committed = True
+        if meta.get("revision") is not None:
+            # saveUnlocked hashes the raw model prior to any presentation conversion.
+            state = {"title": meta.get("title") or (model or {}).get("title") or (model or {}).get("series") or slug.replace("-", " "),
+                     "styleId": meta.get("styleId", style), "episode": episode,
+                     "captions": [] if captions_bytes is None else captions}
+            result = subprocess.run(["node", str(Path(__file__).with_name("motion-revision.mjs"))],
+                                    input=json.dumps(state).encode(), stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, timeout=10, check=True)
+            committed = result.stdout.decode() == meta["revision"]
+        if style:
+            public["styleId"] = style
+        else:
+            public.pop("styleId", None)
         media_refs = set()
         if model:
             media_refs = {item.get("audio") for item in model["scenes"] if isinstance(item,dict)}
@@ -91,7 +120,7 @@ def capture(root, slug, stage, fps, keep):
         # Hash only relevant state. Provider credentials and private voice profiles never leave the source.
         entries["state"] = public
         if model:
-            scene_fields = {"kind","titleLines","narration","duration","audio","audioOffset","voiceDuration","voiceDirty","audioDirty","narrationDirty","section","deck","hero","heroLabel","secondLabel","secondLines","source","sourceDate","secondAt","secondCue","design","diagram","nodeA","nodeB","connector","detail","count","mark","note"}
+            scene_fields = {"kind","headline","titleLines","narration","duration","audio","audioOffset","voiceDuration","voiceDirty","audioDirty","narrationDirty","section","deck","hero","heroLabel","secondLabel","secondLines","source","sourceDate","secondAt","secondCue","design","diagram","nodeA","nodeB","connector","detail","count","mark","note"}
             episode = {k:model[k] for k in ("title","series","date","dateLabel","audioMaster","audioDirty","narrationDirty","voiceDirty") if k in model}
             episode["scenes"] = [{k:v for k,v in scene.items() if k in scene_fields} for scene in model["scenes"]]
             for ref in sorted(media_refs):
@@ -101,19 +130,19 @@ def capture(root, slug, stage, fps, keep):
         else:
             episode = None
             read(["out",slug+".mp4"],"original.mp4",True)
-        frame = (read(base+["frame.md"],"frame") or b"").decode()
-        style = public.get("styleId")
-        style_frame = None
         fonts = {}
         if style in STYLE_IDS:
             for filename in ("ArchivoBlack-400.woff2","Bricolage-800.woff2","Geist-variable.woff2","GeistMono-variable.woff2"):
                 key = "font:" + filename
                 read(["styles",style,"assets","fonts",filename],key,True)
                 fonts[filename] = entries[key]
-            style_frame = read(["styles",style,"frame.md"],"style")
+            if style_frame is None:
+                style_frame = read(["styles",style,"frame.md"],"style")
+            else:
+                entries["style"] = hashlib.sha256(style_frame).hexdigest()
         state = {"version":1,"fps":fps,"files":entries}
         fingerprint = hashlib.sha256(json.dumps(state,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        return {"hash":fingerprint,"episode":episode,"captions":captions,"meta":public,"frame":frame,
+        return {"committed":committed,"hash":fingerprint,"episode":episode,"captions":captions,"meta":public,"frame":frame,
                 "styleFrame":style_frame.decode() if style_frame else None, "fonts":fonts,
                 "media":{k:hashlib.sha256(k.encode()).hexdigest() if entries[k] else None
                          for k in (media_refs if model else ["original.mp4"])}}
@@ -127,7 +156,7 @@ def main():
     for _ in range(3):
         first = capture(root,slug,stage,float(fps),True)
         second = capture(root,slug,stage,float(fps),False)
-        if first["hash"] == second["hash"]:
+        if first.pop("committed") and second["committed"] and first["hash"] == second["hash"]:
             (stage/"model.json").write_text(json.dumps(first))
             return
     raise ValueError("source changed")
@@ -136,5 +165,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError,TypeError,AttributeError,OSError,KeyError):
+    except (ValueError,TypeError,AttributeError,OSError,KeyError,subprocess.SubprocessError):
         sys.exit("Cannot capture the registered source consistently.")

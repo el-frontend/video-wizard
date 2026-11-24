@@ -56,3 +56,22 @@ it('keeps the earlier valid entry when storage runs out and reports corrupted ro
   ).toThrow();
   expect(store.list()).toEqual([good]);
 });
+it('keeps the offered version when a reloaded tab edits and saves the same base', () => {
+  localStorage.clear();
+  const old = new DraftRecovery(localStorage, 'one', 'project', 'writer');
+  const offered = old.keep(base, { ...base.document, title: 'A' });
+  const reloaded = new DraftRecovery(localStorage, 'one', 'project', 'writer');
+  const submitted = reloaded.keep(base, { ...base.document, title: 'B' });
+  reloaded.remove(submitted);
+  expect(reloaded.list()).toEqual([offered]);
+});
+it('can recover and remove an earlier v1 key after upgrading', () => {
+  localStorage.clear();
+  const store = new DraftRecovery(localStorage, 'one', 'project', 'writer');
+  const offered = store.keep(base, { ...base.document, title: 'Antes' });
+  localStorage.clear();
+  localStorage.setItem(store.prefix + 'first:writer', JSON.stringify(offered));
+  expect(store.list()).toEqual([offered]);
+  store.remove(offered);
+  expect(store.list()).toEqual([]);
+});

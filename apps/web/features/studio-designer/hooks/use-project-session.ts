@@ -140,7 +140,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       if (!store) throw new Error();
       const previous = local;
       local = store.keep(base, draft);
-      if (previous && previous.base.revision !== base.revision) store.remove(previous);
+      if (previous) store.remove(previous);
       if (state.recoveryError === recoveryFailure) update({ recoveryError: '' });
     } catch {
       update({ recoveryError: recoveryFailure });
@@ -279,14 +279,44 @@ function createSession(id: string, initial?: ProjectRecord) {
   async function write(base: ProjectRecord, submitted: ProjectDraft) {
     const token = epoch,
       submittedLocal = local;
+    // Navigation detaches the editor. Identity changes still retire the pending acknowledgement.
+    let retired = false;
+    const lifetime = new AbortController();
+    for (const event of [
+      sessionEvents.expired,
+      sessionEvents.ending,
+      sessionEvents.leaving,
+      sessionEvents.accountChanged,
+      'pagehide',
+    ]) {
+      window.addEventListener(
+        event,
+        () => {
+          retired = true;
+        },
+        { signal: lifetime.signal }
+      );
+    }
     try {
       const saved = await projectRequest<ProjectRecord>(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ baseRevision: base.revision, document: submitted }),
       });
-      if (!validOperation(token) || saved.ownerId !== base.ownerId || saved.document.id !== id)
+      if (
+        retired ||
+        suspended ||
+        token !== epoch ||
+        saved.ownerId !== base.ownerId ||
+        saved.document.id !== id
+      )
         throw new Error('El documento cambió durante el guardado.');
+      if (!active) {
+        if (submittedLocal) removeLocal(submittedLocal);
+        notifyProjectSaved(saved.ownerId);
+        if (state.draft !== submitted) throw new Error('Quedan cambios locales por guardar.');
+        return;
+      }
       const dirty = state.draft !== submitted;
       if (dirty && state.draft) persist(saved, state.draft);
       else removeLocal(submittedLocal);
@@ -308,6 +338,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       });
       throw cause;
     } finally {
+      lifetime.abort();
       flight = null;
     }
   }
@@ -336,7 +367,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       if (flight) await flight;
       else await writeNow();
       stopTimer();
-    } while (state.saved && state.draft !== state.saved.document);
+    } while (active && state.saved && state.draft !== state.saved.document);
   }
   let audioFlight: Promise<void> | null = null;
   async function save() {
@@ -346,7 +377,7 @@ function createSession(id: string, initial?: ProjectRecord) {
   }
   async function savedRevision() {
     await save();
-    return state.saved;
+    return active && !suspended ? state.saved : null;
   }
   async function postAudio(input: AudioReplacement, token: number) {
     await flushDraft();
@@ -501,6 +532,7 @@ function createSession(id: string, initial?: ProjectRecord) {
     if (retainedSessions.get(key)?.session === session) retainedSessions.delete(key);
   }
   function start() {
+    epoch++;
     active = true;
     suspended = false;
     const attachWriter = async () => {
@@ -573,7 +605,6 @@ function createSession(id: string, initial?: ProjectRecord) {
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
       active = false;
-      epoch++;
       stopTimer();
       read?.abort();
       read = null;

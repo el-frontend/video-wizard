@@ -196,6 +196,7 @@ export const ImportSlotSchema = z.strictObject({
   sceneId: IdSchema.optional(),
   startMs: MillisecondsSchema.default(0),
   inactiveTake: z.boolean().optional(),
+  assetId: IdSchema.optional(),
   spokenText: z.string().optional(),
   resolution: z.enum(['pending', 'replaced', 'omitted']).default('pending'),
 });
@@ -207,6 +208,13 @@ export const ImportContextSchema = z.strictObject({
   hash: z.string().regex(/^[a-f0-9]{64}$/),
   mode: z.enum(['editable', 'original']),
   originalAssetId: IdSchema.optional(),
+  editorial: z
+    .strictObject({
+      series: z.string().optional(),
+      date: z.string().optional(),
+      dateLabel: z.string().optional(),
+    })
+    .optional(),
   narration: z
     .strictObject({
       playback: z.enum(['master', 'scenes']),

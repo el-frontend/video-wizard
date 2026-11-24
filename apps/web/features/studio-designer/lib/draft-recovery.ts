@@ -26,10 +26,13 @@ export class DraftRecovery {
     this.prefix =
       'studio:draft:v1:' + encodeURIComponent(owner) + ':' + encodeURIComponent(project) + ':';
   }
-  private key(entry: LocalDraft) {
+  private legacyKey(entry: LocalDraft) {
     return (
       this.prefix + encodeURIComponent(entry.base.revision) + ':' + encodeURIComponent(entry.writer)
     );
+  }
+  private key(entry: LocalDraft) {
+    return this.legacyKey(entry) + ':' + encodeURIComponent(entry.stamp);
   }
   private valid(entry: LocalDraft) {
     return (
@@ -46,7 +49,7 @@ export class DraftRecovery {
       if (!key?.startsWith(this.prefix)) continue;
       try {
         const entry = schema.parse(JSON.parse(this.storage.getItem(key) ?? 'null'));
-        if (!this.valid(entry) || key !== this.key(entry))
+        if (!this.valid(entry) || (key !== this.key(entry) && key !== this.legacyKey(entry)))
           throw new Error('Identidades incompatibles.');
         entries.push(entry);
       } catch {
@@ -70,9 +73,10 @@ export class DraftRecovery {
   }
   remove(entry: LocalDraft) {
     if (entry.writer !== this.writer || !this.valid(entry)) return;
-    const key = this.key(entry),
-      raw = this.storage.getItem(key);
-    if (raw && schema.parse(JSON.parse(raw)).stamp === entry.stamp) this.storage.removeItem(key);
+    for (const key of [this.key(entry), this.legacyKey(entry)]) {
+      const raw = this.storage.getItem(key);
+      if (raw && schema.parse(JSON.parse(raw)).stamp === entry.stamp) this.storage.removeItem(key);
+    }
   }
 }
 
