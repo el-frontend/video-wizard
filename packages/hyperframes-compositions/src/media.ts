@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { type ExportSnapshot, type ResolvedAsset, videoPlayback } from '@workspace/render-contract';
 import { fileHash, stageMedia } from '@workspace/render-contract/storage';
 import { mediaDiagnostics } from './media-capabilities';
+import { interframeSoundtrackPlan, mixSoundtrack } from './soundtrack';
 import { runProcess } from './process';
 
 const extensions: Record<string, string> = {
@@ -58,8 +59,12 @@ export async function materialize(
     signal
   );
   if (diagnostics[0]) throw new Error(diagnostics[0].message);
+  const plan = interframeSoundtrackPlan(snapshot);
   const layers = new Map<string, MaterializedMedia>();
-  const streams = new Map<string, { codec_type: string; codec_name: string; pix_fmt?: string }[]>();
+  const streams = new Map<
+    string,
+    { codec_type: string; codec_name: string; pix_fmt?: string; channels?: number }[]
+  >();
   async function codecs(src: string) {
     let result = streams.get(src);
     if (!result) {
@@ -69,7 +74,7 @@ export async function materialize(
           '-v',
           'error',
           '-show_entries',
-          'stream=codec_type,codec_name,pix_fmt',
+          'stream=codec_type,codec_name,pix_fmt,channels',
           '-of',
           'json',
           join(directory, src),
@@ -92,6 +97,11 @@ export async function materialize(
     const src = 'media/' + mediaFilename(asset);
     const sourceInMs = 'sourceInMs' in selected ? selected.sourceInMs : 0;
     const volume = 'volume' in layer ? layer.volume : 0;
+    // Audio-only inputs of the shared mix are read once, using input seek and the exact trim.
+    if (plan?.get(layer.id)?.audioOnly) {
+      layers.set(layer.id, { src, sourceInMs, volume });
+      continue;
+    }
     // HTMLMediaElement cannot amplify above unity. Some audio layers reference video containers.
     const needsGain = volume > 1;
     const tracks = layer.type === 'image' ? [] : await codecs(src);
@@ -164,5 +174,20 @@ export async function materialize(
       derivative: { hash, durationMs, sourceHash: asset.hash, sourceInMs, gain: volume },
     });
   }
-  return layers;
+  const soundtrack =
+    plan &&
+    (await mixSoundtrack(
+      plan,
+      layers,
+      snapshot.document.durationMs,
+      directory,
+      signal,
+      async (src) => {
+        const audio = (await codecs(src)).find((s) => s.codec_type === 'audio');
+        if (!audio?.channels)
+          throw new Error('No se pudieron comprobar los canales de la pista de sonido.');
+        return audio.channels;
+      }
+    ));
+  return { layers, soundtrack };
 }

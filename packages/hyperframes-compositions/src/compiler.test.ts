@@ -98,3 +98,56 @@ it('assigns the picture to its first scene frame and keeps embedded sound on the
   expect(html).toMatch(/<video [^>]*data-start="1"[^>]*data-media-start="0.25"[^>]*muted/);
   expect(html).toMatch(/<audio [^>]*data-start="1.017"[^>]*data-media-start="0.25"/);
 });
+
+it.each(['audio', 'video'] as const)(
+  'emits exact %s sound beyond the last visual frame of a scene',
+  async (type) => {
+    const { nativeDocument } = await import('./runtime');
+    const fixture = structuredClone(snapshot);
+    const common = {
+      id: 'pulse',
+      assetId: 'track',
+      volume: 1,
+      sourceInMs: 20,
+      startMs: 1001,
+      endMs: 1017,
+      endAnchor: 'fixed' as const,
+      visible: true,
+      zIndex: 0,
+    };
+    const layer =
+      type === 'audio'
+        ? { ...common, type }
+        : {
+            ...common,
+            type,
+            fit: 'cover' as const,
+            focalPoint: { x: 0.5, y: 0.5 },
+            box: { x: 0, y: 0, width: 40, height: 40 },
+          };
+    fixture.document.durationMs = 2000;
+    fixture.document.scenes = [
+      { id: 'first', durationMs: 1017, layers: [layer] },
+      { id: 'second', durationMs: 983, layers: [] },
+    ];
+    fixture.dependencies.assets.track = {
+      id: 'track',
+      name: 'track',
+      hash: 'a'.repeat(64),
+      url: 'media/track',
+      hasAudio: true,
+      durationMs: 1000,
+      mediaType: type === 'audio' ? 'audio/wav' : 'video/mp4',
+    };
+    const { html } = nativeDocument(
+      fixture,
+      new Map([['pulse', { src: 'media/track', sourceInMs: 20, volume: 1 }]])
+    );
+    const audio = html.match(/<audio [^>]*>/g) ?? [];
+    expect(audio).toHaveLength(1);
+    expect(audio[0]).toContain('data-start="1.001"');
+    expect(Number(/data-duration="([^"]+)"/.exec(audio[0]!)?.[1])).toBeCloseTo(0.016, 10);
+    expect(audio[0]).toContain('data-media-start="0.02"');
+    expect(html).not.toContain('<video ');
+  }
+);

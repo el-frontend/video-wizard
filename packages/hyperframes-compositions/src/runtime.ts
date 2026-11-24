@@ -15,7 +15,11 @@ function escape(value: string) {
   );
 }
 type Window = { from: number; end: number };
-export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, MaterializedMedia>) {
+export function nativeDocument(
+  snapshot: ExportSnapshot,
+  media: Map<string, MaterializedMedia>,
+  soundtrack?: string
+) {
   const { document, dependencies } = snapshot,
     { width, height, fps } = document.canvas;
   const appearance = projectAppearance(document, dependencies);
@@ -116,7 +120,7 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
       from: Math.max(bounds.from, Math.floor((start * fps) / 1000) / fps),
       end: Math.min(bounds.end, Math.ceil((end * fps) / 1000) / fps),
     };
-    if (range.from >= range.end) return;
+    const hasPicture = range.from < range.end;
     const m = media.get(layer.id);
     const box =
       'box' in layer
@@ -149,11 +153,11 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
         volume +
         '"';
       // Keep embedded audio sample-accurate even when its picture begins on an earlier frame.
-      if (audible) {
+      if (audible && !soundtrack) {
         const exact = { from: start / 1000, end: end / 1000 };
         blocks.push('<audio ' + mediaAttrs(exact, playback.volume) + ' preload="auto"></audio>');
       }
-      if (layer.type === 'video')
+      if (layer.type === 'video' && hasPicture)
         blocks.push(
           '<video ' +
             mediaAttrs(range, 0) +
@@ -170,6 +174,7 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
         );
       return;
     }
+    if (!hasPicture) return;
     if (layer.type === 'image') {
       blocks.push(
         '<img ' + attrs(range) + ' src="' + m!.src + '" alt="" style="' + box + 'object-fit:cover">'
@@ -247,13 +252,20 @@ export function nativeDocument(snapshot: ExportSnapshot, media: Map<string, Mate
   const frames = sceneFrames(document);
   for (const [i, scene] of document.scenes.entries()) {
     const { from, originMs, durationInFrames } = frames[i]!;
-    if (!durationInFrames) continue;
     const bounds = { from: from / fps, end: (from + durationInFrames) / fps };
-    backdrop(bounds);
+    if (durationInFrames) backdrop(bounds);
     for (const layer of [...scene.layers].sort((a, b) => a.zIndex - b.zIndex))
       add(layer, originMs, bounds, scene.editorial?.headline);
   }
   for (const layer of document.globalAudio) add(layer, 0, { from: 0, end: total / fps });
+  if (soundtrack)
+    blocks.push(
+      '<audio ' +
+        attrs({ from: 0, end: document.durationMs / 1000 }) +
+        ' src="' +
+        soundtrack +
+        '" data-media-start="0" data-volume="1" preload="auto"></audio>'
+    );
   const faces = fonts
     .map(
       (f) =>

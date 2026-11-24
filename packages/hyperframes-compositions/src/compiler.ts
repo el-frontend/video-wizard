@@ -137,8 +137,8 @@ export async function compileProject(
   if (error) throw new Error(error.message);
   const dir = join(workspace, 'native');
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const media = await materialize(snapshot, dir, options.dataDir, signal);
-  const { html, timeline } = nativeDocument(snapshot, media);
+  const { layers: media, soundtrack } = await materialize(snapshot, dir, options.dataDir, signal);
+  const { html, timeline } = nativeDocument(snapshot, media, soundtrack?.src);
   const gsap = await readFile(require.resolve('gsap/dist/gsap.min.js'));
   const runtime = await readFile(join(cliPackage, 'dist', 'hyperframe.runtime.iife.js'));
   const pkg: { version: string } = JSON.parse(
@@ -146,7 +146,9 @@ export async function compileProject(
   );
   const { width, height, fps } = snapshot.document.canvas;
   const published = new Set(['index.html', 'gsap.min.js', 'runtime.js']);
-  for (const [, m] of media) published.add(m.src);
+  const audioOnly = new Set(soundtrack?.tracks.filter((t) => t.audioOnly).map((t) => t.id));
+  for (const [id, m] of media) if (!audioOnly.has(id)) published.add(m.src);
+  if (soundtrack) published.add(soundtrack.src);
   for (const entry of Object.values(snapshot.dependencies.libraries)) {
     if ('fonts' in entry)
       for (const font of entry.fonts ?? [])
@@ -189,6 +191,7 @@ export async function compileProject(
       Object.entries(snapshot.bundles).map(([id, bundle]) => [id, bundle.sha256])
     ),
     media: [...media],
+    soundtrack,
     provenance,
   });
   await Promise.all([

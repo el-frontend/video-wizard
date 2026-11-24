@@ -14,15 +14,22 @@ const evidence = resolve(
   process.env.STUDIO_NATIVE_EVIDENCE_DIR ||
     '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
 );
-it.skipIf(import.meta.env.MODE !== 'native').each([25, 30, 1, 'fractional', 'font-error'])(
-  'seeks the private native preview forward and backward and acknowledges only the exact cue target',
+it
+  .skipIf(import.meta.env.MODE !== 'native')
+  .each([25, 30, 1, 'fractional', 'font-error', 'interframe'])(
+  'exercises the private native preview at %s',
   async (scenario) => {
-    const workspace = (await readFile(join(evidence, 'workspace.txt'), 'utf8')).trim();
+    const pointer = scenario === 'interframe' ? 'interframe-workspace.txt' : 'workspace.txt';
+    const workspace = (await readFile(join(evidence, pointer), 'utf8')).trim();
     const snapshot = JSON.parse(
       await readFile(
         join(
           workspace,
-          scenario === 'fractional' ? 'fractional' : 'noticias-liquid-glass',
+          scenario === 'interframe'
+            ? '.'
+            : scenario === 'fractional'
+              ? 'fractional'
+              : 'noticias-liquid-glass',
           'fixture.json'
         ),
         'utf8'
@@ -130,6 +137,26 @@ it.skipIf(import.meta.env.MODE !== 'native').each([25, 30, 1, 'fractional', 'fon
           };
         });
 
+      if (scenario === 'interframe') {
+        await page.evaluateOnNewDocument(() => {
+          const connect = AudioNode.prototype.connect;
+          let recorder;
+          window.pulseChunks = [];
+          AudioNode.prototype.connect = function (target, ...args) {
+            if (target === this.context.destination) {
+              if (!recorder) {
+                recorder = this.context.createScriptProcessor(512, 1, 1);
+                recorder.onaudioprocess = (event) =>
+                  window.pulseChunks.push(event.inputBuffer.getChannelData(0).slice());
+                window.pulseRate = this.context.sampleRate;
+                connect.call(recorder, target);
+              }
+              connect.call(this, recorder);
+            }
+            return connect.call(this, target, ...args);
+          };
+        });
+      }
       if (scenario === 'font-error') {
         await page.setRequestInterception(true);
         page.on('request', (req) =>
@@ -156,6 +183,78 @@ it.skipIf(import.meta.env.MODE !== 'native').each([25, 30, 1, 'fractional', 'fon
       expect(await page.evaluate(() => events.map((m) => m.type))).toContain('studio.ready');
       const native = page.frames().find((f) => f.url().endsWith('/native/index.html'));
       expect(native).toBeTruthy();
+      if (scenario === 'interframe') {
+        expect(
+          await native.evaluate(() =>
+            [...document.querySelectorAll('video')].map((v) => Number(v.dataset.start))
+          )
+        ).toEqual([1.3]);
+        expect(
+          await native.evaluate(() =>
+            [...document.querySelectorAll('audio')].map((el) => [
+              Number(el.dataset.start),
+              Number(el.dataset.duration),
+            ])
+          )
+        ).toEqual([[0, 2.2]]);
+        await page.evaluate(() => msg('studio.play'));
+        await native.waitForFunction(() => window.__player.getTime() > 2.17, { timeout: 4000 });
+        const readings = await native.evaluate(() => {
+          const chunks = window.pulseChunks;
+          if (!chunks.length) throw new Error('Falta señal del mezclador en la salida Web Audio.');
+          const rate = window.pulseRate;
+          const samples = new Float32Array(chunks.length * chunks[0].length);
+          chunks.forEach((chunk, index) => samples.set(chunk, index * chunk.length));
+          // Locate the 4ms spectral windows against a reference pulse in the same output.
+          const width = Math.round(rate * 0.004);
+          return [
+            [1000, 0, 0.18],
+            [2000, 501, 0.27],
+            [3000, 501, 0.18],
+            [5000, 817, 0.27],
+            [4000, 1600, 0.18],
+          ].map(([hz, delay, amplitude]) => {
+            const active = [],
+              levels = [];
+            let peak = 0;
+            for (let ms = 0; Math.round((ms * rate) / 1000) + width < samples.length; ms++) {
+              let re = 0,
+                im = 0;
+              const start = Math.round((ms * rate) / 1000);
+              for (let i = 0; i < width; i++) {
+                const phase = (2 * Math.PI * hz * i) / rate;
+                re += samples[start + i] * Math.cos(phase);
+                im += samples[start + i] * Math.sin(phase);
+              }
+              const level = (2 * Math.hypot(re, im)) / width;
+              peak = Math.max(peak, level);
+              levels.push(level);
+              if (level > 0.065) active.push(ms + 2);
+            }
+            return {
+              hz,
+              delay,
+              amplitude,
+              peak,
+              inside: levels[active[0] + 6],
+              first: active.at(0),
+              last: active.at(-1),
+            };
+          });
+        });
+        await writeFile(
+          join(evidence, 'interframe-preview.json'),
+          JSON.stringify(readings, null, 2)
+        );
+        for (const item of readings) {
+          expect(Math.abs(item.inside - item.amplitude)).toBeLessThan(0.035);
+          expect(item.last - item.first).toBeGreaterThanOrEqual(12);
+          expect(item.last - item.first).toBeLessThanOrEqual(20);
+        }
+        for (const tone of readings.slice(1))
+          expect(Math.abs(tone.first - readings[0].first - tone.delay)).toBeLessThanOrEqual(3);
+        return;
+      }
       if (scenario === 1) {
         for (let run = 0; run < 2; run++) {
           await page.evaluate(() => msg('studio.play'));
