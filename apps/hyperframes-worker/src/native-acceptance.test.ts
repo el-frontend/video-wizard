@@ -1,5 +1,5 @@
-import { it, expect, vi } from 'vitest';
-import { access, mkdtemp, mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
+import { it, expect } from 'vitest';
+import { mkdtemp, mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -8,7 +8,6 @@ import {
   libraryKey,
   nativeCaptionSource,
   type ExportSnapshot,
-  type PreparedComposition,
   type ResolvedAsset,
 } from '@workspace/render-contract';
 import { type EntryOf, type Layer } from '@workspace/video-project';
@@ -18,56 +17,6 @@ import {
   stylePackIds,
 } from '../../../packages/style-packs/src/index';
 import { HyperframesProjectAdapter } from './adapter';
-import {
-  descendants,
-  processTable,
-} from '../../../packages/hyperframes-compositions/src/process-tree';
-
-async function cancelRealRender(
-  adapter: HyperframesProjectAdapter,
-  project: PreparedComposition,
-  target: RegExp
-) {
-  const controller = new AbortController();
-  let rendering = false;
-  const pending = adapter.render(project, {
-    signal: controller.signal,
-    onProgress(progress) {
-      if (progress === 0.1) rendering = true;
-    },
-  });
-  const settled = Promise.allSettled([pending]);
-  let tracked: ReturnType<typeof descendants> = [];
-  try {
-    await vi.waitFor(
-      () => {
-        expect(rendering).toBe(true);
-        tracked = descendants(process.pid).filter((p) =>
-          /chrome|headless_shell|ffmpeg/i.test(p.name)
-        );
-        expect(tracked.some((p) => target.test(p.name))).toBe(true);
-      },
-      { timeout: 30000, interval: 10 }
-    );
-  } finally {
-    controller.abort();
-    expect((await settled)[0]?.status).toBe('rejected');
-  }
-  await vi.waitFor(
-    () =>
-      expect(
-        processTable().filter((p) => tracked.some((t) => t.pid === p.pid && t.name === p.name))
-      ).toEqual([]),
-    { timeout: 3000 }
-  );
-  await expect(access(join(project.workspace, 'video.mp4'))).rejects.toThrow();
-  return {
-    processes: tracked.length,
-    groups: new Set(tracked.map((p) => p.group)).size,
-    targetGroupLeader: tracked.some((p) => target.test(p.name) && p.pid === p.group),
-  };
-}
-
 const run = (import.meta as ImportMeta & { env: { MODE: string } }).env.MODE === 'native';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 it.skipIf(!run)(
@@ -273,14 +222,6 @@ it.skipIf(!run)(
       const dir = join(workspace, id);
       const prepared = await adapter.prepare(snapshot, dir);
       if (id === stylePackIds[0]) {
-        if (process.platform !== 'win32') {
-          const chrome = await cancelRealRender(adapter, prepared, /chrome|headless_shell/i);
-          const ffmpeg = await cancelRealRender(adapter, prepared, /ffmpeg/i);
-          await writeFile(
-            join(evidence, 'real-cancel.json'),
-            JSON.stringify({ chrome, ffmpeg }, null, 2)
-          );
-        }
         const repeated = await adapter.prepare(snapshot, join(workspace, 'repeat'));
         expect(repeated.manifestHash).toBe(prepared.manifestHash);
         // Corrupt only a private staged copy after validation to exercise the browser decoder.

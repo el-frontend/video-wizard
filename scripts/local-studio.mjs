@@ -205,6 +205,7 @@ async function main() {
       [
         'run',
         '--detach',
+        '--init',
         '--name',
         'video-wizard-studio-renderer',
         '--restart',

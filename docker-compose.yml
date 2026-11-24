@@ -70,6 +70,7 @@ services:
 
   # Remotion Render Server
   remotion-server:
+    init: true
     build:
       context: .
       dockerfile: apps/remotion-server/Dockerfile

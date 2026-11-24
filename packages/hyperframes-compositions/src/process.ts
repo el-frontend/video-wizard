@@ -5,13 +5,14 @@ import { spawn } from 'node:child_process';
 export function runProcess(
   command: string,
   args: string[],
-  options: { signal: AbortSignal; cwd?: string }
+  options: { signal: AbortSignal; cwd?: string; env?: NodeJS.ProcessEnv }
 ) {
   const { signal, cwd } = options;
   return new Promise<string>((resolve, reject) => {
     signal.throwIfAborted();
     const child = spawn(command, args, {
       cwd,
+      env: options.env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
     });
