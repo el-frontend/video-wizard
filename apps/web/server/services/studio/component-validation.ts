@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isDeepStrictEqual } from 'node:util';
 import { DiagnosticSchema } from '@workspace/video-project';
 import { randomUUID } from 'node:crypto';
 import {
@@ -10,6 +11,7 @@ import {
   type LibraryRef,
   type ProjectCommand,
   type Layer,
+  type ProjectDraft,
 } from '@workspace/video-project';
 import { type ExportSnapshot } from '@workspace/render-contract';
 import { SealedModuleSchema } from '@workspace/render-contract/component-bundle';
@@ -104,12 +106,45 @@ export async function compileAtRenderer(
   if (typeof data.error === 'string') throw new ValidationError(data.error);
   return SealedModuleSchema.parse(data);
 }
+export function changedReviewLayers(base: ProjectDraft, draft: ProjectDraft) {
+  const previous = new Map<string, { layer: Layer; origin: number; duration: number }>();
+  let origin = 0;
+  for (const scene of base.scenes) {
+    for (const layer of scene.layers)
+      if (layer.type === 'component')
+        previous.set(JSON.stringify([scene.id, layer.id]), {
+          layer,
+          origin,
+          duration: scene.durationMs,
+        });
+    origin += scene.durationMs;
+  }
+  const changed: string[] = [];
+  origin = 0;
+  for (const scene of draft.scenes) {
+    for (const layer of scene.layers) {
+      if (layer.type !== 'component' || !layer.visible) continue;
+      const key = JSON.stringify([scene.id, layer.id]),
+        old = previous.get(key);
+      if (
+        !old ||
+        old.origin !== origin ||
+        old.duration !== scene.durationMs ||
+        !isDeepStrictEqual(old.layer, layer)
+      )
+        changed.push(key);
+    }
+    origin += scene.durationMs;
+  }
+  return changed;
+}
 export async function checkAtRenderer(
   owner: string,
   projectId: string,
   proposalId: string,
   snapshot: ExportSnapshot,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  focus: string[] = []
 ): Promise<{
   diagnostics: Diagnostic[];
   samples?: { frame: number; sha256: string; base64: string }[];
@@ -121,7 +156,7 @@ export async function checkAtRenderer(
       owner,
       { scope: 'proposal.check', projectId, proposalId },
       '/studio/components/check',
-      { proposalId, snapshot },
+      { proposalId, snapshot, focus },
       { signal }
     )
   ).json();

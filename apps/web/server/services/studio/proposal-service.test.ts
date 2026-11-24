@@ -65,6 +65,35 @@ it('stages privately, applies once under CAS and lists only after explicit appro
     expect(await projects.get(owner, id)).toEqual(project);
     expect(await library.list(owner, { kind: 'component' })).toEqual([]);
     await expect(service.get(stranger, id, staged.proposalId)).rejects.toThrow();
+    const manifestError = {
+      ...input,
+      requestId: randomUUID(),
+      manifest: { ...example.manifest, dependencies: ['gsap'] },
+    };
+    for (const bad of [
+      { ...manifestError, files: { '../outside.ts': 'x' } },
+      { ...manifestError, manifest: { ...manifestError.manifest, assetIds: Array(65).fill('a') } },
+      { ...manifestError, manifest: { ...manifestError.manifest, comment: 'x'.repeat(65537) } },
+      { ...manifestError, manifest: JSON.parse('{"__proto__":{}}') },
+    ])
+      await expect(service.stage(owner, id, bad)).rejects.toThrow();
+    expect(await service.list(owner, id)).toHaveLength(1);
+    const invalid = await service.stage(owner, id, manifestError);
+    expect(invalid.diagnostics).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining('manifest.dependencies') })
+    );
+    const invalidRow = await service.get(owner, id, invalid.proposalId);
+    expect(invalidRow).toMatchObject({
+      status: 'invalid',
+      input: { manifest: manifestError.manifest, files: manifestError.files },
+      candidate: null,
+    });
+    expect((await service.stage(owner, id, manifestError)).proposalId).toBe(invalid.proposalId);
+    await expect(service.get(stranger, id, invalid.proposalId)).rejects.toThrow();
+    await expect(service.apply(owner, id, invalid.proposalId, project.revision)).rejects.toThrow();
+    expect(await projects.get(owner, id)).toEqual(project);
+    expect(await library.list(owner, { kind: 'component' })).toEqual([]);
+    expect((await service.get(owner, id, staged.proposalId)).status).toBe('ready');
     const rejected = await service.stage(owner, id, {
       ...input,
       requestId: randomUUID(),

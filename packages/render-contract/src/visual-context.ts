@@ -37,25 +37,38 @@ export function visualContext(
     dependencies,
     layer
   );
+  const assets = Object.fromEntries(
+    manifest.assetIds.map((id) => {
+      const asset = dependencies.assets[id]!;
+      return [
+        id,
+        {
+          url: url(id),
+          mediaType: asset.mediaType,
+          width: asset.width,
+          height: asset.height,
+          ...(asset.mediaType.startsWith('font/') && { fontFamily: 'StudioAsset' + asset.hash }),
+        },
+      ];
+    })
+  );
   return {
     canvas: { ...document.canvas },
     size: { width: layer.box.width, height: layer.box.height },
     durationMs: Math.min(layer.endMs - layer.startMs, document.durationMs - originMs),
     appearance,
-    assets: Object.fromEntries(
-      manifest.assetIds.map((id) => {
-        const asset = dependencies.assets[id]!;
-        return [
-          id,
-          {
-            url: url(id),
-            mediaType: asset.mediaType,
-            width: asset.width,
-            height: asset.height,
-            ...(asset.mediaType.startsWith('font/') && { fontFamily: 'StudioAsset' + asset.hash }),
-          },
-        ];
-      })
-    ),
+    assets,
+    fontFamilies: [
+      ...new Set([
+        appearance.family,
+        'serif',
+        'sans-serif',
+        'monospace',
+        'system-ui',
+        'cursive',
+        'fantasy',
+        ...Object.values(assets).flatMap((a) => (a.fontFamily ? [a.fontFamily] : [])),
+      ]),
+    ].filter((name) => /^[\p{L}\p{M}\p{N}\s,'"_\-]+$/u.test(name)),
   };
 }

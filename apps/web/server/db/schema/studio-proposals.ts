@@ -1,5 +1,5 @@
 import { foreignKey, json, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
-import type { Diagnostic, EntryOf, ProposalInput } from '@workspace/video-project';
+import type { Diagnostic, EntryOf, ProposalDelivery } from '@workspace/video-project';
 import { studioProjects, studioProjectRevisions } from './studio-projects';
 
 // The proposal owns the unpublished bytes through bundleHash, even after a CAS conflict.
@@ -14,7 +14,7 @@ export const studioProposals = pgTable(
       .references(() => studioProjectRevisions.revision),
     requestId: uuid('request_id').notNull(),
     sourceDigest: text('source_digest').notNull(),
-    input: json().$type<ProposalInput>().notNull(),
+    input: json().$type<ProposalDelivery>().notNull(),
     candidate: json().$type<EntryOf<'component'>>(),
     bundleHash: text('bundle_hash'),
     moduleHash: text('module_hash'),

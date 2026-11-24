@@ -9,6 +9,8 @@ import {
 } from '@workspace/render-contract/component-bundle';
 import {
   ProposalInputSchema,
+  ProposalDeliverySchema,
+  type ProposalDelivery,
   type ProposalInput,
   type ProjectRecord,
   type Diagnostic,
@@ -34,6 +36,7 @@ import {
 import {
   candidateDocument,
   checkAtRenderer,
+  changedReviewLayers,
   compileAtRenderer,
   previewCandidate,
 } from './component-validation';
@@ -48,7 +51,7 @@ const where = (owner: string, project: string, id: string) => {
     eq(studioProposals.id, id)
   );
 };
-function inputHash(input: ProposalInput) {
+function inputHash(input: ProposalDelivery) {
   return digest(
     JSON.stringify(input, (_key, value) =>
       value && typeof value === 'object' && !Array.isArray(value)
@@ -151,7 +154,7 @@ export class ProposalService {
     return build(owner, { ...base, document }, signal);
   }
   async stage(owner: string, project: string, raw: unknown, signal?: AbortSignal) {
-    const parsed = ProposalInputSchema.safeParse(raw);
+    const parsed = ProposalDeliverySchema.safeParse(raw);
     if (!parsed.success)
       throw new ValidationError(
         parsed.error.issues
@@ -159,18 +162,27 @@ export class ProposalService {
           .join('; ')
           .slice(0, 1000)
       );
-    const input: ProposalInput =
-      parsed.data.kind === 'component'
-        ? { ...parsed.data, engine: parsed.data.engine ?? parsed.data.manifest.engine }
-        : parsed.data;
     const base = await this.projects.get(owner, project);
-    if (base.revision !== input.baseRevision) throw new ConflictError(base);
+    const delivery = parsed.data;
+    if (base.revision !== delivery.baseRevision) throw new ConflictError(base);
+    const declaredEngine =
+      delivery.kind === 'component' ? delivery.manifest.engine : delivery.engine;
+    const engine = delivery.engine ?? declaredEngine;
     if (
       base.importContext?.mode === 'original' ||
-      input.engine !== base.document.engine ||
-      (input.kind === 'component' && input.manifest.engine !== base.document.engine)
+      (delivery.engine && delivery.engine !== base.document.engine) ||
+      ((declaredEngine === 'remotion' || declaredEngine === 'hyperframes') &&
+        declaredEngine !== base.document.engine)
     )
       throw new ValidationError('Selecciona un proyecto editable del mismo motor.');
+    const input: ProposalDelivery =
+      delivery.kind === 'component'
+        ? {
+            ...delivery,
+            engine:
+              engine === 'remotion' || engine === 'hyperframes' ? engine : base.document.engine,
+          }
+        : delivery;
     const sourceDigest = inputHash(input),
       identity = and(
         eq(studioProposals.ownerId, owner),
@@ -190,35 +202,68 @@ export class ProposalService {
     });
     const existing = await lookup();
     if (existing && existing.status !== 'invalid') return summary(existing);
+    const validated = ProposalInputSchema.safeParse(input);
+    if (!validated.success) {
+      if (existing) return summary(existing);
+      const diagnostics: Diagnostic[] = validated.error.issues.slice(0, 8).map((issue) => ({
+        severity: 'error',
+        code: 'proposal-invalid',
+        message: (issue.path.join('.') + ' ' + issue.message).slice(0, 500),
+      }));
+      const [row] = await this.database
+        .insert(studioProposals)
+        .values({
+          id: randomUUID(),
+          ownerId: owner,
+          projectId: project,
+          requestId: input.requestId,
+          baseRevision: base.revision,
+          input,
+          sourceDigest,
+          diagnostics,
+          status: 'invalid',
+        })
+        .onConflictDoNothing()
+        .returning();
+      return summary(row ?? (await lookup())!);
+    }
+    const proposal = validated.data;
     const id = existing?.id ?? randomUUID(),
       candidate = existing
         ? existing.candidate
-        : input.kind === 'component'
-          ? await this.candidate(owner, input)
+        : proposal.kind === 'component'
+          ? await this.candidate(owner, proposal)
           : null;
     let diagnostics: Diagnostic[] = [],
       bundleHash: string | null = null,
       moduleHash: string | null = null;
     const samples: NonNullable<Row['samples']> = [];
     try {
-      if (input.kind === 'component') {
+      if (proposal.kind === 'component') {
         const sealed = await this.compile(
           owner,
           project,
           id,
-          { files: input.files, manifest: input.manifest },
+          { files: proposal.files, manifest: proposal.manifest },
           signal
         );
         const bytes = Buffer.from(JSON.stringify(sealed));
         bundleHash = digest(bytes);
-        verifyModule(bytes, input.manifest, bundleHash);
+        verifyModule(bytes, proposal.manifest, bundleHash);
         await this.bundles.store(owner, bundleHash, bytes);
         moduleHash = sealed.moduleHash;
       }
-      const snapshot = await this.snapshot(owner, base, input, candidate, bundleHash, signal);
+      const snapshot = await this.snapshot(owner, base, proposal, candidate, bundleHash, signal);
       diagnostics = validateSnapshot(snapshot);
       if (!diagnostics.some((d) => d.severity === 'error')) {
-        const checked = await this.check(owner, project, id, snapshot, signal);
+        const checked = await this.check(
+          owner,
+          project,
+          id,
+          snapshot,
+          signal,
+          changedReviewLayers(base.document, snapshot.document)
+        );
         diagnostics.push(...checked.diagnostics);
         if (checked.moduleHashes && moduleHash && !checked.moduleHashes.includes(moduleHash))
           throw new ValidationError('La vista no cargó el módulo revisado.');
@@ -289,7 +334,7 @@ export class ProposalService {
     const snapshot = await this.snapshot(
       owner,
       toRecord(owner, base),
-      row.input,
+      ProposalInputSchema.parse(row.input),
       row.candidate,
       row.bundleHash,
       signal
@@ -317,7 +362,7 @@ export class ProposalService {
         const snap = await this.snapshot(
           owner,
           toRecord(owner, base),
-          row.input,
+          ProposalInputSchema.parse(row.input),
           row.candidate,
           row.bundleHash,
           undefined,

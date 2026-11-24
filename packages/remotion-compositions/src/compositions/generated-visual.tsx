@@ -21,8 +21,14 @@ export function GeneratedVisual({ sourceHash, ...input }: VisualInput & { source
       throw Error('Etiqueta visual no admitida.');
     const style: VisualStyle = {};
     for (const [k, v] of Object.entries(attrs?.style ?? {})) {
+      if (k === 'fontFamily') {
+        if (typeof v !== 'string' || !input.context.fontFamilies.includes(v))
+          throw Error('La fuente del componente no está declarada.');
+        style[k] = v;
+        continue;
+      }
       if (
-        !/^(color|backgroundColor|fontFamily|fontSize|fontWeight|lineHeight|textAlign|whiteSpace|display|width|height|padding|margin|borderRadius|opacity|transform|alignItems|justifyContent|gap|flexDirection|objectFit)$/.test(
+        !/^(color|backgroundColor|fontSize|fontWeight|lineHeight|textAlign|whiteSpace|display|width|height|padding|margin|borderRadius|opacity|transform|alignItems|justifyContent|gap|flexDirection|objectFit)$/.test(
           k
         ) ||
         !['string', 'number'].includes(typeof v) ||

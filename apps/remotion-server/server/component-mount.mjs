@@ -14,7 +14,7 @@ import { stageMedia } from './project-adapter.js';
 import { sceneFrames } from '@workspace/render-contract';
 
 const hash = (data) => createHash('sha256').update(data).digest('hex');
-export async function checkMounted(snapshot, workspace, dataDir, signal) {
+export async function checkMounted(snapshot, workspace, dataDir, signal, focus = []) {
   const { document } = snapshot,
     { fps, width, height } = document.canvas;
   const native = document.engine === 'hyperframes';
@@ -138,10 +138,16 @@ export async function checkMounted(snapshot, workspace, dataDir, signal) {
     if (errors.length) throw Error(errors[0]);
     const bounds = sceneFrames(document),
       total = Math.ceil((document.durationMs * fps) / 1000),
-      indices = new Set([0, total - 1]);
+      required = new Set([0, total - 1]),
+      indices = new Set(),
+      targets = new Set(focus);
     for (const [i, s] of document.scenes.entries())
       for (const l of s.layers)
-        if (l.visible && l.type === 'component') {
+        if (
+          l.visible &&
+          l.type === 'component' &&
+          (!targets.size || targets.has(JSON.stringify([s.id, l.id])))
+        ) {
           const start = Math.max(
             bounds[i].from,
             Math.floor(((bounds[i].originMs + l.startMs) * fps) / 1000)
@@ -152,13 +158,21 @@ export async function checkMounted(snapshot, workspace, dataDir, signal) {
           );
           if (start < end) {
             indices.add(start);
-            indices.add(Math.floor((start + end - 1) / 2));
+            const middle = Math.floor((start + end - 1) / 2);
+            (targets.size ? required : indices).add(middle);
             indices.add(end - 1);
             if (end < total) indices.add(end);
           }
         }
-    if (indices.size > 32) throw Error('La propuesta supera el límite de muestras de revisión.');
-    const forward = [...indices].sort((a, b) => a - b),
+    if (required.size > 32)
+      throw Error('Divide la propuesta para revisar todas sus capas modificadas.');
+    const optional = [...indices].filter((frame) => !required.has(frame)).sort((a, b) => a - b);
+    const count = Math.min(32 - required.size, optional.length);
+    for (let i = 0; i < count; i++) {
+      // Take one representative from each time bucket without dropping a changed window.
+      required.add(optional[Math.floor(((i + 0.5) * optional.length) / count)]);
+    }
+    const forward = [...required].sort((a, b) => a - b),
       samples = [];
     for (const frame of [...forward, ...forward.slice().reverse()]) {
       signal.throwIfAborted();

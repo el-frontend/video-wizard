@@ -36,7 +36,6 @@ export function RangeEditor({
     (e) =>
       e.kind === 'template' &&
       e.structure &&
-      !!e.manifest.builtin &&
       !Object.values(e.manifest.props).some((p) => p.required) &&
       fitsShort(
         e.structure,

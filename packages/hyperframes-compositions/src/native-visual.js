@@ -20,6 +20,12 @@ globalThis.mountStudioVisual = function (container, sourceHash, props, context, 
   function values(input, keys) {
     const result = {};
     for (const [key, value] of Object.entries(input || {})) {
+      if (key === 'fontFamily') {
+        if (!context.fontFamilies.includes(value))
+          throw Error('La fuente del componente no está declarada.');
+        result[key] = value;
+        continue;
+      }
       if (
         !keys.has(key) ||
         !['string', 'number'].includes(typeof value) ||
@@ -27,6 +33,41 @@ globalThis.mountStudioVisual = function (container, sourceHash, props, context, 
         /url\s*\(|image-set\s*\(/i.test(String(value))
       )
         throw Error('Propiedad visual no admitida.');
+      result[key] = value;
+    }
+    return result;
+  }
+  // GSAP also interprets strings as expressions. Admit only literal values for each property.
+  function tweenValues(input) {
+    const result = {};
+    for (const [key, value] of Object.entries(input || {})) {
+      if (!tween.has(key)) throw Error('Propiedad de tween no admitida.');
+      if (key === 'ease') {
+        if (
+          typeof value !== 'string' ||
+          !/^(?:none|linear|(?:power[0-4]|sine|expo|circ|back|bounce|elastic)(?:\.(?:in|out|inOut))?)$/.test(
+            value
+          )
+        )
+          throw Error('Curva de tween no admitida.');
+      } else {
+        const literal =
+          typeof value === 'string' &&
+          /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))(px|%|deg|rad|turn)?$/.exec(value);
+        const number = typeof value === 'number' ? value : literal ? Number(literal[1]) : NaN;
+        const unit = literal && literal[2];
+        if (
+          !Number.isFinite(number) ||
+          (unit &&
+            !(
+              (['x', 'y'].includes(key) && ['px', '%'].includes(unit)) ||
+              (key === 'rotation' && ['deg', 'rad', 'turn'].includes(unit))
+            )) ||
+          (key === 'duration' && number < 0) ||
+          (key === 'opacity' && (number < 0 || number > 1))
+        )
+          throw Error('Valor de tween no admitido.');
+      }
       result[key] = value;
     }
     return result;
@@ -53,7 +94,7 @@ globalThis.mountStudioVisual = function (container, sourceHash, props, context, 
       const node = nodes.get(token);
       if (!node || !Number.isFinite(at) || at < 0 || at > context.durationMs / 1000)
         throw Error('Posición de tween no válida.');
-      child.fromTo(node, values(from, tween), values(to, tween), at);
+      child.fromTo(node, tweenValues(from), tweenValues(to), at);
     },
   };
   factory({ clamp: gsap.utils.clamp, mapRange: gsap.utils.mapRange })({

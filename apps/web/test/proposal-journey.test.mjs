@@ -86,11 +86,11 @@ it.skipIf(import.meta.env.MODE !== 'r3-journey')(
         )
         .toBe(200);
       await page.goto(origin + '/signin');
-      const request = (url, body) =>
+      const request = (url, body, method = body ? 'POST' : 'GET') =>
         page.evaluate(
-          async ({ url, body }) => {
+          async ({ url, body, method }) => {
             const r = await fetch(url, {
-              method: body ? 'POST' : 'GET',
+              method,
               headers: { 'Content-Type': 'application/json' },
               body: body ? JSON.stringify(body) : undefined,
             });
@@ -98,7 +98,7 @@ it.skipIf(import.meta.env.MODE !== 'r3-journey')(
             if (!r.ok) throw Error(r.status + ' ' + JSON.stringify(result));
             return result.data ?? result;
           },
-          { url, body }
+          { url, body, method }
         );
       await request('/api/auth/sign-up/email', {
         name: 'Prueba R3',
@@ -179,6 +179,69 @@ it.skipIf(import.meta.env.MODE !== 'r3-journey')(
         expect(
           await request('/api/studio/libraries/component?engine=' + engine + '&verified=1')
         ).toContainEqual(expect.objectContaining({ id: row.candidate.id, version: 1 }));
+        if (engine === 'remotion') {
+          const projectUrl = '/api/studio/projects/' + project.document.id;
+          const applied = await request(projectUrl);
+          const recoverable = {
+            ...input,
+            requestId: randomUUID(),
+            baseRevision: applied.revision,
+            manifest: { ...ex.manifest, dependencies: ['gsap'] },
+          };
+          const rejection = await request(path, recoverable);
+          expect(rejection.diagnostics[0].message).toContain('manifest.dependencies');
+          const recover = await request(path + '/' + rejection.proposalId);
+          expect(recover).toMatchObject({
+            status: 'invalid',
+            input: { files: ex.files, manifest: recoverable.manifest },
+          });
+          expect(await request(projectUrl)).toEqual(applied);
+          expect((await request(path + '/' + row.id)).moduleHash).toBe(row.moduleHash);
+          const eight = await request('/api/studio/projects', {
+            title: 'Ocho componentes',
+            engine,
+            canvas: { width: 320, height: 180, fps: 25 },
+          });
+          const id = eight.document.id,
+            endpoint = '/api/studio/projects/' + id;
+          const layer = (i, componentRef) => ({
+            ...input.commands[0].scene.layers[0],
+            id: 'capa-' + i,
+            componentRef,
+            startMs: (5 + 20 * i) * 40,
+            endMs: (15 + 20 * i) * 40,
+          });
+          const old = Array.from({ length: 7 }, (_, i) =>
+            layer(i, { id: row.candidate.id, version: 1 })
+          );
+          const base = await request(
+            endpoint,
+            {
+              baseRevision: eight.revision,
+              document: {
+                ...eight.document,
+                durationMs: 8000,
+                scenes: [{ id: 'montaje', durationMs: 8000, layers: old }],
+              },
+            },
+            'PUT'
+          );
+          const eighth = await request(endpoint + '/proposals', {
+            ...input,
+            requestId: randomUUID(),
+            baseRevision: base.revision,
+            commands: [
+              {
+                type: 'add-layer',
+                sceneId: 'montaje',
+                layer: layer(7, { id: '$candidate', version: 1 }),
+              },
+            ],
+          });
+          expect(eighth.diagnostics).toEqual([]);
+          const detail = await request(endpoint + '/proposals/' + eighth.proposalId);
+          expect(detail.samples.some((s) => s.frame >= 145 && s.frame < 155)).toBe(true);
+        }
       }
       console.info('Evidencia R3', space);
     } finally {

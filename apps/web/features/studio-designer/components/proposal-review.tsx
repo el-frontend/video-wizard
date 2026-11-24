@@ -2,7 +2,7 @@
 import { useEffect, useId, useState } from 'react';
 import type {
   Diagnostic,
-  ProposalInput,
+  ProposalDelivery,
   ProjectRecord,
   PreviewHandle,
 } from '@workspace/video-project';
@@ -10,7 +10,7 @@ import { projectRequest } from '@/features/studio-projects/project-api';
 import { StudioProjectPreview } from './studio-project-preview';
 type Summary = { id: string; status: 'invalid' | 'ready' | 'applied'; baseRevision: string };
 type Detail = Summary & {
-  input: ProposalInput;
+  input: ProposalDelivery;
   moduleHash: string | null;
   samples?: { frame: number; sha256: string }[];
   diagnostics: Diagnostic[];

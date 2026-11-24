@@ -328,7 +328,10 @@ export function installStudioRoutes(
         return;
       }
       workspace = await mkdtemp(join(tmpdir(), 'studio-component-check-'));
-      const check = await checkMounted(snapshot, workspace, config.dataDir, signal);
+      const focus = req.body.focus ?? [];
+      if (!Array.isArray(focus) || !focus.every((key) => typeof key === 'string'))
+        throw Error('Selección de capas no válida.');
+      const check = await checkMounted(snapshot, workspace, config.dataDir, signal, focus);
       const frames = check.samples;
       const selected = [
         ...new Set([frames[0], frames[Math.floor(frames.length / 2)], frames.at(-1)]),
@@ -346,6 +349,7 @@ export function installStudioRoutes(
       const message =
         e instanceof Error &&
         [
+          'Divide la propuesta para revisar todas sus capas modificadas.',
           'La imagen cambió al volver al mismo fotograma.',
           'El componente produjo un error de montaje.',
           'La consola registró un error de montaje.',

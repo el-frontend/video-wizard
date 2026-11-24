@@ -118,6 +118,7 @@ export const ComponentManifestSchema = z
 export type ComponentManifest = z.infer<typeof ComponentManifestSchema>;
 export type ComponentSource = { manifest: ComponentManifest; files: Record<string, string> };
 export interface VisualContext {
+  fontFamilies: string[];
   canvas: { width: number; height: number; fps: number };
   size: { width: number; height: number };
   durationMs: number;
