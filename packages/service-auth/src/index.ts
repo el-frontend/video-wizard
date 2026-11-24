@@ -16,6 +16,7 @@ const operation = z.strictObject({
   jobId: reference.optional(),
   projectId: reference.optional(),
   previewId: reference.optional(),
+  proposalId: reference.optional(),
   rendererJobId: reference.optional(),
   assetId: reference.optional(),
 });

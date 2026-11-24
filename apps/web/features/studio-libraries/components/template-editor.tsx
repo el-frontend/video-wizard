@@ -5,16 +5,15 @@ import type {
   EngineId,
   TemplateSlot,
   TemplateStructure,
-  LibraryManifest,
   ProjectRecord,
   JsonValue,
 } from '@workspace/video-project';
-import { TemplateStructureSchema } from '@workspace/video-project';
+import { TemplateStructureSchema, manifestFields } from '@workspace/video-project';
 import { post, pin, useLibrary, keyOf } from '../hooks/use-library';
 import { AssetField, useIdentity, type Publish } from './edition-fields';
 import Link from 'next/link';
 
-type Field = LibraryManifest['props'][string];
+type Field = ReturnType<typeof manifestFields>[string];
 type Binding = { name: string; field: Field; target: TemplateSlot };
 const basic: TemplateStructure = {
   version: 1,
@@ -61,7 +60,7 @@ function targets(s: TemplateStructure, components: EntryOf<'component'>[]) {
       if ('assetId' in l) add(prefix + 'Recurso', { ...location, field: 'asset' });
       if (l.type === 'component') {
         const e = components.find((row) => keyOf(row) === keyOf(l.componentRef));
-        for (const [key, def] of Object.entries(e?.manifest.props ?? {}))
+        for (const [key, def] of Object.entries(e ? manifestFields(e.manifest) : {}))
           add(prefix + key, { ...location, field: 'prop', key }, def.type);
       }
     }

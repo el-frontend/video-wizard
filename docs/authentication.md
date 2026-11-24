@@ -166,3 +166,11 @@ export STUDIO_NATIVE_EVIDENCE_DIR="$(mktemp -d)"
 pnpm --filter @workspace/hyperframes-worker test --mode native src/native-acceptance.test.ts
 STUDIO_TEST_RENDER_IMAGE=video-wizard-renderer:local pnpm --filter remotion-server test --mode contained server/contained-render.test.mjs
 ```
+
+## Propuestas de componentes
+
+Las rutas de propuestas reciben el propietario de la sesión Better Auth. El identificador `requestId` correlaciona la entrada del mismo propietario, proyecto y revisión. La admisión del companion requiere un recibo verificado en R4.
+
+Next envía al renderer un JWT de servicio con audiencia `video-wizard-renderer`, `ownerId`, `projectId`, `proposalId` y la operación `proposal.compile` o `proposal.check`. El renderer coteja esos vínculos antes de compilar o montar la propuesta. El compilador sólo lee las fuentes virtuales y las fachadas versionadas. El filtro acepta el dialecto visual documentado en `component-contract.ts`. El JavaScript se ejecuta en Chromium.
+
+La revisión crea un preview por la misma sesión efímera con ticket y cookie acotada a instancia que el editor. Las capturas pertenecen a la propuesta y su lectura usa la sesión del propietario. La aplicación fija una versión privada en el proyecto. **Guardar en biblioteca** incluye esa misma versión en el catálogo del propietario.

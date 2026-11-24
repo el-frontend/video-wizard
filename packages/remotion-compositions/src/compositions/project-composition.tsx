@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AbsoluteFill, Sequence, cancelRender, continueRender, delayRender } from 'remotion';
-import { sceneFrames, type ResolvedDependencies } from '@workspace/render-contract';
+import { generatedFonts, sceneFrames, type ResolvedDependencies } from '@workspace/render-contract';
 import type { ProjectDraft } from '@workspace/video-project';
 import { LayerRenderer, type ProjectRegistry } from './layer-renderer';
 import { SceneComposition } from './scene-composition';
@@ -17,6 +17,7 @@ function SnapshotFonts({ dependencies }: { dependencies: ResolvedDependencies })
     const fonts = Object.values(dependencies.libraries).flatMap((entry) =>
       'fonts' in entry ? (entry.fonts ?? []) : []
     );
+    fonts.push(...generatedFonts(dependencies));
     const faces = fonts.map(
       (font) =>
         new FontFace(

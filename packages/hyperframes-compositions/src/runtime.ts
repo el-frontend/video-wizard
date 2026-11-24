@@ -3,6 +3,8 @@ import {
   layerSampleMs,
   projectAppearance,
   sceneFrames,
+  visualContext,
+  generatedFonts,
   type ExportSnapshot,
 } from '@workspace/render-contract';
 import { containsTime, styleFamily, type Layer } from '@workspace/video-project';
@@ -18,7 +20,8 @@ type Window = { from: number; end: number };
 export function nativeDocument(
   snapshot: ExportSnapshot,
   media: Map<string, MaterializedMedia>,
-  soundtrack?: string
+  soundtrack?: string,
+  modules: Map<string, { sourceHash: string; moduleHash: string }> = new Map()
 ) {
   const { document, dependencies } = snapshot,
     { width, height, fps } = document.canvas;
@@ -26,9 +29,14 @@ export function nativeDocument(
   const fonts = Object.values(dependencies.libraries).flatMap((entry) =>
     'fonts' in entry ? (entry.fonts ?? []) : []
   );
+  fonts.push(...generatedFonts(dependencies));
   const families = [...new Set(fonts.map((f) => f.family))];
   const font = (family: string) =>
-    family === 'sans-serif' ? 'sans-serif' : 'StudioFont' + families.indexOf(family);
+    family.startsWith('StudioAsset')
+      ? family
+      : family === 'sans-serif'
+        ? 'sans-serif'
+        : 'StudioFont' + families.indexOf(family);
   const style = document.styleRef && dependencies.libraries[libraryKey(document.styleRef)];
   const family = style?.kind === 'style' ? styleFamily(style)?.id : undefined;
   const total = Math.ceil((document.durationMs * fps) / 1000);
@@ -195,6 +203,48 @@ export function nativeDocument(
       ';color:' +
       look.foreground +
       ';';
+    if (layer.type === 'component') {
+      const key = libraryKey(layer.componentRef),
+        module = modules.get(key),
+        entry = dependencies.libraries[key];
+      if (module && entry?.kind === 'component' && 'schemaVersion' in entry.manifest) {
+        const attr = attrs(range),
+          id = 'clip-' + serial;
+        blocks.push(
+          '<div ' +
+            attr +
+            ' data-module="' +
+            module.moduleHash +
+            '" style="' +
+            textStyle +
+            '"></div>'
+        );
+        const context = visualContext(
+          document,
+          dependencies,
+          layer,
+          entry.manifest,
+          start,
+          (id) => 'media/' + mediaFilename(dependencies.assets[id]!)
+        );
+        context.appearance.family = font(look.family);
+        const literal = (v: unknown) => JSON.stringify(v).replaceAll('<', '\\u003c');
+        motion.push(
+          'mountStudioVisual(document.getElementById(' +
+            literal(id) +
+            '),' +
+            literal(module.sourceHash) +
+            ',' +
+            literal(layer.props) +
+            ',' +
+            literal(context) +
+            ',tl,' +
+            start / 1000 +
+            ');'
+        );
+        return;
+      }
+    }
     const factory =
       layer.type === 'component' || (layer.type === 'captions' && !!layer.templateRef);
     function label(text: string, r: Window, word?: string) {
@@ -290,9 +340,20 @@ export function nativeDocument(
     motion.join('\n') +
     '\nwindow.__timelines["main"]=tl;';
   const html =
-    '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' +
+    '<!doctype html><html lang="es"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>' +
     escape(document.title) +
-    '</title><script src="gsap.min.js"></script><style>' +
+    '</title>' +
+    (modules.size
+      ? "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'none'; object-src 'none'\">"
+      : '') +
+    '<script src="gsap.min.js"></script><style>' +
+    (modules.size
+      ? '</style><script src="native-visual.js"></script>' +
+        [...new Set([...modules.values()].map((m) => m.moduleHash))]
+          .map((h) => '<script src="component-' + h + '.js"></script>')
+          .join('') +
+        '<style>'
+      : '') +
     faces +
     '\n*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}#main{position:relative;width:100%;height:100%;overflow:hidden;background:' +
     appearance.background +

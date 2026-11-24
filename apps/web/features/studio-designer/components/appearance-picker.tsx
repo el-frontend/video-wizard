@@ -66,18 +66,20 @@ function RefSelect({
 }
 export function AppearancePicker({
   document: d,
+  catalogGeneration = 0,
   scene,
   layer,
   onCommand,
 }: {
   document: ProjectDraft;
+  catalogGeneration?: number;
   scene?: Scene;
   layer?: Layer;
   onCommand: CommandHandler;
 }) {
   const styles = useLibrary('style', d.engine),
     brands = useLibrary('brand', d.engine),
-    components = useLibrary('component', d.engine),
+    components = useLibrary('component', d.engine, { generation: catalogGeneration }),
     templates = useLibrary('template', d.engine);
   const [variant, setVariant] = useState(''),
     [preset, setPreset] = useState('');
@@ -125,8 +127,27 @@ export function AppearancePicker({
   const loaded = [styles, brands, components, templates].every(
     (list) => !list.loading && !list.error
   );
-  const { issues, error: pinError } = useLibraryDiagnostics(d, rows, loaded);
-  const selectedPreset = components.entries.find((e) => keyOf(e) === preset);
+  const { issues, error: pinError, library } = useLibraryDiagnostics(d, rows, loaded);
+  const visuals = components.entries.filter(
+    (e): e is EntryOf<'component'> => e.kind === 'component' && 'schemaVersion' in e.manifest
+  );
+  const current =
+    layer?.type === 'component'
+      ? library?.find((e) => keyOf(e) === keyOf(layer.componentRef))
+      : undefined;
+  if (
+    current?.kind === 'component' &&
+    'schemaVersion' in current.manifest &&
+    !visuals.some((e) => keyOf(e) === keyOf(current))
+  )
+    visuals.push(current);
+  const [visual, setVisual] = useState('');
+  const selectedVisual = visuals.find(
+    (e) => keyOf(e) === (visual || (current ? keyOf(current) : ''))
+  );
+  const selectedPreset = components.entries
+    .filter((e) => e.kind === 'component' && e.manifest.builtin)
+    .find((e) => keyOf(e) === preset);
   function insertLogo() {
     if (!scene || image?.id !== logoId || !image?.width || !image.height) return;
     const scale = Math.min(
@@ -220,6 +241,64 @@ export function AppearancePicker({
               })
             }
           />
+          {visuals.length > 0 && (
+            <>
+              <label>
+                Componente visual
+                <select
+                  value={selectedVisual ? keyOf(selectedVisual) : ''}
+                  onChange={(e) => setVisual(e.target.value)}
+                >
+                  <option value="">Elige un componente</option>
+                  {visuals.map((e) => (
+                    <option key={keyOf(e)} value={keyOf(e)}>
+                      {e.name} · v{e.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="edit-button"
+                disabled={!selectedVisual}
+                onClick={() => {
+                  if (!selectedVisual || !('schemaVersion' in selectedVisual.manifest)) return;
+                  const m = selectedVisual.manifest,
+                    props = structuredClone(m.initialProps),
+                    componentRef = pin(selectedVisual);
+                  if (layer?.type === 'component') {
+                    onCommand({
+                      type: 'update-layer',
+                      sceneId: scene.id,
+                      layerId: layer.id,
+                      patch: { componentRef, props },
+                    });
+                    return;
+                  }
+                  onCommand({
+                    type: 'add-layer',
+                    sceneId: scene.id,
+                    layer: {
+                      type: 'component',
+                      id: crypto.randomUUID(),
+                      startMs: 0,
+                      endMs: Math.min(scene.durationMs, m.defaultDurationMs),
+                      endAnchor: 'fixed',
+                      visible: true,
+                      zIndex: Math.max(-1, ...scene.layers.map((l) => l.zIndex)) + 1,
+                      box: { x: 0, y: 0, ...m.defaultSize },
+                      componentRef,
+                      props,
+                    },
+                  });
+                }}
+              >
+                {layer?.type === 'component'
+                  ? 'Cambiar componente visual'
+                  : 'Insertar componente visual'}
+              </button>
+            </>
+          )}
           <label>
             Componente de subtítulos
             <select
@@ -227,11 +306,13 @@ export function AppearancePicker({
               onChange={(e) => setPreset(e.target.value)}
             >
               <option value="">Elige un preset</option>
-              {components.entries.map((e) => (
-                <option value={keyOf(e)} key={keyOf(e)}>
-                  {e.name} · v{e.version}
-                </option>
-              ))}
+              {components.entries
+                .filter((e) => e.kind === 'component' && e.manifest.builtin)
+                .map((e) => (
+                  <option value={keyOf(e)} key={keyOf(e)}>
+                    {e.name} · v{e.version}
+                  </option>
+                ))}
             </select>
           </label>
           <button

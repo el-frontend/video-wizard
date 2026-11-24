@@ -21,7 +21,7 @@ export class StudioRenderError extends Error {
     super('No se pudo preparar la vista del proyecto.');
   }
 }
-async function internal(
+export async function internal(
   ownerId: string,
   operation: Omit<ServicePrincipal, 'ownerId' | 'audience'>,
   path: string,

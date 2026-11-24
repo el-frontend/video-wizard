@@ -5,3 +5,5 @@ export * from './time';
 export * from './commands';
 export * from './requests';
 export * from './validation';
+export * from './component-contract';
+export * from './proposal';

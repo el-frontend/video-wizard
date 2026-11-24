@@ -74,7 +74,7 @@ export function mountPreview(props: ProjectCompositionProps) {
         fps={fps}
         compositionWidth={width}
         compositionHeight={height}
-        controls
+        controls={!root.dataset.check}
         style={{ width: '100%', height: '100%' }}
       />
     );

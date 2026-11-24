@@ -1,3 +1,5 @@
+import { generatedAssetDiagnostics } from '@workspace/render-contract/generated-assets';
+import { verifyModule } from '@workspace/render-contract/component-bundle';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -46,6 +48,15 @@ export function validateNative(snapshot: ExportSnapshot) {
   for (const entry of Object.values(dependencies.libraries)) {
     if (entry.kind !== 'component') continue;
     const bundle = snapshot.bundles[libraryKey(entry)];
+    if ('schemaVersion' in entry.manifest) {
+      try {
+        if (entry.engine !== 'hyperframes' || !bundle) throw Error();
+        verifyModule(Buffer.from(bundle.base64, 'base64'), entry.manifest, bundle.sha256);
+      } catch {
+        error('unsupported-component', 'El módulo nativo no coincide con la versión aprobada.');
+      }
+      continue;
+    }
     if (
       entry.engine !== 'hyperframes' ||
       entry.manifest.builtin?.kind !== 'hyperframes-caption' ||
@@ -99,7 +110,10 @@ export async function validateNativeAssets(
   dataDir = resolveStudioDataDir(),
   signal = new AbortController().signal
 ) {
-  const diagnostics = validateNative(snapshot);
+  const diagnostics = [
+    ...validateNative(snapshot),
+    ...(await generatedAssetDiagnostics(snapshot, dataDir)),
+  ];
   if (diagnostics.some((d) => d.severity === 'error' && d.code !== 'scene-no-frame'))
     return diagnostics;
   return [
@@ -123,6 +137,7 @@ export interface NativeManifest {
   height: number;
   files: string[];
   scriptHash: string;
+  moduleHashes?: string[];
 }
 export async function compileProject(
   snapshot: ExportSnapshot,
@@ -138,14 +153,36 @@ export async function compileProject(
   const dir = join(workspace, 'native');
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const { layers: media, soundtrack } = await materialize(snapshot, dir, options.dataDir, signal);
-  const { html, timeline } = nativeDocument(snapshot, media, soundtrack?.src);
+  const modules = new Map<string, { sourceHash: string; moduleHash: string }>();
+  const moduleFiles = new Set<string>();
+  for (const entry of Object.values(snapshot.dependencies.libraries)) {
+    if (entry.kind !== 'component' || !('schemaVersion' in entry.manifest)) continue;
+    const key = libraryKey(entry),
+      pin = snapshot.bundles[key]!;
+    const sealed = verifyModule(Buffer.from(pin.base64, 'base64'), entry.manifest, pin.sha256);
+    const file = 'component-' + sealed.moduleHash + '.js';
+    await writeFile(join(dir, file), sealed.module, { signal });
+    moduleFiles.add(file);
+    for (const id of entry.assetIds)
+      moduleFiles.add('media/' + mediaFilename(snapshot.dependencies.assets[id]!));
+    modules.set(key, { sourceHash: sealed.sourceHash, moduleHash: sealed.moduleHash });
+  }
+  if (modules.size) {
+    await writeFile(
+      join(dir, 'native-visual.js'),
+      await readFile(new URL('./native-visual.js', import.meta.url)),
+      { signal }
+    );
+    moduleFiles.add('native-visual.js');
+  }
+  const { html, timeline } = nativeDocument(snapshot, media, soundtrack?.src, modules);
   const gsap = await readFile(require.resolve('gsap/dist/gsap.min.js'));
   const runtime = await readFile(join(cliPackage, 'dist', 'hyperframe.runtime.iife.js'));
   const pkg: { version: string } = JSON.parse(
     await readFile(join(cliPackage, 'package.json'), 'utf8')
   );
   const { width, height, fps } = snapshot.document.canvas;
-  const published = new Set(['index.html', 'gsap.min.js', 'runtime.js']);
+  const published = new Set(['index.html', 'gsap.min.js', 'runtime.js', ...moduleFiles]);
   const audioOnly = new Set(soundtrack?.tracks.filter((t) => t.audioOnly).map((t) => t.id));
   for (const [id, m] of media) if (!audioOnly.has(id)) published.add(m.src);
   if (soundtrack) published.add(soundtrack.src);
@@ -160,6 +197,7 @@ export async function compileProject(
     height,
     frames: Math.ceil((snapshot.document.durationMs * fps) / 1000),
     files: [...published].sort(),
+    moduleHashes: [...new Set([...modules.values()].map((m) => m.moduleHash))].sort(),
     scriptHash: createHash('sha256').update(timeline).digest('base64'),
   };
   const entry = join(dir, 'index.html');

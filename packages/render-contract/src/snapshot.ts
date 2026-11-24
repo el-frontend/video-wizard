@@ -46,7 +46,21 @@ export function validateSnapshot(snapshot: ExportSnapshot): Diagnostic[] {
       message: 'El proyecto está vacío.',
     });
   for (const entry of library) {
-    for (const id of entry.assetIds) ids.add(id);
+    for (const id of entry.assetIds) {
+      ids.add(id);
+      if (
+        entry.kind === 'component' &&
+        'schemaVersion' in entry.manifest &&
+        !/^(image\/(png|jpeg|webp)|font\/(ttf|otf|woff2?))$/.test(
+          dependencies.assets[id]?.mediaType ?? ''
+        )
+      )
+        diagnostics.push({
+          severity: 'error',
+          code: 'component-media',
+          message: 'El componente requiere una imagen estática o fuente declarada.',
+        });
+    }
     if (entry.kind === 'style' && !supportsStudioEngine(entry, document.engine)) {
       diagnostics.push({
         severity: 'error',

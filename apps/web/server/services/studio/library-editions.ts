@@ -44,7 +44,11 @@ export async function publishEdition(library: LibraryService, owner: string, dat
   if (component.success) {
     const { sourceRef, id, version, name } = component.data;
     const source = await library.get(owner, sourceRef);
-    if (source.kind !== 'component' || !(await library.verifiedComponent(owner, source)))
+    if (
+      source.kind !== 'component' ||
+      !source.manifest.builtin ||
+      !(await library.verifiedComponent(owner, source))
+    )
       throw new ValidationError('Selecciona un preset de subtítulos verificado.');
     return library.publish(
       owner,

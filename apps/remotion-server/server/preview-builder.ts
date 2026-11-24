@@ -1,3 +1,4 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import { context } from 'esbuild';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +12,7 @@ export async function buildPreview(
   signal: AbortSignal
 ) {
   signal.throwIfAborted();
-  const { entry, hash } = await buildRegistry(snapshot, workspace);
+  const { entry, hash, modules } = await buildRegistry(snapshot, workspace);
   const player = fileURLToPath(new URL('./preview-player.tsx', import.meta.url));
   const source = [
     'import { registry } from ' + JSON.stringify(entry) + ';',
@@ -41,7 +42,15 @@ export async function buildPreview(
     signal.throwIfAborted();
     await compiler.rebuild();
     signal.throwIfAborted();
-    return { hash };
+    if (modules.size) {
+      const path = join(workspace, 'player.js');
+      await writeFile(path, [...modules.values(), await readFile(path, 'utf8')].join('\n'));
+    }
+    await writeFile(
+      join(workspace, 'preview-manifest.json'),
+      JSON.stringify({ hash, moduleHashes: [...modules.keys()] })
+    );
+    return { hash, moduleHashes: [...modules.keys()] };
   } finally {
     signal.removeEventListener('abort', stop);
     await compiler.dispose();

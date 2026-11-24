@@ -1,10 +1,12 @@
+import { generatedAssetDiagnostics } from '@workspace/render-contract/generated-assets';
+import { verifyModule } from '@workspace/render-contract/component-bundle';
 import { containsTime } from '@workspace/video-project';
 import { projectAppearance } from '@workspace/remotion-compositions';
 import { bundle } from '@remotion/bundler';
 import { makeCancelSignal, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { execFile } from 'node:child_process';
 import { bundlePublicPath, hostRenderBundle } from './render-bundle-host.js';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -58,7 +60,10 @@ async function selected(p: PreparedComposition) {
 export class RemotionProjectAdapter implements EngineAdapter {
   constructor(private readonly dataDir?: string) {}
   async validate(snapshot: ExportSnapshot) {
-    const diagnostics = validateSnapshot(snapshot);
+    const diagnostics = [
+      ...validateSnapshot(snapshot),
+      ...(await generatedAssetDiagnostics(snapshot, this.dataDir)),
+    ];
     diagnostics.push(...projectAppearance(snapshot.document, snapshot.dependencies).diagnostics);
     const boundaries = sceneFrames(snapshot.document);
     for (const [index, scene] of snapshot.document.scenes.entries()) {
@@ -114,7 +119,11 @@ export class RemotionProjectAdapter implements EngineAdapter {
     for (const entry of Object.values(snapshot.dependencies.libraries)) {
       if (entry.kind !== 'component') continue;
       try {
-        await verifiedSeed(snapshot, entry);
+        if ('schemaVersion' in entry.manifest) {
+          const pin = snapshot.bundles[libraryKey(entry)];
+          if (!pin) throw Error();
+          verifyModule(Buffer.from(pin.base64, 'base64'), entry.manifest, pin.sha256);
+        } else await verifiedSeed(snapshot, entry);
       } catch {
         diagnostics.push({
           severity: 'error',
@@ -159,6 +168,23 @@ export class RemotionProjectAdapter implements EngineAdapter {
         },
       }),
     });
+    if (registry.modules.size) {
+      const scripts = [];
+      for (const [hash, module] of registry.modules) {
+        const name = 'component-' + hash + '.js';
+        await writeFile(join(entry, name), module);
+        scripts.push('<script src="./' + name + '"></script>');
+      }
+      const html = join(entry, 'index.html');
+      await writeFile(
+        html,
+        (await readFile(html, 'utf8')).replace('<head>', '<head>' + scripts.join(''))
+      );
+    }
+    await writeFile(
+      join(workspace, 'render-manifest.json'),
+      JSON.stringify({ moduleHashes: [...registry.modules.keys()] })
+    );
     return {
       engine: 'remotion',
       workspace,

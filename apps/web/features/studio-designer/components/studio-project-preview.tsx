@@ -18,9 +18,16 @@ interface Props {
   projectId: string;
   revision: string;
   document?: ProjectDraft;
+  proposalId?: string;
   onReady?: (handle: PreviewHandle | null) => void;
 }
-export function StudioProjectPreview({ projectId, revision, document, onReady }: Props) {
+export function StudioProjectPreview({
+  projectId,
+  revision,
+  document,
+  onReady,
+  proposalId,
+}: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const ready = useRef(onReady);
   ready.current = onReady;
@@ -30,7 +37,9 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
   useEffect(() => {
     const controller = new AbortController();
     const instance = crypto.randomUUID();
-    const url = '/api/studio/projects/' + encodeURIComponent(projectId) + '/preview';
+    const base = '/api/studio/projects/' + encodeURIComponent(projectId);
+    const url =
+      base + (proposalId ? '/proposals/' + encodeURIComponent(proposalId) : '') + '/preview';
     setSession(null);
     setSource(undefined);
     setError('');
@@ -63,7 +72,7 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
     let retired: Promise<void> | undefined;
     const retire = () => {
       controller.abort();
-      retired ??= authenticatedFetch(url + '?instance=' + instance, {
+      retired ??= authenticatedFetch(base + '/preview?instance=' + instance, {
         method: 'DELETE',
         signal: AbortSignal.timeout(previewRetirementTimeoutMs),
         keepalive: true,
@@ -78,7 +87,7 @@ export function StudioProjectPreview({ projectId, revision, document, onReady }:
       unregister();
       void retire();
     };
-  }, [projectId, revision, document]);
+  }, [projectId, revision, document, proposalId]);
   useEffect(() => {
     if (!session) return;
     let nonce = '',

@@ -82,7 +82,12 @@ export function useLibraryDiagnostics(doc: ProjectDraft, verified: LibraryEntry[
           entry.version +
           ' no tiene implementación para este motor.',
       });
-    if (entry.kind === 'component' && entry.engine === doc.engine && !eligible.has(keyOf(entry))) {
+    if (
+      entry.kind === 'component' &&
+      entry.engine === doc.engine &&
+      !eligible.has(keyOf(entry)) &&
+      !('schemaVersion' in entry.manifest)
+    ) {
       const issue: Diagnostic = {
         severity: 'error',
         code: 'unsupported-component',
@@ -121,5 +126,5 @@ export function useLibraryDiagnostics(doc: ProjectDraft, verified: LibraryEntry[
           layerId: layer.id,
         });
     }
-  return { issues };
+  return { issues, library };
 }

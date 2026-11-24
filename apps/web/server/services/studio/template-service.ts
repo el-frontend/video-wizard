@@ -1,3 +1,4 @@
+import { manifestFields } from '@workspace/video-project';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -91,8 +92,8 @@ function assignSlot(
     const entry = libraries.find((e) => e.id === pin.id && e.version === pin.version);
     if (
       entry?.kind !== 'component' ||
-      !Object.hasOwn(entry.manifest.props, target.key) ||
-      entry.manifest.props[target.key]?.type !== type
+      !Object.hasOwn(manifestFields(entry.manifest), target.key) ||
+      manifestFields(entry.manifest)[target.key]?.type !== type
     )
       invalid('La propiedad no coincide con el manifiesto del componente.');
     if (value !== undefined)

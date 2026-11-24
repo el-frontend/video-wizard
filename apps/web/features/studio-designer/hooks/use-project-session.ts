@@ -433,13 +433,25 @@ function createSession(id: string, initial?: ProjectRecord) {
     return audioFlight;
   }
   async function resolveDocument(
-    action: 'reload' | 'restore' | 'copy-draft' | 'repair',
+    action: 'reload' | 'restore' | 'copy-draft' | 'repair' | 'apply-proposal',
     extra: Record<string, unknown> = {}
   ) {
     const base = state.saved,
       draft = state.draft;
     if (!base || !draft || state.resolving || suspended)
       throw new Error('La operación está en pausa.');
+    if (
+      action === 'apply-proposal' &&
+      (hasUnsavedChanges() ||
+        state.conflict ||
+        state.replacingAudio ||
+        extra.baseRevision !== base.revision)
+    )
+      throw Error('Guarda el borrador y revisa la propuesta sobre la revisión actual.');
+    const endpoint =
+      action === 'apply-proposal'
+        ? '/proposals/' + encodeURIComponent(String(extra.proposalId)) + '/apply'
+        : '/' + action;
     const head = state.conflict ?? base,
       token = ++epoch,
       pending = local;
@@ -452,13 +464,15 @@ function createSession(id: string, initial?: ProjectRecord) {
       const result =
         action === 'reload'
           ? await projectRequest<ProjectRecord>(url)
-          : await projectRequest<ProjectRecord>(url + '/' + action, {
+          : await projectRequest<ProjectRecord>(url + endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(
-                action === 'copy-draft'
-                  ? { baseRevision: base.revision, document: draft }
-                  : { baseRevision: head.revision, ...extra }
+                action === 'apply-proposal'
+                  ? { baseRevision: base.revision }
+                  : action === 'copy-draft'
+                    ? { baseRevision: base.revision, document: draft }
+                    : { baseRevision: head.revision, ...extra }
               ),
             });
       if (

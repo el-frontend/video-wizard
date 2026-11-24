@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -16,9 +16,20 @@ export async function hostRenderBundle(directory: string) {
     bundlePublicPath,
     mount
   );
+  const hashes = Array.from(
+    html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi),
+    (m) => "'sha256-" + createHash('sha256').update(m[1]!).digest('base64') + "'"
+  );
+  const policy =
+    "default-src 'none'; script-src 'self' " +
+    hashes.join(' ') +
+    "; style-src 'unsafe-inline' 'self'; img-src 'self' blob: data:; font-src 'self' data:; media-src 'self' blob: data:; connect-src 'self'; worker-src blob: 'self'; base-uri 'none'; form-action 'none'";
   const app = express().disable('x-powered-by');
   app.get(mount + 'index.html', (_req, res) =>
-    res.set('Cache-Control', 'no-store').type('html').send(html)
+    res
+      .set({ 'Cache-Control': 'no-store', 'Content-Security-Policy': policy })
+      .type('html')
+      .send(html)
   );
   app.use(mount, express.static(directory, { dotfiles: 'deny', index: false }));
   const server = app.listen(0, '127.0.0.1');

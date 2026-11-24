@@ -54,7 +54,7 @@ it.runIf((import.meta as ImportMeta & { env: { MODE: string } }).env.MODE === 'i
       );
     }
     const before = await hashes(),
-      fixture = await authFixture(9),
+      fixture = await authFixture(),
       data = await mkdtemp(join(tmpdir(), 'd6-demo-assets-')),
       owner = randomUUID();
     vi.stubEnv('STUDIO_DATA_DIR', data);

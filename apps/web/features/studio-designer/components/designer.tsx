@@ -24,6 +24,7 @@ import { useEditorDependencies } from '../hooks/use-editor-dependencies';
 import { RevisionHistory } from './revision-history';
 import { ConflictPanel } from './conflict-panel';
 import { ImportResources } from './import-resources';
+import { ProposalReview } from './proposal-review';
 import { PreviewPanel } from './preview-panel';
 
 const statusLabels = {
@@ -77,6 +78,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
     [draft]
   );
   const projectId = initial.document.id;
+  const [catalogGeneration, refreshCatalog] = useState(0);
   const router = useRouter();
   const [handle, onReady] = useState<PreviewHandle | null>(null);
   const selectionRef = useRef(selection);
@@ -365,6 +367,16 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           </ul>
         </details>
       )}
+      {saved.importContext?.mode !== 'original' && (
+        <ProposalReview
+          record={saved}
+          disabled={session.resolving || session.hasUnsavedChanges()}
+          onApply={(proposalId, baseRevision) =>
+            session.resolveDocument('apply-proposal', { proposalId, baseRevision })
+          }
+          onListed={() => refreshCatalog((n) => n + 1)}
+        />
+      )}
       <RevisionHistory
         record={session.conflict ?? saved}
         disabled={session.resolving || session.replacingAudio || session.status === 'saving'}
@@ -480,6 +492,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
             onTitle={(title) => session.dispatch({ type: 'set-title', title })}
           />
           <AppearancePicker
+            catalogGeneration={catalogGeneration}
             key={draft.id}
             document={draft}
             scene={scene}

@@ -52,8 +52,8 @@ it('reads the pinned component and private metadata, fencing obsolete project re
   phase = 'next';
   hook.rerender({ project: next });
   await waitFor(() => expect(hook.result.current.asset('voice')?.durationMs).toBe(4000));
-  expect(hook.result.current.manifest({ id: 'card', version: 1 })?.props).toEqual({
-    next: { type: 'string' },
+  expect(hook.result.current.manifest({ id: 'card', version: 1 })).toMatchObject({
+    props: { next: { type: 'string' } },
   });
   expect(hook.result.current.asset('music')).toBeNull();
   await act(async () => {

@@ -1,3 +1,4 @@
+import { matchesProps } from './component-contract';
 import type { JsonValue, LibraryEntry, LibraryManifest, LibraryRef } from './library';
 import type { Diagnostic, Layer, ProjectDraft } from './schema';
 
@@ -7,6 +8,7 @@ export function validComponentProps(
   props: Record<string, JsonValue>,
   manifest: LibraryManifest
 ): boolean {
+  if ('schemaVersion' in manifest) return matchesProps(manifest.propsSchema, props);
   return (
     Object.entries(manifest.props).every(
       ([key, field]) => !field.required || Object.hasOwn(props, key)
@@ -76,7 +78,11 @@ export function validateForExport(
           );
       }
       if (layer.type === 'captions') {
-        if (layer.templateRef) reference(layer.templateRef, ['component', 'template'], location);
+        if (layer.templateRef) {
+          const preset = reference(layer.templateRef, ['component', 'template'], location);
+          if (preset?.kind === 'component' && 'schemaVersion' in preset.manifest)
+            error('caption-preset', 'Los subtítulos requieren un preset de subtítulos.', location);
+        }
         if (
           layer.sourceAudioLayerId &&
           !scene.layers.some((l) => l.id === layer.sourceAudioLayerId && l.type === 'audio') &&

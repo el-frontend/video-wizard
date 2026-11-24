@@ -1,3 +1,5 @@
+import { GeneratedVisual } from './generated-visual';
+import { visualContext } from '@workspace/render-contract';
 import type { ComponentType, CSSProperties } from 'react';
 import { Audio, Img, OffthreadVideo, useCurrentFrame } from 'remotion';
 import {
@@ -12,7 +14,10 @@ import type { CaptionTemplateProps } from '../types';
 import { captionAt } from './project-timing';
 import { projectAppearance } from './project-appearance';
 
-export type ProjectRegistry = Record<string, ComponentType<CaptionTemplateProps>>;
+export type ProjectRegistry = Record<
+  string,
+  ComponentType<CaptionTemplateProps> | { sourceHash: string }
+>;
 export interface LayerRendererProps {
   layer: Layer;
   document: ProjectDraft;
@@ -99,6 +104,24 @@ export function LayerRenderer({
   const Component = registry[libraryKey(ref)];
   if (!Component) throw new Error('Falta el componente fijado.');
   const entry = dependencies.libraries[libraryKey(ref)];
+  if (typeof Component === 'object' && 'sourceHash' in Component) {
+    if (
+      layer.type !== 'component' ||
+      entry?.kind !== 'component' ||
+      !('schemaVersion' in entry.manifest)
+    )
+      throw Error('Se requiere una capa visual.');
+    return (
+      <div style={style} data-module={Component.sourceHash}>
+        <GeneratedVisual
+          sourceHash={Component.sourceHash}
+          props={layer.props}
+          context={visualContext(document, dependencies, layer, entry.manifest, layerOriginMs)}
+          timeMs={Math.max(0, layerSampleMs(absoluteFrame, fps, layerOriginMs))}
+        />
+      </div>
+    );
+  }
   const preset = entry?.kind === 'component' && entry.manifest.builtin?.preset;
   const accentBackground = preset && ['default', 'viral', 'modern'].includes(preset);
   const ink =

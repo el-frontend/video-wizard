@@ -36,7 +36,7 @@ describe('registered Motion Studio imports', () => {
     ],
   };
   beforeAll(async () => {
-    fixture = await authFixture(9);
+    fixture = await authFixture();
     root = await realpath(await mkdtemp(join(tmpdir(), 'd6-import-')));
     await fixture.db.insert(users).values({ id: owner, email: owner + '@example.test' });
     await mkdir(join(root, 'videos', 'demo', 'assets'), { recursive: true });

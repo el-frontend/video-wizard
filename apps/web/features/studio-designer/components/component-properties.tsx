@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import {
+  manifestFields,
   validComponentProps,
   JsonObjectSchema,
   type JsonValue,
@@ -18,7 +19,7 @@ export function ComponentProperties({
   props: Props;
   onApply: (props: Props) => void;
 }) {
-  const fields = Object.entries(manifest.props);
+  const fields = Object.entries(manifestFields(manifest));
   const [error, setError] = useState('');
   const [edited, setEdited] = useState<Record<string, string>>(() =>
     Object.fromEntries(

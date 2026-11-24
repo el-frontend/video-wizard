@@ -1,3 +1,4 @@
+import { verifyModule } from '@workspace/render-contract/component-bundle';
 import { checkFontWeight, fontWeightRange } from '@workspace/render-contract/font';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -113,6 +114,8 @@ export class LibraryService {
       throw new ValidationError('La entrada de biblioteca no es válida.');
     }
     entry = parsed.data;
+    if (entry.kind === 'component' && 'schemaVersion' in entry.manifest)
+      throw new ValidationError('Aprueba el componente desde su propuesta.');
     if (bundle && (entry.kind !== 'component' || !bundle.byteLength)) {
       throw new ValidationError('El archivo de código no es válido para esta entrada.');
     }
@@ -174,7 +177,13 @@ export class LibraryService {
     const rows = await this.db
       .select({ entry: studioLibraries.entry })
       .from(studioLibraries)
-      .where(and(eq(studioLibraries.ownerId, ownerId), eq(studioLibraries.kind, kind)))
+      .where(
+        and(
+          eq(studioLibraries.ownerId, ownerId),
+          eq(studioLibraries.kind, kind),
+          eq(studioLibraries.listed, true)
+        )
+      )
       .orderBy(asc(studioLibraries.id), desc(studioLibraries.version));
     const entries = rows.map(({ entry }) => entry);
     if (!engine) return entries;
@@ -190,9 +199,14 @@ export class LibraryService {
   }
 
   async verifiedComponent(owner: string, entry: EntryOf<'component'>) {
-    if (!supportsStudioEngine(entry, entry.engine) || !entry.manifest.builtin) return false;
+    if (!supportsStudioEngine(entry, entry.engine)) return false;
     try {
       const bytes = await this.readBundle(owner, entry);
+      if ('schemaVersion' in entry.manifest) {
+        verifyModule(bytes, entry.manifest, hashBundle(bytes));
+        return true;
+      }
+      if (!entry.manifest.builtin) return false;
       return bytes.equals(await builtinSource(entry.manifest.builtin));
     } catch (error) {
       if (error instanceof LibraryBundleError) return false;

@@ -1,3 +1,4 @@
+import { ComponentManifestSchema, type ComponentManifest } from './component-contract';
 import { z } from 'zod';
 import { CanvasSchema, SceneSchema, GlobalAudioLayerSchema } from './schema';
 import {
@@ -49,7 +50,16 @@ export const LibraryManifestSchema = z.strictObject({
     ])
     .optional(),
 });
-export type LibraryManifest = z.infer<typeof LibraryManifestSchema>;
+export type LibraryManifest = z.infer<typeof LibraryManifestSchema> | ComponentManifest;
+export function manifestFields(m: LibraryManifest): Record<string, z.infer<typeof property>> {
+  if ('props' in m) return m.props;
+  return Object.fromEntries(
+    Object.entries(m.propsSchema.properties).map(([key, field]) => [
+      key,
+      { type: field.type, required: m.propsSchema.required?.includes(key) },
+    ])
+  );
+}
 export const StudioBrandRoleSchema = z.enum([
   'colors.accent',
   'colors.background',
@@ -91,7 +101,12 @@ export const FontBindingSchema = z.strictObject({
 const fonts = z.array(FontBindingSchema).optional();
 export const LibraryEntrySchema = z
   .discriminatedUnion('kind', [
-    z.strictObject({ ...entry, kind: z.literal('component'), ...implementation }),
+    z.strictObject({
+      ...entry,
+      kind: z.literal('component'),
+      ...implementation,
+      manifest: z.union([LibraryManifestSchema, ComponentManifestSchema]),
+    }),
     z.strictObject({
       ...entry,
       kind: z.literal('template'),
@@ -118,6 +133,16 @@ export const LibraryEntrySchema = z
     }),
   ])
   .superRefine((value, ctx) => {
+    if (
+      value.kind === 'component' &&
+      'schemaVersion' in value.manifest &&
+      (value.engine !== value.manifest.engine ||
+        JSON.stringify(value.assetIds) !== JSON.stringify(value.manifest.assetIds))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Los recursos y el motor deben coincidir con el manifiesto.',
+      });
     if (
       'manifest' in value &&
       value.manifest.builtin &&
@@ -167,8 +192,9 @@ export function supportsStudioEngine(entry: LibraryEntry, engine: EngineId) {
   if (entry.engine !== engine) return false;
   if (entry.kind === 'component')
     return (
-      entry.manifest.builtin?.kind === engine + '-caption' &&
-      !Object.keys(entry.manifest.props).length
+      'schemaVersion' in entry.manifest ||
+      (entry.manifest.builtin?.kind === engine + '-caption' &&
+        !Object.keys(entry.manifest.props).length)
     );
   return !!entry.structure;
 }

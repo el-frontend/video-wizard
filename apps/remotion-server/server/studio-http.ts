@@ -1,9 +1,11 @@
+import { compileComponent } from './component-compiler.js';
+import { checkMounted } from './component-mount.mjs';
 import express from 'express';
 import type { ServicePrincipal } from '@workspace/service-auth';
 import { requireService } from './service-request.js';
 import { serviceKey } from '@workspace/service-auth';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -276,6 +278,87 @@ export function installStudioRoutes(
       void start(req, res, 'render');
     }
   );
+  app.post('/studio/components/compile', guard('proposal.compile'), parseJson, async (req, res) => {
+    const principal: ServicePrincipal = res.locals.principal;
+    if (
+      !principal.proposalId ||
+      principal.proposalId !== req.body?.proposalId ||
+      principal.projectId !== req.body?.projectId ||
+      principal.ownerId !== req.body?.ownerId
+    ) {
+      deny(res);
+      return;
+    }
+    const abort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableFinished) abort.abort();
+    });
+    try {
+      res.set('Cache-Control', 'no-store').json(await compileComponent(req.body, abort.signal));
+    } catch (e) {
+      if (!res.destroyed)
+        res.json({
+          error: e instanceof Error ? e.message.slice(0, 1000) : 'Componente no válido.',
+        });
+    }
+  });
+  app.post('/studio/components/check', guard('proposal.check'), parseJson, async (req, res) => {
+    const p: ServicePrincipal = res.locals.principal,
+      snapshot: ExportSnapshot = req.body?.snapshot;
+    if (
+      !p.proposalId ||
+      p.proposalId !== req.body?.proposalId ||
+      p.ownerId !== snapshot?.ownerId ||
+      p.projectId !== snapshot?.document?.id
+    ) {
+      deny(res);
+      return;
+    }
+    const abort = new AbortController();
+    res.once('close', () => {
+      if (!res.writableFinished) abort.abort();
+    });
+    let workspace: string | undefined;
+    try {
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(120000)]);
+      const adapter = snapshot.document.engine === 'remotion' ? remotion : native;
+      const diagnostics = await adapter.validate(snapshot, signal);
+      if (diagnostics.some((d) => d.severity === 'error')) {
+        res.json({ diagnostics });
+        return;
+      }
+      workspace = await mkdtemp(join(tmpdir(), 'studio-component-check-'));
+      const check = await checkMounted(snapshot, workspace, config.dataDir, signal);
+      const frames = check.samples;
+      const selected = [
+        ...new Set([frames[0], frames[Math.floor(frames.length / 2)], frames.at(-1)]),
+      ].filter((s) => s !== undefined);
+      const samples = await Promise.all(
+        selected.map(async (s) => ({
+          ...s,
+          base64: (await readFile(join(workspace!, 'check-' + s.frame + '.png'))).toString(
+            'base64'
+          ),
+        }))
+      );
+      res.set('Cache-Control', 'no-store').json({ ...check, samples });
+    } catch (e) {
+      const message =
+        e instanceof Error &&
+        [
+          'La imagen cambió al volver al mismo fotograma.',
+          'El componente produjo un error de montaje.',
+          'La consola registró un error de montaje.',
+          'Recurso fuera de la composición.',
+        ].includes(e.message)
+          ? e.message
+          : 'El componente no superó la prueba de montaje y búsqueda inversa.';
+      if (!res.destroyed)
+        res.json({ diagnostics: [{ severity: 'error', code: 'component-mount', message }] });
+    } finally {
+      if (workspace) await rm(workspace, { recursive: true, force: true });
+    }
+  });
   app.post('/studio/previews', guard('preview.create'), parseJson, (req, res) => {
     void start(req, res, 'preview');
   });

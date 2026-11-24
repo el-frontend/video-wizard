@@ -2,6 +2,7 @@ import { LibraryKindSchema, type LibraryEntry } from '@workspace/video-project';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   check,
   index,
   json,
@@ -26,6 +27,7 @@ export const studioLibraries = pgTable(
     version: bigint({ mode: 'number' }).notNull(),
     kind: studioLibraryKind().notNull(),
     entry: json().$type<LibraryEntry>().notNull(),
+    listed: boolean().notNull().default(true),
     bundleHash: text('bundle_hash'),
   },
   (table) => [

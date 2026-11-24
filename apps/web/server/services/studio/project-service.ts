@@ -4,6 +4,7 @@ import { AssetService } from './asset-service';
 import { LibraryService } from './library-service';
 import { randomUUID } from 'node:crypto';
 import {
+  validComponentProps,
   EngineIdSchema,
   IdSchema,
   ImportContextSchema,
@@ -21,6 +22,7 @@ import { z } from 'zod';
 
 import type { db } from '@/server/db';
 import {
+  studioLibraries,
   studioImports,
   studioProjectRevisions,
   studioProjects,
@@ -89,7 +91,7 @@ function ownedProject(ownerId: string, id: string) {
   return and(eq(studioProjects.id, id), eq(studioProjects.ownerId, ownerId));
 }
 
-function toRecord(
+export function toRecord(
   ownerId: string,
   revision: {
     revision: string;
@@ -107,7 +109,7 @@ function toRecord(
   };
 }
 
-async function currentRevision(db: ProjectDb, ownerId: string, id: string) {
+export async function currentRevision(db: ProjectDb, ownerId: string, id: string) {
   const [current] = await db
     .select({
       engine: studioProjects.engine,
@@ -125,7 +127,7 @@ async function currentRevision(db: ProjectDb, ownerId: string, id: string) {
   return current;
 }
 
-async function revisionForProject(db: ProjectDb, projectId: string, revision: string) {
+export async function revisionForProject(db: ProjectDb, projectId: string, revision: string) {
   const [snapshot] = await db
     .select()
     .from(studioProjectRevisions)
@@ -138,7 +140,12 @@ async function revisionForProject(db: ProjectDb, projectId: string, revision: st
   return snapshot;
 }
 
-async function readBaseRevision(db: ProjectDb, ownerId: string, id: string, baseRevision: string) {
+export async function readBaseRevision(
+  db: ProjectDb,
+  ownerId: string,
+  id: string,
+  baseRevision: string
+) {
   const current = await currentRevision(db, ownerId, id);
   if (current.revision !== baseRevision) throw new ConflictError(toRecord(ownerId, current));
   return current;
@@ -182,7 +189,7 @@ async function insertProject(
   return insertRevision(db, ownerId, document, revision, 1, operation, importContext);
 }
 
-async function advanceRevision(
+export async function advanceRevision(
   db: ProjectDb,
   ownerId: string,
   base: { revision: string; sequence: number },
@@ -318,6 +325,27 @@ export class ProjectService {
       }
       if (base.importContext?.mode === 'original')
         throw new ValidationError('Este original es de solo lectura.');
+      for (const scene of document.scenes)
+        for (const layer of scene.layers) {
+          if (layer.type !== 'component') continue;
+          const [pin] = await tx
+            .select({ entry: studioLibraries.entry })
+            .from(studioLibraries)
+            .where(
+              and(
+                eq(studioLibraries.ownerId, ownerId),
+                eq(studioLibraries.id, layer.componentRef.id),
+                eq(studioLibraries.version, layer.componentRef.version)
+              )
+            );
+          if (
+            pin?.entry.kind === 'component' &&
+            'schemaVersion' in pin.entry.manifest &&
+            (pin.entry.engine !== document.engine ||
+              !validComponentProps(layer.props, pin.entry.manifest))
+          )
+            throw new ValidationError('Las propiedades no coinciden con el componente fijado.');
+        }
       return advanceRevision(tx, ownerId, base, document, 'save', base.importContext);
     }, READ_COMMITTED);
   }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { componentExample } from '@workspace/video-project';
 import { exampleProject } from '@workspace/video-project/fixtures';
 import type { AssetDescriptor, Layer } from '@workspace/video-project';
 import { LayerInspector } from './layer-inspector';
@@ -177,3 +178,30 @@ it('trims the source out point and explicitly repairs an older interval that can
     endAnchor: 'fixed',
   });
 });
+
+it.each(['remotion', 'hyperframes'] as const)(
+  'edits a generated %s title without recompiling it',
+  (engine) => {
+    const source = componentExample(engine),
+      onCommand = vi.fn(),
+      layer = project.scenes[0]!.layers[2]!;
+    if (layer.type !== 'component') throw Error('fixture');
+    render(
+      <LayerInspector
+        sceneId="intro"
+        layer={{ ...layer, props: source.manifest.initialProps }}
+        canvas={project.canvas}
+        manifest={source.manifest}
+        onCommand={onCommand}
+      />
+    );
+    fireEvent.change(screen.getByLabelText('title'), { target: { value: 'Título editado' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar propiedades' }));
+    expect(onCommand).toHaveBeenCalledWith({
+      type: 'update-layer',
+      sceneId: 'intro',
+      layerId: layer.id,
+      patch: { props: { title: 'Título editado' } },
+    });
+  }
+);

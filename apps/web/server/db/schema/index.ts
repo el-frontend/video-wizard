@@ -11,3 +11,4 @@ export * from './jobs';
 export * from './studio-projects';
 export * from './studio-assets';
 export * from './studio-libraries';
+export * from './studio-proposals';

@@ -1,3 +1,4 @@
+import { verifyModule } from '@workspace/render-contract/component-bundle';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -49,10 +50,26 @@ export async function buildRegistry(snapshot: ExportSnapshot, workspace: string)
   const imports: string[] = [],
     registrations: string[] = [],
     hashes = [hashBytes(types)];
+  const modules = new Map<string, string>();
   for (const entry of Object.values(snapshot.dependencies.libraries).sort((a, b) =>
     libraryKey(a) < libraryKey(b) ? -1 : 1
   )) {
     if (entry.kind !== 'component') continue;
+    if ('schemaVersion' in entry.manifest) {
+      const pin = snapshot.bundles[libraryKey(entry)];
+      if (!pin) throw Error('Falta el módulo fijado.');
+      const sealed = verifyModule(Buffer.from(pin.base64, 'base64'), entry.manifest, pin.sha256);
+      registrations.push(
+        '[' +
+          JSON.stringify(libraryKey(entry)) +
+          ',' +
+          JSON.stringify({ sourceHash: sealed.sourceHash }) +
+          ']'
+      );
+      hashes.push(sealed.moduleHash);
+      modules.set(sealed.moduleHash, sealed.module);
+      continue;
+    }
     const { bytes, hash, name } = await verifiedSeed(snapshot, entry);
     await writeFile(join(root, 'templates', hash + '.tsx'), bytes);
     const alias = 'Preset' + imports.length;
@@ -67,5 +84,5 @@ export async function buildRegistry(snapshot: ExportSnapshot, workspace: string)
     ']);\n';
   const entry = join(root, 'index.ts');
   await writeFile(entry, source);
-  return { entry, hash: hashBytes(JSON.stringify([source, ...hashes])) };
+  return { entry, modules, hash: hashBytes(JSON.stringify([source, ...hashes])) };
 }

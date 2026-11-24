@@ -1,6 +1,8 @@
 import type { Request, RequestHandler } from 'express';
 import { verifyServiceToken } from '@workspace/service-auth';
 const refs: Record<string, string[]> = {
+  'proposal.compile': ['projectId', 'proposalId'],
+  'proposal.check': ['projectId', 'proposalId'],
   'preview.create': ['projectId', 'previewId'],
   'preview.release': ['projectId', 'previewId'],
   'studio.create': ['projectId'],
