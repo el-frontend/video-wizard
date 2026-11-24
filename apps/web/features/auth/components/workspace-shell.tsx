@@ -106,7 +106,9 @@ export function WorkspaceShell({
     const clean = window.dispatchEvent(new Event(sessionEvents.checkDirty, { cancelable: true }));
     if (
       !clean &&
-      !window.confirm('Hay cambios sin guardar. ¿Quieres descartarlos y cerrar sesión?')
+      !window.confirm(
+        'Hay cambios sin guardar. Al volver podrás recuperar los borradores que este navegador haya conservado. ¿Quieres cerrar sesión?'
+      )
     )
       return;
     window.dispatchEvent(new Event(sessionEvents.ending));
@@ -120,6 +122,7 @@ export function WorkspaceShell({
       setDestination('/signin');
     } catch {
       resumeWorkspaceJobs(user.id);
+      window.dispatchEvent(new Event(sessionEvents.restored));
       setError('No se pudo cerrar la sesión. Inténtalo de nuevo.');
     } finally {
       setBusy(false);

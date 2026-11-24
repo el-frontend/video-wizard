@@ -65,13 +65,13 @@ export class ShortService {
     private jobs: Pick<typeof jobHistoryService, 'getById'>
   ) {}
   async create(owner: string, data: unknown): Promise<ProjectRecord[]> {
-    return this.createBatch(owner, data);
+    return this.projects.createFromDocuments(owner, await this.prepareBatch(owner, data));
   }
-  private async createBatch(
+  async prepareBatch(
     owner: string,
     data: unknown,
     processedClip?: { variant: PlaybackVariant; clipCaptions: CaptionCue[] }
-  ): Promise<ProjectRecord[]> {
+  ): Promise<ProjectDraft[]> {
     const parsed = createInput.safeParse(data);
     if (!parsed.success)
       invalid('Comprueba los tiempos enteros, las palabras y el formato de los fragmentos.');
@@ -154,9 +154,15 @@ export class ShortService {
         scene.layers.push({ ...captionLayer(scene, canvas), endAnchor: 'scene-end', cues });
       docs.push(doc);
     }
-    return this.projects.createFromDocuments(owner, docs);
+    return docs;
   }
   async fromJob(owner: string, data: unknown) {
+    const [project] = await this.projects.createFromDocuments(owner, [
+      await this.prepareJob(owner, data),
+    ]);
+    return project!;
+  }
+  async prepareJob(owner: string, data: unknown) {
     const parsed = jobInput.safeParse(data);
     if (!parsed.success) invalid('El trabajo o sus subtítulos no son válidos.');
     const { jobId, clipCaptions, ...settings } = parsed.data;
@@ -175,7 +181,7 @@ export class ShortService {
       invalid('Los subtítulos editados deben estar dentro del clip.');
     if (new Set(clipCaptions.map((c) => c.id)).size !== clipCaptions.length)
       invalid('Comprueba los identificadores de los subtítulos del clip.');
-    const [record] = await this.createBatch(
+    const [record] = await this.prepareBatch(
       owner,
       { assetId: sourceAssetId, ranges: [{ startMs, endMs }], ...settings },
       { variant, clipCaptions }

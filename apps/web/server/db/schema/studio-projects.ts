@@ -1,4 +1,4 @@
-import { EngineIdSchema, type ProjectDraft } from '@workspace/video-project';
+import { EngineIdSchema, type ImportContext, type ProjectDraft } from '@workspace/video-project';
 import { sql } from 'drizzle-orm';
 import {
   check,
@@ -9,6 +9,7 @@ import {
   pgEnum,
   pgTable,
   timestamp,
+  text,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -21,6 +22,8 @@ export const studioRevisionOperation = pgEnum('studio_revision_operation', [
   'save',
   'restore',
   'duplicate',
+  'import',
+  'repair',
 ]);
 
 export const studioProjects = pgTable(
@@ -48,6 +51,7 @@ export const studioProjectRevisions = pgTable(
     sequence: integer().notNull(),
     document: json().$type<ProjectDraft>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    importContext: json('import_context').$type<ImportContext>(),
     operation: studioRevisionOperation().notNull(),
   },
   (table) => [
@@ -58,5 +62,29 @@ export const studioProjectRevisions = pgTable(
     }).onDelete('cascade'),
     unique('studio_project_revisions_sequence_unique').on(table.projectId, table.sequence),
     check('studio_project_revisions_sequence_positive', sql`${table.sequence} > 0`),
+  ]
+);
+
+export const studioImports = pgTable(
+  'studio_imports',
+  {
+    projectId: uuid('project_id').primaryKey(),
+    ownerId: uuid('owner_id').notNull(),
+    kind: text().notNull(),
+    sourceId: text('source_id').notNull(),
+    hash: text().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'studio_imports_project_owner_fk',
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [studioProjects.id, studioProjects.ownerId],
+    }).onDelete('cascade'),
+    unique('studio_imports_identity_unique').on(
+      table.ownerId,
+      table.kind,
+      table.sourceId,
+      table.hash
+    ),
   ]
 );

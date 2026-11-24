@@ -399,3 +399,27 @@ it('never reuses a dirty session when the same project id is rendered with anoth
   expect(view.result.current.draft?.title).toBe('De B');
   expect(request.mock.calls.filter(([, options]) => options?.method === 'PUT')).toHaveLength(0);
 });
+
+it('fences an earlier audio response when explicitly reloading a fresh head', async () => {
+  const editor = await open(),
+    audio = deferred();
+  request.mockReturnValueOnce(audio.promise);
+  let replacing!: Promise<unknown>;
+  await act(async () => {
+    replacing = editor.current
+      .replaceAudio({ sceneId: 'intro', audioLayerId: 'speech', assetId: 'replacement' })
+      .catch((e) => e);
+  });
+  const fresh = record('new-head', 'Edición posterior');
+  request.mockResolvedValueOnce(ok(fresh));
+  const reloading = editor.current.resolveDocument('reload');
+  await act(async () => {
+    audio.resolve(ok(record('audio', 'Respuesta anterior')));
+    await replacing;
+    await reloading;
+  });
+  expect(editor.current.saved).toEqual(fresh);
+  expect(editor.current.draft?.title).toBe(fresh.document.title);
+  expect(editor.current.canUndo).toBe(false);
+  expect(editor.current.replacingAudio).toBe(false);
+});

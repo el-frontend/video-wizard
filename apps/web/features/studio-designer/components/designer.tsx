@@ -21,6 +21,9 @@ import { CaptionEditor } from './caption-editor';
 import { AudioInspector } from './audio-inspector';
 import { SceneExtension } from './scene-extension';
 import { useEditorDependencies } from '../hooks/use-editor-dependencies';
+import { RevisionHistory } from './revision-history';
+import { ConflictPanel } from './conflict-panel';
+import { ImportResources } from './import-resources';
 import { PreviewPanel } from './preview-panel';
 
 const statusLabels = {
@@ -61,18 +64,8 @@ function TitleField({ title, onTitle }: { title: string; onTitle: (title: string
 
 export function Designer({ initial }: { initial: ProjectRecord }) {
   const session = useProjectSession(initial.document.id, initial);
-  const {
-    draft,
-    saved,
-    selection,
-    select,
-    save,
-    undo,
-    redo,
-    hasUnsavedChanges,
-    retainDraft,
-    discardRetained,
-  } = session;
+  const { draft, saved, selection, select, save, undo, redo, hasUnsavedChanges, retainDraft } =
+    session;
   const dependencies = useEditorDependencies(draft);
   const timingIssues = useMemo(
     () =>
@@ -156,11 +149,11 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
         await save();
         return true;
       } catch {
-        const discard = window.confirm(
-          'El borrador tiene cambios sin guardar. ¿Quieres salir y descartarlos?'
+        return window.confirm(
+          session.recoveryError
+            ? 'No se pudo conservar una copia local. ¿Quieres salir con cambios sin guardar?'
+            : 'El borrador queda en este navegador. ¿Quieres salir sin guardarlo en el proyecto?'
         );
-        if (discard) discardRetained();
-        return discard;
       }
     }
     const recoveryNotice = 'studio-draft-' + projectId;
@@ -223,7 +216,7 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
       removeHistoryGuard?.();
       document.removeEventListener('click', followAfterSave, true);
     };
-  }, [hasUnsavedChanges, save, router, projectId, retainDraft, discardRetained]);
+  }, [hasUnsavedChanges, save, router, projectId, retainDraft, session.recoveryError]);
   if (!draft || !saved)
     return (
       <section lang="es" className="studio-workspace">
@@ -326,17 +319,72 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           </button>
         </div>
       </header>
-      {session.conflict ? (
-        <div role="alert" className="studio-warning">
-          <strong>Hay otra revisión guardada.</strong> Tu borrador sigue abierto. Revisión remota:{' '}
-          <code>{session.conflict.revision}</code> · {session.conflict.document.title}
-        </div>
-      ) : (
-        session.error && (
-          <p role="alert" className="studio-warning">
-            {session.error}
-          </p>
-        )
+      {session.conflict && (
+        <ConflictPanel
+          local={draft}
+          remote={session.conflict}
+          busy={session.resolving}
+          onCopy={() =>
+            void session
+              .resolveDocument('copy-draft')
+              .then((r) => router.push('/designer/' + r.document.id))
+              .catch(() => {})
+          }
+          onReload={() => void session.resolveDocument('reload').catch(() => {})}
+        />
+      )}
+      {session.error && (
+        <p role="alert" className="studio-warning">
+          {session.error}
+        </p>
+      )}
+      {session.recoveryError && (
+        <p role="alert" className="studio-warning">
+          {session.recoveryError}
+        </p>
+      )}
+      {session.candidates.length > 0 && (
+        <details className="studio-warning" open>
+          <summary>Borradores locales disponibles</summary>
+          <ul>
+            {session.candidates.map((entry) => (
+              <li key={entry.stamp} className="flex flex-wrap gap-2 items-center">
+                <span>
+                  {entry.draft.title} · {new Date(entry.updatedAt).toLocaleString('es')} ·{' '}
+                  {entry.base.revision.slice(0, 8)}
+                </span>
+                <button
+                  className="studio-secondary"
+                  disabled={session.hasUnsavedChanges() || session.resolving}
+                  onClick={() => session.recover(entry)}
+                >
+                  Recuperar borrador
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <RevisionHistory
+        record={session.conflict ?? saved}
+        disabled={session.resolving || session.replacingAudio || session.status === 'saving'}
+        onRestore={(target) => {
+          if (
+            session.hasUnsavedChanges() &&
+            !window.confirm('¿Descartar el borrador abierto y restaurar esta revisión?')
+          )
+            return;
+          void session.resolveDocument('restore', { targetRevision: target }).catch(() => {});
+        }}
+      />
+      {saved.importContext && (
+        <ImportResources
+          record={saved}
+          busy={session.resolving || session.hasUnsavedChanges()}
+          repair={(slotId, repair) =>
+            void session.resolveDocument('repair', { slotId, repair }).catch(() => {})
+          }
+        />
       )}
       {timingIssues.length > 0 && (
         <div className="studio-warning" role="status">
@@ -350,11 +398,29 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           </ul>
         </div>
       )}
-      <div className="designer-layout" inert={session.replacingAudio}>
+      <div className="designer-layout" inert={session.replacingAudio || session.resolving}>
         <div className="preview-column">
           <div className="preview-bar">
             <h2>Vista previa</h2>
-            <span>{engineName[draft.engine]}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>{engineName[draft.engine]}</span>
+              <button
+                type="button"
+                className="edit-button"
+                disabled={!handle}
+                onClick={() => handle?.play()}
+              >
+                Reproducir
+              </button>
+              <button
+                type="button"
+                className="edit-button"
+                disabled={!handle}
+                onClick={() => handle?.pause()}
+              >
+                Pausar
+              </button>
+            </div>
           </div>
           <PreviewPanel
             projectId={draft.id}

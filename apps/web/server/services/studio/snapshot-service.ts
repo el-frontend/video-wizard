@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { libraryKey, projectPins, type ExportSnapshot } from '@workspace/render-contract';
-import { AssetDescriptorSchema, type ProjectRecord } from '@workspace/video-project';
+import {
+  AssetDescriptorSchema,
+  importDiagnostics,
+  type ProjectRecord,
+} from '@workspace/video-project';
 import { AssetNotFoundError, AssetService } from './asset-service';
 import { LibraryBundleError, LibraryNotFoundError, LibraryService } from './library-service';
 import { cropDiagnostics } from './short-provenance';
@@ -23,7 +27,7 @@ export function snapshotBuilder(
       revision: record.revision,
       document: structuredClone(record.document),
       bundles: Object.create(null),
-      diagnostics: [],
+      diagnostics: importDiagnostics(record.importContext),
       dependencies: { assets: Object.create(null), libraries: Object.create(null) },
     };
     snapshot.diagnostics.push(...(await cropDiagnostics(ownerId, record.document)));

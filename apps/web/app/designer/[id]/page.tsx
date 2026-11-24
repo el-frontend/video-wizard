@@ -13,5 +13,23 @@ export default workspacePage('/designer/[id]', async (user, { params }) => {
     if (error instanceof ProjectNotFoundError) notFound();
     throw error;
   });
+  if (initial.importContext?.mode === 'original')
+    return (
+      <main className="studio-workspace">
+        <h1>{initial.document.title}</h1>
+        <h2>Archivo original · Solo lectura</h2>
+        <p>Esta fuente carece de un modelo de escenas editable.</p>
+        {initial.importContext.originalAssetId ? (
+          <video
+            controls
+            className="max-h-[70vh] max-w-full"
+            aria-label="Reproducir archivo original"
+            src={'/api/studio/assets/' + encodeURIComponent(initial.importContext.originalAssetId)}
+          />
+        ) : (
+          <p>Falta el video original registrado.</p>
+        )}
+      </main>
+    );
   return <Designer key={id} initial={initial} />;
 });

@@ -17,7 +17,9 @@
     "worker": "tsx scripts/worker.ts",
     "studio:seed-libraries": "tsx scripts/seed-studio-libraries.ts",
     "auth:preflight": "tsx --env-file-if-exists=.env.local scripts/auth-preflight.ts",
-    "auth:seed": "tsx --env-file-if-exists=.env.local scripts/seed-auth-user.ts"
+    "auth:seed": "tsx --env-file-if-exists=.env.local scripts/seed-auth-user.ts",
+    "test:e2e": "playwright test",
+    "studio:register-source": "python3 scripts/register-motion-source.py"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.7",
@@ -69,6 +71,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@playwright/test": "1.58.2"
   }
 }

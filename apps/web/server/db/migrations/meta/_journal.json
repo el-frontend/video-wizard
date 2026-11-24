@@ -64,6 +64,13 @@
       "when": 1795351678230,
       "tag": "0008_better_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795535985444,
+      "tag": "0009_studio_imports",
+      "breakpoints": true
     }
   ]
 }

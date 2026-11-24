@@ -1,7 +1,14 @@
+import { validateSnapshot } from '@workspace/render-contract';
+import { AssetService } from './asset-service';
+import { LibraryService } from './library-service';
 import { randomUUID } from 'node:crypto';
 import {
   EngineIdSchema,
   IdSchema,
+  ImportContextSchema,
+  type ImportContext,
+  LibraryRefSchema,
+  projectDurationMs,
   ProjectDraftSchema,
   type ProjectDraft,
   type ProjectPage,
@@ -13,6 +20,7 @@ import { z } from 'zod';
 
 import type { db } from '@/server/db';
 import {
+  studioImports,
   studioProjectRevisions,
   studioProjects,
   studioRevisionOperation,
@@ -82,12 +90,18 @@ function ownedProject(ownerId: string, id: string) {
 
 function toRecord(
   ownerId: string,
-  revision: { revision: string; document: ProjectDraft; createdAt: Date }
+  revision: {
+    revision: string;
+    document: ProjectDraft;
+    createdAt: Date;
+    importContext?: ImportContext | null;
+  }
 ): ProjectRecord {
   return {
     ownerId,
     revision: revision.revision,
     document: revision.document,
+    ...(revision.importContext && { importContext: revision.importContext }),
     updatedAt: revision.createdAt.toISOString(),
   };
 }
@@ -98,6 +112,7 @@ async function currentRevision(db: ProjectDb, ownerId: string, id: string) {
       engine: studioProjects.engine,
       revision: studioProjectRevisions.revision,
       document: studioProjectRevisions.document,
+      importContext: studioProjectRevisions.importContext,
       sequence: studioProjectRevisions.sequence,
       createdAt: studioProjectRevisions.createdAt,
     })
@@ -134,11 +149,20 @@ async function insertRevision(
   document: ProjectDraft,
   revision: string,
   sequence: number,
-  operation: RevisionOperation
+  operation: RevisionOperation,
+  importContext?: ImportContext | null
 ): Promise<ProjectRecord> {
   const [snapshot] = await db
     .insert(studioProjectRevisions)
-    .values({ projectId: document.id, authorId: ownerId, revision, sequence, document, operation })
+    .values({
+      projectId: document.id,
+      authorId: ownerId,
+      revision,
+      sequence,
+      document,
+      operation,
+      importContext,
+    })
     .returning();
   return toRecord(ownerId, snapshot);
 }
@@ -147,13 +171,14 @@ async function insertProject(
   db: ProjectDb,
   ownerId: string,
   document: ProjectDraft,
-  operation: 'create' | 'duplicate'
+  operation: 'create' | 'duplicate' | 'import',
+  importContext?: ImportContext | null
 ): Promise<ProjectRecord> {
   const revision = randomUUID();
   await db
     .insert(studioProjects)
     .values({ id: document.id, engine: document.engine, ownerId, revision });
-  return insertRevision(db, ownerId, document, revision, 1, operation);
+  return insertRevision(db, ownerId, document, revision, 1, operation, importContext);
 }
 
 async function advanceRevision(
@@ -161,7 +186,8 @@ async function advanceRevision(
   ownerId: string,
   base: { revision: string; sequence: number },
   document: ProjectDraft,
-  operation: 'save' | 'restore'
+  operation: 'save' | 'restore' | 'repair',
+  importContext?: ImportContext | null
 ): Promise<ProjectRecord> {
   const revision = randomUUID();
   const [updated] = await db
@@ -174,11 +200,22 @@ async function advanceRevision(
     const current = await currentRevision(db, ownerId, document.id);
     throw new ConflictError(toRecord(ownerId, current));
   }
-  return insertRevision(db, ownerId, document, revision, base.sequence + 1, operation);
+  return insertRevision(
+    db,
+    ownerId,
+    document,
+    revision,
+    base.sequence + 1,
+    operation,
+    importContext
+  );
 }
 
 export class ProjectService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly dataDir?: string
+  ) {}
 
   async create(ownerId: string, input: unknown): Promise<ProjectRecord> {
     const { title, engine, canvas } = parseInput(
@@ -278,7 +315,9 @@ export class ProjectService {
       if (document.engine !== base.engine) {
         throw new ValidationError('Para cambiar de motor, duplica el proyecto.');
       }
-      return advanceRevision(tx, ownerId, base, document, 'save');
+      if (base.importContext?.mode === 'original')
+        throw new ValidationError('Este original es de solo lectura.');
+      return advanceRevision(tx, ownerId, base, document, 'save', base.importContext);
     }, READ_COMMITTED);
   }
 
@@ -327,7 +366,159 @@ export class ProjectService {
       const base = await readBaseRevision(tx, ownerId, id, baseRevision);
       const target = await revisionForProject(tx, id, targetRevision);
       if (!target) throw new ProjectNotFoundError('Revisión no encontrada.');
-      return advanceRevision(tx, ownerId, base, target.document, 'restore');
+      if (base.importContext?.mode === 'original')
+        throw new ValidationError('Este original es de solo lectura.');
+      return advanceRevision(tx, ownerId, base, target.document, 'restore', target.importContext);
+    }, READ_COMMITTED);
+  }
+
+  async importDocument(ownerId: string, input: ProjectDraft, metadata: ImportContext) {
+    const document = parseInput(ProjectDraftSchema, input, 'Documento de importación no válido.');
+    const context = ImportContextSchema.parse(metadata);
+    const { kind, sourceId, hash } = context;
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([ownerId, kind, sourceId, hash])}, 0))`
+      );
+      const [existing] = await tx
+        .select()
+        .from(studioImports)
+        .where(
+          and(
+            eq(studioImports.ownerId, ownerId),
+            eq(studioImports.kind, kind),
+            eq(studioImports.sourceId, sourceId),
+            eq(studioImports.hash, hash)
+          )
+        );
+      if (existing)
+        return toRecord(ownerId, await currentRevision(tx, ownerId, existing.projectId));
+      const project = await insertProject(tx, ownerId, document, 'import', context);
+      await tx
+        .insert(studioImports)
+        .values({ projectId: document.id, ownerId, kind, sourceId, hash });
+      return project;
+    }, READ_COMMITTED);
+  }
+
+  async copyDraft(ownerId: string, id: string, input: unknown) {
+    const { baseRevision, document } = parseInput(saveInput, input, 'Borrador no válido.');
+    return this.db.transaction(async (tx) => {
+      await currentRevision(tx, ownerId, id);
+      const base = await revisionForProject(
+        tx,
+        id,
+        parseInput(uuidSchema, baseRevision, 'Revisión no válida.')
+      );
+      if (!base) throw new ProjectNotFoundError();
+      if (
+        document.id !== id ||
+        document.engine !== base.document.engine ||
+        base.importContext?.mode === 'original'
+      )
+        throw new ValidationError('Este borrador no corresponde al proyecto editable.');
+      const { snapshotBuilder } = await import('./snapshot-service');
+      const build = snapshotBuilder(
+        new AssetService(tx, this.dataDir),
+        new LibraryService(this.db, this.dataDir)
+      );
+      const snapshot = await build(ownerId, { ...toRecord(ownerId, base), document });
+      // Incomplete timing and missing import slots are valid reasons to keep a draft copy.
+      const editableIssues = new Set([
+        'empty-project',
+        'layer-overflow',
+        'cue-overflow',
+        'word-overflow',
+        'scene-no-frame',
+        'text-overflow',
+        'import-slot',
+      ]);
+      const issue = validateSnapshot(snapshot).find(
+        (d) => d.severity === 'error' && !editableIssues.has(d.code)
+      );
+      if (issue) throw new ValidationError(issue.message);
+      return insertProject(
+        tx,
+        ownerId,
+        { ...document, id: randomUUID() },
+        'duplicate',
+        base.importContext
+      );
+    });
+  }
+
+  async repairImport(ownerId: string, id: string, input: unknown) {
+    const request = parseInput(
+      z.strictObject({
+        baseRevision: IdSchema,
+        slotId: IdSchema,
+        repair: z.discriminatedUnion('action', [
+          z.strictObject({ action: z.literal('omit') }),
+          z.strictObject({ action: z.literal('replace'), assetId: z.uuid() }),
+          z.strictObject({ action: z.literal('select-style'), ref: LibraryRefSchema }),
+        ]),
+      }),
+      input,
+      'Reparación no válida.'
+    );
+    return this.db.transaction(async (tx) => {
+      const base = await readBaseRevision(tx, ownerId, id, request.baseRevision);
+      const context = base.importContext;
+      const slot = context?.slots.find(
+        (s) => s.id === request.slotId && s.resolution === 'pending'
+      );
+      if (!context || context.mode !== 'editable' || !slot)
+        throw new ValidationError('El recurso pendiente ya no está disponible.');
+      const { repair } = request,
+        doc = structuredClone(base.document);
+      if (repair.action === 'select-style') {
+        const entry = await new LibraryService(this.db).get(ownerId, repair.ref);
+        if (slot.kind !== 'style' || entry.kind !== 'style' || !entry.engines?.includes(doc.engine))
+          throw new ValidationError('Elige un estilo compatible.');
+        doc.styleRef = repair.ref;
+      } else if (repair.action === 'replace') {
+        const assets = new AssetService(tx, this.dataDir);
+        const asset = await assets.get(ownerId, repair.assetId);
+        if (
+          slot.kind !== 'audio' ||
+          !asset.hasAudio ||
+          !asset.durationMs ||
+          (await assets.verify(ownerId, [asset.id])).length
+        )
+          throw new ValidationError('Selecciona una toma disponible con audio y duración medida.');
+        const audio = {
+          id: randomUUID(),
+          type: 'audio' as const,
+          assetId: asset.id,
+          startMs: slot.startMs,
+          endMs: slot.startMs + asset.durationMs,
+          endAnchor: 'fixed' as const,
+          visible: true,
+          zIndex: 0,
+          volume: 1,
+          sourceInMs: 0,
+        };
+        const scene = doc.scenes.find((s) => s.id === slot.sceneId);
+        if (slot.sceneId && !scene)
+          throw new ValidationError('La escena ya no existe. Puedes omitir la toma.');
+        if (scene && context.narration) {
+          context.narration.takes.push({
+            sceneId: scene.id,
+            assetId: asset.id,
+            startMs: slot.startMs,
+            durationMs: asset.durationMs,
+            stale: true,
+          });
+        }
+        if (!slot.inactiveTake) {
+          if (scene) scene.layers.push(audio);
+          else doc.globalAudio.push(audio);
+        }
+        if (!doc.assetIds.includes(asset.id)) doc.assetIds.push(asset.id);
+        doc.durationMs = projectDurationMs(doc);
+      }
+      slot.resolution = repair.action === 'omit' ? 'omitted' : 'replaced';
+      return advanceRevision(tx, ownerId, base, ProjectDraftSchema.parse(doc), 'repair', context);
     }, READ_COMMITTED);
   }
 
@@ -340,7 +531,7 @@ export class ProjectService {
     return this.db.transaction(async (tx) => {
       const base = await readBaseRevision(tx, ownerId, id, baseRevision);
       const document = { ...base.document, id: randomUUID(), engine: engine ?? base.engine };
-      return insertProject(tx, ownerId, document, 'duplicate');
+      return insertProject(tx, ownerId, document, 'duplicate', base.importContext);
     });
   }
 }

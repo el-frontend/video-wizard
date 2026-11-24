@@ -179,17 +179,6 @@ export const ProjectDraftSchema = z
     project.assetIds.forEach((id, i) => unique(assetIds, id, ['assetIds', i]));
   });
 export type ProjectDraft = z.infer<typeof ProjectDraftSchema>;
-export const ProjectRecordSchema = z.strictObject({
-  ownerId: IdSchema,
-  revision: IdSchema,
-  document: ProjectDraftSchema,
-  updatedAt: z.iso.datetime({ offset: true }),
-});
-export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
-export function parseProject(value: unknown): ProjectDraft {
-  return ProjectDraftSchema.parse(value);
-}
-
 export const DiagnosticSchema = z.strictObject({
   severity: z.enum(['error', 'warning']),
   code: IdSchema,
@@ -198,3 +187,77 @@ export const DiagnosticSchema = z.strictObject({
   layerId: IdSchema.optional(),
 });
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
+
+export const ImportKindSchema = z.enum(['motion-studio', 'legacy-job']);
+export const ImportSlotSchema = z.strictObject({
+  id: IdSchema,
+  kind: z.enum(['audio', 'style', 'captions', 'video']),
+  label: IdSchema,
+  sceneId: IdSchema.optional(),
+  startMs: MillisecondsSchema.default(0),
+  inactiveTake: z.boolean().optional(),
+  spokenText: z.string().optional(),
+  resolution: z.enum(['pending', 'replaced', 'omitted']).default('pending'),
+});
+export type ImportSlot = z.infer<typeof ImportSlotSchema>;
+export const ImportContextSchema = z.strictObject({
+  version: z.literal(1),
+  kind: ImportKindSchema,
+  sourceId: IdSchema,
+  hash: z.string().regex(/^[a-f0-9]{64}$/),
+  mode: z.enum(['editable', 'original']),
+  originalAssetId: IdSchema.optional(),
+  narration: z
+    .strictObject({
+      playback: z.enum(['master', 'scenes']),
+      masterAssetId: IdSchema.optional(),
+      takes: z.array(
+        z.strictObject({
+          sceneId: IdSchema,
+          assetId: IdSchema,
+          startMs: MillisecondsSchema,
+          durationMs: MillisecondsSchema,
+          spokenText: z.string().optional(),
+          stale: z.boolean(),
+        })
+      ),
+    })
+    .optional(),
+  diagnostics: z.array(DiagnosticSchema),
+  slots: z.array(ImportSlotSchema),
+});
+export type ImportContext = z.infer<typeof ImportContextSchema>;
+export function importDiagnostics(context?: ImportContext): Diagnostic[] {
+  if (!context) return [];
+  return [
+    ...context.diagnostics,
+    ...(context.mode === 'original'
+      ? [
+          {
+            severity: 'error' as const,
+            code: 'import-original',
+            message: 'El original carece de un modelo editable.',
+          },
+        ]
+      : []),
+    ...context.slots
+      .filter((slot) => slot.resolution === 'pending')
+      .map((slot) => ({
+        severity: 'error' as const,
+        code: 'import-slot',
+        message: slot.label,
+        sceneId: slot.sceneId,
+      })),
+  ];
+}
+export const ProjectRecordSchema = z.strictObject({
+  ownerId: IdSchema,
+  revision: IdSchema,
+  document: ProjectDraftSchema,
+  importContext: ImportContextSchema.optional(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
+export function parseProject(value: unknown): ProjectDraft {
+  return ProjectDraftSchema.parse(value);
+}

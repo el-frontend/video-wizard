@@ -12,7 +12,8 @@
     "prepare": "husky",
     "commit": "cz",
     "companion": "pnpm --filter @workspace/companion cli",
-    "test:hyperframes": "pnpm --filter @workspace/hyperframes-worker test --mode native && pnpm --filter remotion-server test --mode native server/native-preview-acceptance.test.mjs"
+    "test:hyperframes": "pnpm --filter @workspace/hyperframes-worker test --mode native && pnpm --filter remotion-server test --mode native server/native-preview-acceptance.test.mjs",
+    "test:e2e": "pnpm --filter web test:e2e"
   },
   "config": {
     "commitizen": {

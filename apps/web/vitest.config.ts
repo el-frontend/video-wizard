@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  test: { exclude: [...configDefaults.exclude, 'e2e/**'] },
   resolve: {
     alias: {
       '@workspace/ui': fileURLToPath(new URL('../../packages/ui/src', import.meta.url)),

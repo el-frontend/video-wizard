@@ -1,5 +1,6 @@
 'use client';
 
+import { DraftRecovery, tabDraftWriter, type LocalDraft } from '../lib/draft-recovery';
 import { sessionEvents } from '@/features/auth/lib/session-events';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
@@ -26,6 +27,9 @@ export type AudioReplacement = {
 };
 interface SessionState {
   replacingAudio: boolean;
+  resolving: boolean;
+  recoveryError: string;
+  candidates: LocalDraft[];
   saved: ProjectRecord | null;
   draft: ProjectDraft | null;
   selection: EditorSelection;
@@ -74,6 +78,9 @@ function createSession(id: string, initial?: ProjectRecord) {
   const url = projectsUrl + '/' + encodeURIComponent(id);
   let state: SessionState = {
     replacingAudio: false,
+    resolving: false,
+    recoveryError: '',
+    candidates: [],
     saved: initial ?? null,
     draft: initial?.document ?? null,
     selection: emptySelection,
@@ -106,6 +113,62 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
     listeners.forEach((fn) => fn());
   }
+  let epoch = 0;
+  let store: DraftRecovery | undefined, local: LocalDraft | undefined;
+  let suspended = false;
+  let writer = crypto.randomUUID();
+  const recoveryFailure =
+    'No se pudo guardar el borrador en este navegador. Mantén la pestaña abierta.';
+  function initializeRecovery(base: ProjectRecord) {
+    try {
+      store = new DraftRecovery(window.localStorage, base.ownerId, id, writer);
+      const candidates = store.list(() =>
+        update({ recoveryError: 'Hay un borrador local dañado que no se pudo leer.' })
+      );
+      update({
+        candidates: candidates.filter(
+          (e) => e.stamp !== local?.stamp && e.draft.engine === base.document.engine
+        ),
+      });
+    } catch {
+      update({ recoveryError: recoveryFailure });
+    }
+  }
+  function persist(base: ProjectRecord, draft: ProjectDraft) {
+    try {
+      if (!store) initializeRecovery(base);
+      if (!store) throw new Error();
+      const previous = local;
+      local = store.keep(base, draft);
+      if (previous && previous.base.revision !== base.revision) store.remove(previous);
+      if (state.recoveryError === recoveryFailure) update({ recoveryError: '' });
+    } catch {
+      update({ recoveryError: recoveryFailure });
+    }
+  }
+  function removeLocal(entry = local) {
+    if (!entry || !store) return;
+    try {
+      store.remove(entry);
+      if (local?.stamp === entry.stamp) local = undefined;
+    } catch {
+      update({ recoveryError: 'No se pudo retirar esta versión del almacenamiento local.' });
+    }
+  }
+  function validOperation(token: number) {
+    return active && !suspended && token === epoch;
+  }
+  function install(record: ProjectRecord) {
+    past.length = future.length = 0;
+    update({
+      saved: record,
+      draft: record.document,
+      conflict: null,
+      status: 'saved',
+      error: '',
+      selection: reconcileSelection(record.document),
+    });
+  }
   function stopTimer() {
     clearTimeout(timer);
     timer = undefined;
@@ -135,9 +198,11 @@ function createSession(id: string, initial?: ProjectRecord) {
     stopTimer();
     const selection = reconcileSelection(draft);
     if (!state.conflict && !flight && draft === state.saved?.document) {
+      removeLocal();
       update({ draft, selection, status: 'saved', error: '' });
       return;
     }
+    if (state.saved) persist(state.saved, draft);
     const status = state.conflict ? 'conflict' : flight ? 'saving' : 'dirty';
     update({ draft, selection, status, error: '' });
     pauseAutosave = false;
@@ -149,7 +214,7 @@ function createSession(id: string, initial?: ProjectRecord) {
   }
   function dispatch(command: ProjectCommand) {
     const previous = state.draft;
-    if (!previous || state.replacingAudio) return;
+    if (!previous || state.replacingAudio || state.resolving || suspended) return;
     try {
       const next = applyCommand(previous, command);
       if (JSON.stringify(previous) === JSON.stringify(next)) return;
@@ -162,26 +227,32 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
   }
   function move(from: ProjectDraft[], to: ProjectDraft[]) {
-    if (state.replacingAudio) return;
+    if (state.replacingAudio || state.resolving || suspended) return;
     const next = from.pop();
     if (!next || !state.draft) return;
     to.push(state.draft);
     edited(next);
   }
   async function refresh() {
-    if (read || flight || state.conflict || state.replacingAudio) return;
+    if (read || flight || state.conflict || state.replacingAudio || state.resolving || suspended)
+      return;
+    const token = epoch;
     const request = new AbortController();
     read = request;
     const base = state.saved?.revision;
     try {
       const remote = await projectRequest<ProjectRecord>(url, { signal: request.signal });
       if (
+        !validOperation(token) ||
+        remote.document.id !== id ||
+        (state.saved && remote.ownerId !== state.saved.ownerId) ||
         request.signal.aborted ||
         flight ||
         base !== state.saved?.revision ||
         remote.revision === base
       )
         return;
+      if (!store) initializeRecovery(remote);
       if (state.saved && state.draft !== state.saved.document) {
         stopTimer();
         update({ status: 'conflict', conflict: remote });
@@ -206,13 +277,19 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
   }
   async function write(base: ProjectRecord, submitted: ProjectDraft) {
+    const token = epoch,
+      submittedLocal = local;
     try {
       const saved = await projectRequest<ProjectRecord>(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ baseRevision: base.revision, document: submitted }),
       });
+      if (!validOperation(token) || saved.ownerId !== base.ownerId || saved.document.id !== id)
+        throw new Error('El documento cambió durante el guardado.');
       const dirty = state.draft !== submitted;
+      if (dirty && state.draft) persist(saved, state.draft);
+      else removeLocal(submittedLocal);
       update({
         saved,
         draft: dirty ? state.draft : saved.document,
@@ -221,6 +298,7 @@ function createSession(id: string, initial?: ProjectRecord) {
       });
       notifyProjectSaved(saved.ownerId);
     } catch (cause) {
+      if (!validOperation(token)) throw cause;
       stopTimer();
       const conflict = cause instanceof ProjectRequestError ? cause.current : null;
       update({
@@ -234,6 +312,8 @@ function createSession(id: string, initial?: ProjectRecord) {
     }
   }
   function writeNow(): Promise<void> {
+    if (suspended || !active || state.resolving)
+      return Promise.reject(new Error('La operación está en pausa.'));
     if (state.conflict)
       return Promise.reject(new Error('Hay que resolver el conflicto de revisiones.'));
     if (!state.saved || !state.draft)
@@ -268,19 +348,21 @@ function createSession(id: string, initial?: ProjectRecord) {
     await save();
     return state.saved;
   }
-  async function postAudio(input: AudioReplacement) {
+  async function postAudio(input: AudioReplacement, token: number) {
     await flushDraft();
     const base = state.saved;
     const layer = base?.document.scenes
       .find((s) => s.id === input.sceneId)
       ?.layers.find((l) => l.id === input.audioLayerId);
-    if (!active || !base || layer?.type !== 'audio')
+    if (!validOperation(token) || !base || layer?.type !== 'audio')
       throw new Error('La capa de audio ya no está disponible.');
     const saved = await projectRequest<ProjectRecord>(url + '/audio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, baseRevision: base.revision }),
     });
+    if (!validOperation(token) || saved.ownerId !== base.ownerId || saved.document.id !== id)
+      throw new Error('El documento cambió durante la sustitución.');
     past.push(base.document);
     future.length = 0;
     update({
@@ -293,14 +375,18 @@ function createSession(id: string, initial?: ProjectRecord) {
     notifyProjectSaved(saved.ownerId);
   }
   function replaceAudio(input: AudioReplacement): Promise<void> {
+    if (state.resolving || suspended)
+      return Promise.reject(new Error('La operación está en pausa.'));
     if (state.replacingAudio)
       return Promise.reject(new Error('Ya hay una sustitución de audio en curso.'));
     if (state.conflict)
       return Promise.reject(new Error('Resuelve el conflicto antes de reemplazar la toma.'));
     read?.abort();
     update({ replacingAudio: true });
-    audioFlight = postAudio(input)
+    const token = epoch;
+    audioFlight = postAudio(input, token)
       .catch((cause: unknown) => {
+        if (!validOperation(token)) throw cause;
         const conflict = cause instanceof ProjectRequestError ? cause.current : state.conflict;
         update({
           status: conflict ? 'conflict' : state.draft === state.saved?.document ? 'saved' : 'error',
@@ -311,9 +397,94 @@ function createSession(id: string, initial?: ProjectRecord) {
       })
       .finally(() => {
         audioFlight = null;
-        update({ replacingAudio: false });
+        if (validOperation(token)) update({ replacingAudio: false });
       });
     return audioFlight;
+  }
+  async function resolveDocument(
+    action: 'reload' | 'restore' | 'copy-draft' | 'repair',
+    extra: Record<string, unknown> = {}
+  ) {
+    const base = state.saved,
+      draft = state.draft;
+    if (!base || !draft || state.resolving || suspended)
+      throw new Error('La operación está en pausa.');
+    const head = state.conflict ?? base,
+      token = ++epoch,
+      pending = local;
+    stopTimer();
+    read?.abort();
+    update({ resolving: true, replacingAudio: false, error: '' });
+    try {
+      await Promise.allSettled([flight, audioFlight].filter(Boolean));
+      if (!validOperation(token)) throw new Error('Cambió la sesión del proyecto.');
+      const result =
+        action === 'reload'
+          ? await projectRequest<ProjectRecord>(url)
+          : await projectRequest<ProjectRecord>(url + '/' + action, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(
+                action === 'copy-draft'
+                  ? { baseRevision: base.revision, document: draft }
+                  : { baseRevision: head.revision, ...extra }
+              ),
+            });
+      if (
+        !validOperation(token) ||
+        result.ownerId !== base.ownerId ||
+        (action !== 'copy-draft' && result.document.id !== id)
+      )
+        throw new Error('Cambió la sesión del proyecto.');
+      if (action === 'copy-draft') install(head);
+      else install(result);
+      removeLocal(pending);
+      notifyProjectSaved(base.ownerId);
+      return result;
+    } catch (error) {
+      if (validOperation(token)) {
+        const conflict = error instanceof ProjectRequestError ? error.current : null;
+        update({
+          status:
+            conflict || state.conflict
+              ? 'conflict'
+              : state.draft === state.saved?.document
+                ? 'saved'
+                : 'dirty',
+          ...(conflict && { conflict }),
+          error: error instanceof Error ? error.message : 'No se pudo completar la operación.',
+        });
+      }
+      throw error;
+    } finally {
+      if (active && token === epoch) update({ resolving: false });
+    }
+  }
+  function recover(candidate: LocalDraft) {
+    const remote = state.saved;
+    if (!remote || hasUnsavedChanges() || state.resolving || suspended || !store) return;
+    try {
+      const entry = store.list().find((e) => e.stamp === candidate.stamp);
+      if (!entry || entry.draft.engine !== remote.document.engine) throw new Error();
+      ++epoch;
+      read?.abort();
+      stopTimer();
+      pauseAutosave = true;
+      past.length = future.length = 0;
+      const conflict = entry.base.revision === remote.revision ? null : remote;
+      if (entry.writer === writer) local = entry;
+      persist(entry.base, entry.draft);
+      update({
+        saved: entry.base,
+        draft: entry.draft,
+        conflict,
+        status: conflict ? 'conflict' : 'dirty',
+        selection: reconcileSelection(entry.draft),
+        candidates: state.candidates.filter((e) => e.stamp !== entry.stamp),
+      });
+    } catch {
+      update({ recoveryError: 'Esta versión del borrador ya no está disponible.' });
+    }
   }
   function hasUnsavedChanges() {
     return (
@@ -331,6 +502,26 @@ function createSession(id: string, initial?: ProjectRecord) {
   }
   function start() {
     active = true;
+    suspended = false;
+    const attachWriter = async () => {
+      const selected = await tabDraftWriter();
+      if (!active || suspended || !state.saved) return;
+      const previous = store,
+        entry = local;
+      writer = selected;
+      initializeRecovery(state.saved);
+      if (entry && entry.writer !== writer && state.draft && state.saved.document !== state.draft) {
+        persist(state.saved, state.draft);
+        if (local?.writer === writer)
+          try {
+            previous?.remove(entry);
+          } catch {
+            update({ recoveryError: recoveryFailure });
+          }
+      }
+    };
+    void attachWriter();
+    if (state.saved) initializeRecovery(state.saved);
     // App Router can restore an older server payload on Back or Forward.
     void refresh();
     const onFocus = () => {
@@ -340,20 +531,39 @@ function createSession(id: string, initial?: ProjectRecord) {
       if (document.visibilityState === 'visible') onFocus();
     }, pollInterval);
     const onExpire = () => {
+      suspended = true;
+      epoch++;
+      read?.abort();
+      update({
+        resolving: false,
+        replacingAudio: false,
+        ...(state.status === 'saving' && {
+          status: state.draft === state.saved?.document ? 'saved' : 'dirty',
+        }),
+      });
       pauseAutosave = true;
       stopTimer();
     };
     const onCheckDirty = (event: Event) => {
       if (hasUnsavedChanges()) event.preventDefault();
     };
+    const onRestored = () => {
+      suspended = false;
+      void attachWriter();
+      void refresh();
+    };
     const onLeave = () => {
+      onExpire();
       leaving = true;
       stopTimer();
       clearTabDrafts();
     };
+    window.addEventListener('pagehide', onExpire);
+    window.addEventListener('pageshow', onRestored);
+    window.addEventListener(sessionEvents.accountChanged, onExpire);
     window.addEventListener(sessionEvents.ending, onExpire);
     window.addEventListener(sessionEvents.expired, onExpire);
-    window.addEventListener(sessionEvents.restored, onFocus);
+    window.addEventListener(sessionEvents.restored, onRestored);
     window.addEventListener(sessionEvents.checkDirty, onCheckDirty);
     window.addEventListener(sessionEvents.leaving, onLeave);
     window.addEventListener('focus', onFocus);
@@ -363,13 +573,17 @@ function createSession(id: string, initial?: ProjectRecord) {
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
       active = false;
+      epoch++;
       stopTimer();
       read?.abort();
       read = null;
       clearInterval(interval);
+      window.removeEventListener('pagehide', onExpire);
+      window.removeEventListener('pageshow', onRestored);
+      window.removeEventListener(sessionEvents.accountChanged, onExpire);
       window.removeEventListener(sessionEvents.ending, onExpire);
       window.removeEventListener(sessionEvents.expired, onExpire);
-      window.removeEventListener(sessionEvents.restored, onFocus);
+      window.removeEventListener(sessionEvents.restored, onRestored);
       window.removeEventListener(sessionEvents.checkDirty, onCheckDirty);
       window.removeEventListener(sessionEvents.leaving, onLeave);
       window.removeEventListener('focus', onFocus);
@@ -398,6 +612,8 @@ function createSession(id: string, initial?: ProjectRecord) {
       };
     },
     actions: {
+      resolveDocument,
+      recover,
       replaceAudio,
       dispatch,
       hasUnsavedChanges,

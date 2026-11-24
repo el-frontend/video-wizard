@@ -1,3 +1,4 @@
+import { ImportSource } from '@/features/studio-projects/components/import-source';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { workspacePage } from '@/server/auth/page-policy';
@@ -8,9 +9,11 @@ import { ValidationError } from '@/server/lib/utils';
 
 export default workspacePage('/editor/[id]', async (user, { params }) => {
   try {
-    const media = await editorMedia(user.id, (await params).id!);
+    const jobId = (await params).id!;
+    const media = await editorMedia(user.id, jobId);
     return (
       <main className="min-h-screen bg-gray-50">
+        <ImportSource owner={user.id} kind="legacy-job" sources={[jobId]} />
         <VideoEditorContainer {...media} />
       </main>
     );

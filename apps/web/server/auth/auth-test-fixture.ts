@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -9,11 +10,17 @@ import * as schema from '../db/schema';
 
 export const baseURL = 'https://studio.example.test';
 export const authOptions = { baseURL, secret: randomBytes(48).toString('hex') };
-const migrations = new URL('../db/migrations/', import.meta.url);
+let workspace = process.cwd();
+while (!existsSync(join(workspace, 'pnpm-workspace.yaml'))) {
+  const parent = dirname(workspace);
+  if (parent === workspace) throw new Error('Workspace not found');
+  workspace = parent;
+}
+const migrations = join(workspace, 'apps/web/server/db/migrations');
 
 export async function authFixture(lastMigration = 8) {
   config({
-    path: fileURLToPath(new URL('../../../../.env.studio-test', import.meta.url)),
+    path: join(workspace, '.env.studio-test'),
     quiet: true,
   });
   const connectionString = process.env.STUDIO_TEST_DATABASE_URL;
@@ -31,7 +38,7 @@ export async function authFixture(lastMigration = 8) {
     }
   }
   async function apply(filename: string) {
-    const sql = (await readFile(new URL(filename, migrations), 'utf8')).replaceAll(
+    const sql = (await readFile(join(migrations, filename), 'utf8')).replaceAll(
       '"public".',
       '"' + namespace + '".'
     );

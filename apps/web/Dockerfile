@@ -1,7 +1,7 @@
 # Web, worker and migrations use the lockfile and workspace links in this image.
 FROM node:24.22.3-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 && rm -rf /var/lib/apt/lists/*
 ENV COREPACK_HOME=/opt/corepack
 RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
