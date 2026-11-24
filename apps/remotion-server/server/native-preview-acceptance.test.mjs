@@ -188,7 +188,7 @@ it
           await native.evaluate(() =>
             [...document.querySelectorAll('video')].map((v) => Number(v.dataset.start))
           )
-        ).toEqual([1.3]);
+        ).toEqual([0.3, 1.3]);
         expect(
           await native.evaluate(() =>
             [...document.querySelectorAll('audio')].map((el) => [
@@ -197,6 +197,17 @@ it
             ])
           )
         ).toEqual([[0, 2.2]]);
+        const manifest = JSON.parse(
+          await readFile(join(workspace, 'native-manifest.json'), 'utf8')
+        );
+        const previewHash = await native.evaluate(async () => {
+          const response = await fetch(document.querySelector('audio').currentSrc);
+          const digest = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+          return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join(
+            ''
+          );
+        });
+        expect(previewHash).toBe(manifest.soundtrack.hash);
         await page.evaluate(() => msg('studio.play'));
         await native.waitForFunction(() => window.__player.getTime() > 2.17, { timeout: 4000 });
         const readings = await native.evaluate(() => {
@@ -208,12 +219,13 @@ it
           // Locate the 4ms spectral windows against a reference pulse in the same output.
           const width = Math.round(rate * 0.004);
           return [
-            [1000, 0, 0.18],
-            [2000, 501, 0.27],
-            [3000, 501, 0.18],
-            [5000, 817, 0.27],
-            [4000, 1600, 0.18],
-          ].map(([hz, delay, amplitude]) => {
+            [1000, 0, 0.18, 16],
+            [6000, 200, 0.125, 200],
+            [2000, 501, 0.27, 16],
+            [3000, 501, 0.18, 16],
+            [5000, 817, 0.27, 16],
+            [4000, 1600, 0.18, 16],
+          ].map(([hz, delay, amplitude, duration]) => {
             const active = [],
               levels = [];
             let peak = 0;
@@ -235,6 +247,7 @@ it
               hz,
               delay,
               amplitude,
+              duration,
               peak,
               inside: levels[active[0] + 6],
               first: active.at(0),
@@ -248,8 +261,8 @@ it
         );
         for (const item of readings) {
           expect(Math.abs(item.inside - item.amplitude)).toBeLessThan(0.035);
-          expect(item.last - item.first).toBeGreaterThanOrEqual(12);
-          expect(item.last - item.first).toBeLessThanOrEqual(20);
+          expect(item.last - item.first).toBeGreaterThanOrEqual(item.duration - 4);
+          expect(item.last - item.first).toBeLessThanOrEqual(item.duration + 4);
         }
         for (const tone of readings.slice(1))
           expect(Math.abs(tone.first - readings[0].first - tone.delay)).toBeLessThanOrEqual(3);

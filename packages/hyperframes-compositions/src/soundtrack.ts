@@ -68,9 +68,9 @@ export async function mixSoundtrack(
         : 'aformat=channel_layouts=stereo';
     const segment = [
       stereo,
-      'aresample=48000',
+      // Input seek already makes PTS relative to the cut. Pad a late stream before counting samples.
+      'aresample=48000:async=1:first_pts=0',
       'atrim=end_sample=' + span * 48,
-      'asetpts=PTS-STARTPTS',
       'volume=' + volume,
       'adelay=' + startMs + ':all=1',
     ];

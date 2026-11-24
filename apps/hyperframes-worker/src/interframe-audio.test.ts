@@ -22,27 +22,37 @@ it.skipIf(!native)(
     await mkdir(store, { recursive: true });
     await mkdir(evidence, { recursive: true });
     const dependencies: ExportSnapshot['dependencies'] = { assets: {}, libraries: {} };
-    for (const [id, hz] of [
-      ['reference', 1000],
-      ['audio', 2000],
-      ['embedded', 3000],
-    ] as const) {
-      const video = id === 'embedded';
-      const input =
-        id === 'reference'
-          ? '0.18*sin(2*PI*1000*t)*between(t\\,0.340\\,0.356)+0.18*sin(2*PI*4000*t)*between(t\\,1.940\\,1.956):d=2.2'
-          : '0.18*sin(2*PI*' +
-            hz +
-            '*t)*between(t\\,0.02\\,0.036)+0.18*sin(2*PI*5000*t)*between(t\\,0.100\\,0.116):d=0.25';
+    const pulses = (hz: number) =>
+      'aevalsrc=0.18*sin(2*PI*' +
+      hz +
+      '*t)*between(t\\,0.02\\,0.036)+0.18*sin(2*PI*5000*t)*between(t\\,0.100\\,0.116):d=0.25:s=48000';
+    for (const { id, input, durationMs, video, offset } of [
+      {
+        id: 'reference',
+        durationMs: 2200,
+        input:
+          'aevalsrc=0.18*sin(2*PI*1000*t)*between(t\\,0.340\\,0.356)+0.18*sin(2*PI*4000*t)*between(t\\,1.940\\,1.956):d=2.2:s=48000',
+      },
+      { id: 'audio', durationMs: 250, input: pulses(2000) },
+      { id: 'embedded', durationMs: 250, input: pulses(3000), video: true },
+      {
+        id: 'delayed',
+        durationMs: 1500,
+        input: 'sine=frequency=6000:sample_rate=48000:duration=0.2',
+        video: true,
+        offset: '0.5',
+      },
+    ]) {
       const output = join(workspace, id + (video ? '.mp4' : '.wav'));
       execFileSync('ffmpeg', [
         '-v',
         'error',
-        ...(video ? ['-f', 'lavfi', '-i', 'color=red:s=64x64:r=30:d=0.25'] : []),
+        ...(video ? ['-f', 'lavfi', '-i', 'color=red:s=64x64:r=30:d=' + durationMs / 1000] : []),
+        ...(offset ? ['-itsoffset', offset] : []),
         '-f',
         'lavfi',
         '-i',
-        'aevalsrc=' + input + ':s=48000',
+        input,
         ...(video
           ? ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k']
           : ['-c:a', 'pcm_s24le']),
@@ -58,7 +68,7 @@ it.skipIf(!native)(
         hash,
         url: 'media/' + hash,
         mediaType: video ? 'video/mp4' : 'audio/wav',
-        durationMs: id === 'reference' ? 2200 : 250,
+        durationMs,
         hasAudio: true,
         ...(video ? { width: 64, height: 64 } : {}),
       };
@@ -87,7 +97,7 @@ it.skipIf(!native)(
         durationMs: 2200,
         styleRef: null,
         brandSnapshot: null,
-        assetIds: ['reference', 'audio', 'embedded'],
+        assetIds: ['reference', 'audio', 'embedded', 'delayed'],
         globalAudio: [
           {
             ...common,
@@ -104,6 +114,18 @@ it.skipIf(!native)(
             id: 'outgoing',
             durationMs: 1017,
             layers: [
+              {
+                ...common,
+                type: 'video',
+                id: 'late-audio',
+                assetId: 'delayed',
+                startMs: 300,
+                endMs: 975,
+                sourceInMs: 100,
+                fit: 'cover',
+                focalPoint: { x: 0.5, y: 0.5 },
+                box: { x: 0, y: 0, width: 64, height: 64 },
+              },
               { ...common, type: 'audio', id: 'pulse', assetId: 'audio', volume: 1.5 },
               {
                 ...common,
@@ -146,6 +168,12 @@ it.skipIf(!native)(
     expect(manifest.soundtrack.durationMs).toBe(2200);
     expect(manifest.soundtrack.tracks).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          id: 'late-audio',
+          audioOnly: false,
+          sourceInMs: 100,
+          startMs: 300,
+        }),
         expect.objectContaining({ id: 'pulse', volume: 1.5, sourceInMs: 20 }),
         expect.objectContaining({ id: 'visible', volume: 1, sourceInMs: 0 }),
         expect.objectContaining({ id: 'clock', volume: 1, sourceInMs: 40, startMs: 200 }),
@@ -183,16 +211,17 @@ it.skipIf(!native)(
       return (2 * Math.hypot(real, imag)) / 192;
     }
     const readings = [];
-    for (const [ms, hz, amplitude] of [
-      [500, 1000, 0.18],
-      [1001, 2000, 0.27],
-      [1001, 3000, 0.18],
-      [1317, 5000, 0.27],
-      [2100, 4000, 0.18],
+    for (const [ms, hz, amplitude, duration] of [
+      [500, 1000, 0.18, 16],
+      [700, 6000, 0.125, 200],
+      [1001, 2000, 0.27, 16],
+      [1001, 3000, 0.18, 16],
+      [1317, 5000, 0.27, 16],
+      [2100, 4000, 0.18, 16],
     ] as const) {
       const before = level(ms - 6, hz),
         inside = level(ms + 6, hz),
-        after = level(ms + 18, hz);
+        after = level(ms + duration + 2, hz);
       readings.push({ ms, hz, before, inside, after });
       expect(Math.abs(inside - amplitude)).toBeLessThan(0.035);
       expect(Math.max(before, after)).toBeLessThan(0.015);
