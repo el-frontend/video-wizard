@@ -24,6 +24,7 @@ import { useEditorDependencies } from '../hooks/use-editor-dependencies';
 import { RevisionHistory } from './revision-history';
 import { ConflictPanel } from './conflict-panel';
 import { ImportResources } from './import-resources';
+import { AssistantPanel } from './assistant-panel';
 import { ProposalReview } from './proposal-review';
 import { PreviewPanel } from './preview-panel';
 
@@ -368,14 +369,23 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
         </details>
       )}
       {saved.importContext?.mode !== 'original' && (
-        <ProposalReview
-          record={saved}
-          disabled={session.resolving || session.hasUnsavedChanges()}
-          onApply={(proposalId, baseRevision) =>
-            session.resolveDocument('apply-proposal', { proposalId, baseRevision })
-          }
-          onListed={() => refreshCatalog((n) => n + 1)}
-        />
+        <>
+          <AssistantPanel
+            project={projectId}
+            selection={selection}
+            savedRevision={session.savedRevision}
+            master={saved.importContext?.narration?.playback === 'master'}
+            onRefresh={session.refresh}
+          />
+          <ProposalReview
+            record={saved}
+            disabled={session.resolving || session.hasUnsavedChanges()}
+            onApply={(proposalId, baseRevision) =>
+              session.resolveDocument('apply-proposal', { proposalId, baseRevision })
+            }
+            onListed={() => refreshCatalog((n) => n + 1)}
+          />
+        </>
       )}
       <RevisionHistory
         record={session.conflict ?? saved}

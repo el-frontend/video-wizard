@@ -150,6 +150,8 @@ export function ShortsWorkspace() {
               </div>
             </section>
             <RangeEditor
+              sourceId={asset.id}
+              captions={studio.cues}
               key={asset.id}
               duration={asset.durationMs!}
               position={() => Math.round((video.current?.currentTime ?? 0) * 1000)}

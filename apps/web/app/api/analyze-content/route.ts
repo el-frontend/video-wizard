@@ -1,3 +1,4 @@
+import { ConfigurationError } from '@/server/lib/utils';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     console.error('Content analysis error:', error);
 
-    if (error instanceof Error && error.message.includes('not configured')) {
+    if (error instanceof ConfigurationError) {
       return NextResponse.json(
         {
           success: false,

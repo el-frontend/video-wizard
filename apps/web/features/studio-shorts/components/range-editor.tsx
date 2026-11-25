@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { ShortAssistant } from './short-assistant';
 import { Trash2 } from 'lucide-react';
 import type { EngineId } from '@workspace/video-project';
 import { keyOf, pin, useLibrary } from '@/features/studio-libraries/hooks/use-library';
@@ -15,11 +16,15 @@ function row(start: number, end: number): RangeRow {
   return { id: crypto.randomUUID(), start: String(start), end: String(end) };
 }
 export function RangeEditor({
+  sourceId,
+  captions,
   duration,
   position,
   create,
   busy,
 }: {
+  sourceId?: string;
+  captions?: import('@workspace/video-project').CaptionCue[];
   duration: number;
   position: () => number;
   create: ReturnType<typeof useShorts>['create'];
@@ -66,6 +71,15 @@ export function RangeEditor({
       }}
     >
       <h2>Fragmentos</h2>
+      {sourceId && (
+        <ShortAssistant
+          source={{ id: sourceId, durationMs: duration, captions }}
+          onRanges={(ranges) => {
+            setRows(ranges.map((r) => row(r.startMs, r.endMs)));
+            setTemplate('');
+          }}
+        />
+      )}
       <fieldset disabled={busy} className="shorts-controls">
         <legend className="sr-only">Selección y diseño</legend>
         {rows.map((r, i) => (

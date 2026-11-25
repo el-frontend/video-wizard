@@ -57,6 +57,14 @@ export function measuredVideo(asset: AssetRecord) {
   return asset.durationMs;
 }
 
+export function validateShortRanges(
+  ranges: { startMs: number; endMs: number }[],
+  duration: number
+) {
+  if (ranges.some((r) => r.endMs <= r.startMs || r.endMs > duration))
+    invalid('Cada fragmento necesita un inicio y un final dentro del video.');
+}
+
 export class ShortService {
   constructor(
     private assets: Pick<AssetService, 'get'>,
@@ -78,8 +86,7 @@ export class ShortService {
     const { assetId, ranges, sourceCaptions, engine, canvas, templateRef } = parsed.data;
     const asset = await this.assets.get(owner, assetId),
       duration = measuredVideo(asset);
-    if (ranges.some((r) => r.endMs <= r.startMs || r.endMs > duration))
-      invalid('Cada fragmento necesita un inicio y un final dentro del video.');
+    validateShortRanges(ranges, duration);
     if (
       sourceCaptions.some((c) => c.endMs > duration) ||
       new Set(sourceCaptions.map((c) => c.id)).size !== sourceCaptions.length

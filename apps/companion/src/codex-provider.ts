@@ -69,7 +69,10 @@ export class CodexTransport implements AssistantTransport {
           status: 'sent',
           deliveryId: acknowledgement[1],
           ...(needsResume
-            ? { notice: 'Enviado. Para procesarlo, debes continuar la conversación vinculada.' }
+            ? {
+                paused: true,
+                notice: 'Enviado. Para procesarlo, debes continuar la conversación vinculada.',
+              }
             : {}),
         };
       }

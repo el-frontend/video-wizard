@@ -1,3 +1,4 @@
+import { CapabilityError, RequestCollision } from '@/server/services/studio/request-service';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/server/db';
@@ -31,12 +32,15 @@ export async function projectResponse<T>(
   action: (ownerId: string) => Promise<T>,
   status = 200
 ) {
+  return studioResponse(async () => action((await requireAuth(request)).id), status);
+}
+
+export async function studioResponse<T>(action: () => Promise<T>, status = 200) {
   try {
-    const user = await requireAuth(request);
-    const data = await action(user.id);
+    const data = await action();
     return NextResponse.json({ success: true, data }, { status });
   } catch (error) {
-    if (error instanceof UnauthorizedError) {
+    if (error instanceof UnauthorizedError || error instanceof CapabilityError) {
       return NextResponse.json(
         { success: false, error: 'Inicia sesión para acceder a los proyectos.' },
         { status: 401 }
@@ -48,7 +52,7 @@ export async function projectResponse<T>(
         { status: 409 }
       );
     }
-    if (error instanceof LibraryConflictError)
+    if (error instanceof LibraryConflictError || error instanceof RequestCollision)
       return NextResponse.json({ success: false, error: error.message }, { status: 409 });
     if (
       error instanceof LibraryNotFoundError ||

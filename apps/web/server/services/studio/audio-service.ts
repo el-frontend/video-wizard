@@ -21,7 +21,12 @@ export class AudioService {
     private readonly projects: ProjectService,
     private readonly assets: AssetService
   ) {}
-  async replace(ownerId: string, projectId: string, input: unknown): Promise<ProjectRecord> {
+  async replace(
+    ownerId: string,
+    projectId: string,
+    input: unknown,
+    observed?: { provider: string; spokenText: string }
+  ): Promise<ProjectRecord> {
     const result = replacement.safeParse(input);
     if (!result.success)
       throw new ValidationError(
@@ -30,6 +35,8 @@ export class AudioService {
     const { baseRevision, sceneId, audioLayerId, assetId, captions } = result.data;
     const current = await this.projects.get(ownerId, projectId);
     if (current.revision !== baseRevision) throw new ConflictError(current);
+    if (current.importContext?.narration?.playback === 'master')
+      throw new ValidationError('Activa las tomas de escena antes de reemplazar la narración.');
     const asset = await this.assets.get(ownerId, assetId);
     if (
       !asset.hasAudio ||
@@ -55,8 +62,8 @@ export class AudioService {
       layerId: audioLayerId,
       assetId,
       durationMs,
-      provider: 'upload',
-      spokenText: scene.editorial?.narration ?? '',
+      provider: observed?.provider ?? 'upload',
+      spokenText: observed?.spokenText ?? '',
     });
     if (captions) {
       const linked = scene.layers.filter(

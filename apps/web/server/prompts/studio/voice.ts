@@ -1,0 +1,2 @@
+export const voiceInstruction =
+  'Confirma el texto, el perfil y la dirección en esta conversación. Comprueba aquí el conector. Antes de generar una sola toma ejecuta begin-voice con aprobación explícita. Si falla después de iniciarse, informa delivery-unknown y reconcilia el archivo. Importa bytes mediante upload y usa audio con captions alineados o transcritos y procedencia real. Sin conector, informa la limitación y ofrece cargar el archivo.';

@@ -78,6 +78,13 @@
       "when": 1795541698449,
       "tag": "0010_studio_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795552528470,
+      "tag": "0011_studio_requests",
+      "breakpoints": true
     }
   ]
 }

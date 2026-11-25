@@ -50,7 +50,7 @@ const duplicateInput = z.strictObject({
   engine: EngineIdSchema.optional(),
 });
 
-type Database = typeof db;
+type Database = Pick<typeof db, 'select' | 'insert' | 'update' | 'transaction'>;
 type ProjectDb = Pick<Database, 'select' | 'insert' | 'update'>;
 type RevisionOperation = (typeof studioRevisionOperation.enumValues)[number];
 
@@ -473,6 +473,72 @@ export class ProjectService {
         'duplicate',
         base.importContext
       );
+    });
+  }
+
+  async activateSceneTakes(owner: string, id: string, revision: string) {
+    return this.db.transaction(async (tx) => {
+      const base = await readBaseRevision(
+        tx,
+        owner,
+        id,
+        parseInput(uuidSchema, revision, 'Revisión no válida.')
+      );
+      const context = structuredClone(base.importContext),
+        narration = context?.narration;
+      if (
+        context?.mode !== 'editable' ||
+        narration?.playback !== 'master' ||
+        !narration.masterAssetId
+      )
+        throw new ValidationError('La revisión no contiene una narración maestra activa.');
+      const doc = structuredClone(base.document);
+      const masters = doc.globalAudio.filter((l) => l.assetId === narration.masterAssetId);
+      if (masters.length !== 1)
+        throw new ValidationError(
+          'Comprueba la identidad de la pista maestra antes de activar las tomas.'
+        );
+      const master = masters[0];
+      for (const scene of doc.scenes) {
+        const sources = narration.takes.filter((t) => t.sceneId === scene.id);
+        if (
+          sources.length !== 1 ||
+          !sources[0].durationMs ||
+          scene.layers.some((l) => l.type === 'audio' && l.take)
+        )
+          throw new ValidationError('Se requiere una toma importada medible por escena.');
+        const take = sources[0],
+          asset = await new AssetService(tx, this.dataDir).get(owner, take.assetId);
+        if (!asset.hasAudio || asset.durationMs !== take.durationMs)
+          throw new ValidationError('Comprueba el archivo de la toma importada.');
+        const layerId = randomUUID();
+        scene.layers.push({
+          id: layerId,
+          type: 'audio',
+          visible: true,
+          zIndex: 0,
+          endAnchor: 'fixed',
+          startMs: take.startMs,
+          endMs: take.startMs + take.durationMs,
+          sourceInMs: 0,
+          volume: master.volume,
+          assetId: take.assetId,
+          take: {
+            durationMs: take.durationMs,
+            provider: 'Motion Studio',
+            spokenText: take.spokenText ?? '',
+            stale: take.stale,
+          },
+        });
+        for (const layer of scene.layers)
+          if (layer.type === 'captions' && layer.sourceAudioLayerId === master.id)
+            layer.sourceAudioLayerId = layerId;
+      }
+      doc.globalAudio = doc.globalAudio.filter((l) => l.id !== master.id);
+      if (projectDurationMs(doc) !== doc.durationMs)
+        throw new ValidationError('La activación alteraría la duración manual.');
+      narration.playback = 'scenes';
+      return advanceRevision(tx, owner, base, ProjectDraftSchema.parse(doc), 'save', context);
     });
   }
 

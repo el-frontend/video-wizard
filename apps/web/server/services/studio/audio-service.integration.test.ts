@@ -83,7 +83,7 @@ it('commits one measured replacement and converts each linked layer once without
     startMs: 500,
     endMs: 5300,
     assetId,
-    take: { durationMs: 4800, provider: 'upload', spokenText: 'Hola', stale: false },
+    take: { durationMs: 4800, provider: 'upload', spokenText: '', stale: true },
   });
   for (const [i, startMs, endMs] of [
     [1, 400, 1000],
@@ -109,7 +109,7 @@ it('commits one measured replacement and converts each linked layer once without
   expect(
     applyCommand(next, { type: 'set-headline', sceneId: 'intro', text: 'Nuevo' }).scenes[0]!
       .layers[0]
-  ).toMatchObject({ take: { stale: false } });
+  ).toMatchObject({ take: { spokenText: '', stale: true } });
   expect(
     applyCommand(next, { type: 'set-narration', sceneId: 'intro', text: 'Nuevo' }).scenes[0]!
       .layers[0]

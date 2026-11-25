@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
+import { privateDir } from './private-files';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { BindingSchema, SessionIdSchema, type Binding } from './protocol';
@@ -15,18 +16,40 @@ export class SessionBusyError extends Error {}
 export class BindingStore {
   private constructor(
     readonly workspace: string,
-    private readonly directory: string
+    readonly directory: string
   ) {}
 
   static async open({
     workspace,
-    dataDir = process.env.STUDIO_DATA_DIR,
+    dataDir = process.env.STUDIO_COMPANION_DIR,
   }: {
     workspace: string;
     dataDir?: string;
   }): Promise<BindingStore> {
     const root = await realpath(workspace);
-    return new BindingStore(root, resolve(root, dataDir || '.studio-data/companion'));
+    const directory = resolve(root, dataDir || '.studio/companion');
+    const media = resolve(root, process.env.STUDIO_DATA_DIR || '.studio-data');
+    if (directory === media || directory.startsWith(media + '/') || directory === root)
+      throw Error('El companion requiere un directorio privado fuera de medios.');
+    const resolved = await privateDir(directory),
+      mediaRoot = await realpath(media).catch(() => media);
+    if (resolved === mediaRoot || resolved.startsWith(mediaRoot + '/'))
+      throw Error('El directorio privado coincide con el montaje de medios.');
+    return new BindingStore(root, resolved);
+  }
+
+  async migrate(id: string, legacyDirectory: string) {
+    const source = new BindingStore(this.workspace, await realpath(legacyDirectory));
+    const old = await source.readBinding(id);
+    if (!old) throw Error('No se encontró el vínculo privado anterior.');
+    const current = await this.readBinding(id);
+    if (!current) {
+      await this.writeBinding(old, false);
+    }
+    const verified = await this.readBinding(id);
+    if (JSON.stringify(verified) !== JSON.stringify(old))
+      throw Error('La migración del vínculo no coincide.');
+    return (await this.get(id))!;
   }
 
   async create(provider: Binding['provider'], sessionId: string): Promise<Binding> {
@@ -113,7 +136,7 @@ export class BindingStore {
     if (!handle) return null;
     try {
       const stat = await handle.stat();
-      if (!stat.isFile() || (stat.mode & 0o077) !== 0)
+      if (!stat.isFile() || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0)
         throw new Error('Invalid binding permissions');
       const binding = StoredBindingSchema.parse(JSON.parse(await handle.readFile('utf8')));
       if (binding.id !== id || binding.workspace !== this.workspace) {

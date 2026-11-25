@@ -840,3 +840,31 @@ main > div:has(> .studio-workspace) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.assistant-panel > summary {
+  font-weight: 650;
+}
+.assistant-panel[open] > summary,
+.assistant-panel > details,
+.assistant-panel > textarea {
+  margin-bottom: 0.75rem;
+}
+.assistant-panel > small {
+  display: block;
+  color: var(--studio-muted);
+  margin-block: 0.35rem 0.65rem;
+  overflow-wrap: anywhere;
+}
+.assistant-panel > ol {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.studio-receipt {
+  border-inline-start: 3px solid var(--studio-line);
+  padding-inline-start: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.studio-receipt small {
+  color: var(--studio-muted);
+}

@@ -1,11 +1,20 @@
 import { proposals } from './service';
 import { projectResponse, readJson } from '../../http';
-type Context = { params: Promise<{ id: string }> };
-export function POST(request: Request, { params }: Context) {
-  return projectResponse(
+import { actionResponse, requests, type Context } from '../../../companion/http';
+export async function POST(request: Request, { params }: Context) {
+  const { id } = await params;
+  return actionResponse(
     request,
+    id,
+    ['component', 'storyboard'],
+    async (t) => requests.stage(t, id, await readJson(request), request.signal),
     async (owner) =>
-      proposals.stage(owner, (await params).id, await readJson(request), request.signal),
+      proposals.stage(
+        owner,
+        id,
+        await requests.assertHumanDelivery(await readJson(request)),
+        request.signal
+      ),
     201
   );
 }

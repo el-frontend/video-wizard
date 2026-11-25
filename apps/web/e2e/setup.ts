@@ -81,6 +81,7 @@ export default async function setup() {
     await fixture.apply('0008_better_auth.sql');
     await fixture.apply('0009_studio_imports.sql');
     await fixture.apply('0010_studio_proposals.sql');
+    await fixture.apply('0011_studio_requests.sql');
     const [webPort, renderPort] = await Promise.all([port(), port()]);
     const web = 'http://app.video-wizard.localhost:' + webPort,
       preview = 'http://preview.video-wizard.localhost:' + renderPort;

@@ -165,7 +165,13 @@ export class AssetService {
     return asset;
   }
 
-  async ingest(ownerId: string, { stream, filename, mediaType }: AssetInput): Promise<AssetRecord> {
+  async ingest(
+    ownerId: string,
+    { stream, filename, mediaType }: AssetInput,
+    finalize: (register: (db: AssetDb) => Promise<AssetRecord>) => Promise<AssetRecord> = (
+      register
+    ) => register(this.db)
+  ): Promise<AssetRecord> {
     if (
       !filename.trim() ||
       filename === '.' ||
@@ -221,27 +227,29 @@ export class AssetService {
         }
       }
 
-      const [inserted] = await this.db
-        .insert(studioAssets)
-        .values({
-          id: randomUUID(),
-          ownerId,
-          hash,
-          name: filename,
-          mediaType,
-          sizeBytes,
-          ...metadata,
-        })
-        .onConflictDoNothing({ target: [studioAssets.ownerId, studioAssets.hash] })
-        .returning();
-      if (inserted) return toRecord(inserted);
+      return await finalize(async (db) => {
+        const [inserted] = await db
+          .insert(studioAssets)
+          .values({
+            id: randomUUID(),
+            ownerId,
+            hash,
+            name: filename,
+            mediaType,
+            sizeBytes,
+            ...metadata,
+          })
+          .onConflictDoNothing({ target: [studioAssets.ownerId, studioAssets.hash] })
+          .returning();
+        if (inserted) return toRecord(inserted);
 
-      const [existing] = await this.db
-        .select()
-        .from(studioAssets)
-        .where(and(eq(studioAssets.ownerId, ownerId), eq(studioAssets.hash, hash)));
-      if (!existing) throw new Error('Studio asset was removed during ingestion.');
-      return toRecord(existing);
+        const [existing] = await db
+          .select()
+          .from(studioAssets)
+          .where(and(eq(studioAssets.ownerId, ownerId), eq(studioAssets.hash, hash)));
+        if (!existing) throw new Error('Studio asset was removed during ingestion.');
+        return toRecord(existing);
+      });
     } finally {
       // Leave promoted bytes intact on database failure so another upload can claim them safely.
       await rm(temporary, { recursive: true, force: true });

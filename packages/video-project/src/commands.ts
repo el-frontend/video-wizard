@@ -236,7 +236,8 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
         edited.editorial.narration = command.text;
         for (const layer of edited.layers) {
           if (layer.type === 'audio' && layer.take)
-            layer.take.stale = layer.take.spokenText !== command.text;
+            layer.take.stale =
+              !layer.take.spokenText.trim() || layer.take.spokenText !== command.text;
         }
       }
       break;
@@ -278,8 +279,9 @@ export function applyCommand(project: ProjectDraft, input: ProjectCommand): Proj
         provider: command.provider,
         spokenText: command.spokenText,
         stale:
-          edited.editorial?.narration !== undefined &&
-          edited.editorial.narration !== command.spokenText,
+          !command.spokenText.trim() ||
+          (edited.editorial?.narration !== undefined &&
+            edited.editorial.narration !== command.spokenText),
       };
       if (!draft.assetIds.includes(command.assetId)) draft.assetIds.push(command.assetId);
       if (command.cues === undefined) break;

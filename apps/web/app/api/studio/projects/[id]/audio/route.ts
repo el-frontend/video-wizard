@@ -1,10 +1,15 @@
 import { assetService } from '../../../assets/http';
 import { AudioService } from '@/server/services/studio/audio-service';
-import { projectResponse, projectService, readJson } from '../../http';
-
+import { projectService, readJson } from '../../http';
+import { actionResponse, requests, type Context } from '../../../companion/http';
 const audio = new AudioService(projectService, assetService);
-export function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  return projectResponse(request, async (ownerId) =>
-    audio.replace(ownerId, (await params).id, await readJson(request))
+export async function POST(request: Request, { params }: Context) {
+  const { id } = await params;
+  return actionResponse(
+    request,
+    id,
+    ['voice'],
+    async (t) => requests.audio(t, id, await readJson(request)),
+    async (owner) => audio.replace(owner, id, await readJson(request))
   );
 }

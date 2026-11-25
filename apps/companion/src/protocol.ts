@@ -28,6 +28,8 @@ export const RequestEnvelopeSchema = CompanionRequestSchema.pick({
   message: true,
 }).extend({
   requestId: IdSchema,
+  instruction: z.string().max(4000).optional(),
+  sourceAssetId: z.uuid().optional(),
   callback: z
     .strictObject({
       url: z.url({ protocol: /^https?$/ }).refine((value) => {
@@ -51,6 +53,7 @@ export interface TransportCapabilities {
 export interface DeliveryReceipt {
   status: 'sent' | 'delivery-unknown' | 'failed';
   deliveryId?: string;
+  paused?: boolean;
   notice?: string;
 }
 
@@ -82,6 +85,26 @@ export interface TransportOptions {
   run?: CommandRunner;
 }
 
+export function providerEnvironment(env: NodeJS.ProcessEnv = process.env) {
+  return Object.fromEntries(
+    [
+      'PATH',
+      'HOME',
+      'USER',
+      'LOGNAME',
+      'SHELL',
+      'TERM',
+      'LANG',
+      'LC_ALL',
+      'TMPDIR',
+      'CODEX_HOME',
+      'XDG_CONFIG_HOME',
+      'XDG_DATA_HOME',
+      'CLAUDE_CONFIG_DIR',
+    ].flatMap((key) => (env[key] !== undefined ? [[key, env[key]!]] : []))
+  );
+}
+
 export const runCommand: CommandRunner = (binary, args, { cwd, timeoutMs, input }) =>
   new Promise((resolve) => {
     let timedOut = false;
@@ -91,6 +114,7 @@ export const runCommand: CommandRunner = (binary, args, { cwd, timeoutMs, input 
       args,
       {
         cwd,
+        env: providerEnvironment(),
         encoding: 'utf8',
         shell: false,
         maxBuffer: 8 * 1024 * 1024,

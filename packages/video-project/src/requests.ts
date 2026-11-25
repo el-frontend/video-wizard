@@ -1,3 +1,4 @@
+import { CaptionInputSchema } from './schema';
 import { z } from 'zod';
 import { EngineIdSchema, IdSchema, MillisecondsSchema } from './library';
 
@@ -18,7 +19,7 @@ export const CompanionRequestSchema = z.strictObject({
   bindingId: IdSchema,
   engine: EngineIdSchema,
   selection: EditorSelectionSchema,
-  kind: z.enum(['feedback', 'voice', 'component', 'storyboard']),
+  kind: z.enum(['feedback', 'voice', 'component', 'storyboard', 'shorts']),
   message: z.string(),
   status: z.enum([
     'created',
@@ -32,9 +33,48 @@ export const CompanionRequestSchema = z.strictObject({
     'cancelled',
   ]),
   idempotencyKey: IdSchema,
+  sourceAssetId: z.uuid().optional(),
+  note: z.string().optional(),
+  voice: z
+    .strictObject({
+      durationMs: z.int().positive(),
+      provider: z.string(),
+      captionSource: z.string(),
+    })
+    .optional(),
+  delivery: z
+    .strictObject({
+      status: z.enum(['sent', 'waiting', 'delivery-unknown', 'failed']),
+      id: z.string().optional(),
+    })
+    .optional(),
+  resultRevision: z.uuid().optional(),
+  proposalId: z.uuid().optional(),
+  assetId: z.uuid().optional(),
+  ranges: z
+    .array(z.strictObject({ startMs: MillisecondsSchema, endMs: MillisecondsSchema }))
+    .optional(),
 });
 export type CompanionRequest = z.infer<typeof CompanionRequestSchema>;
 
+export const CompanionRequestInputSchema = CompanionRequestSchema.pick({
+  provider: true,
+  bindingId: true,
+  baseRevision: true,
+  engine: true,
+  kind: true,
+  selection: true,
+  message: true,
+  idempotencyKey: true,
+  sourceAssetId: true,
+}).extend({
+  sourceCaptions: z.array(CaptionInputSchema).max(2000).optional(),
+  bindingId: z.uuid(),
+  baseRevision: z.uuid(),
+  idempotencyKey: z.string().min(1).max(160),
+  message: z.string().trim().min(1).max(6000),
+});
+export type CompanionRequestInput = z.infer<typeof CompanionRequestInputSchema>;
 export interface PreviewHandle {
   play(): void;
   pause(): void;

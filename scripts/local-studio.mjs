@@ -34,6 +34,43 @@ function service(program, args, env, cwd = root) {
 }
 
 async function main() {
+  if (command === 'companion' && process.argv[3] === 'acceptance')
+    return service(
+      process.execPath,
+      [join(root, 'scripts/companion-acceptance.mjs'), ...process.argv.slice(4)],
+      Object.fromEntries(
+        ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TMPDIR'].flatMap((k) =>
+          process.env[k] ? [[k, process.env[k]]] : []
+        )
+      )
+    );
+  if (command === 'companion') {
+    const env = Object.fromEntries(
+      [
+        'PATH',
+        'HOME',
+        'USER',
+        'LOGNAME',
+        'SHELL',
+        'TERM',
+        'LANG',
+        'LC_ALL',
+        'TMPDIR',
+        'CODEX_HOME',
+        'XDG_CONFIG_HOME',
+        'XDG_DATA_HOME',
+        'CLAUDE_CONFIG_DIR',
+        'STUDIO_COMPANION_DIR',
+        'STUDIO_DATA_DIR',
+      ].flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]]))
+    );
+    return service(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', ...process.argv.slice(3)],
+      env,
+      join(root, 'apps/companion')
+    );
+  }
   if (command === 'smoke') {
     const { checkLocalStudio } = await import('./local-studio-smoke.mjs');
     return checkLocalStudio(root);

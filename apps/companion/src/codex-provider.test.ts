@@ -61,6 +61,7 @@ it.each(['ok', 'error'] as const)(
     const transport = new CodexTransport({ workspace, run });
     expect(await transport.dispatch(binding, envelope)).toEqual({
       status: 'sent',
+      paused: true,
       deliveryId: 'delivery-4',
       notice: expect.stringContaining('continuar'),
     });

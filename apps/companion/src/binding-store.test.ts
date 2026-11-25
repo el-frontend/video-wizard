@@ -51,3 +51,13 @@ it('excludes concurrent Claude runs to a single session across store instances',
     'finished'
   );
 });
+
+it('migrates a verified private binding without changing its destination or Claude execution evidence', async () => {
+  const old = await BindingStore.open({ workspace, dataDir }),
+    binding = await old.createVerifiedClaudeBinding(sessionId);
+  await old.recordClaudeOrganizationRejection(binding);
+  const migrated = await BindingStore.open({ workspace, dataDir: join(root, 'new') });
+  expect(await migrated.migrate(binding.id, dataDir)).toEqual(binding);
+  expect(await migrated.migrate(binding.id, dataDir)).toEqual(binding);
+  expect(await migrated.getClaudeExecution(binding)).toBe('organization-rejected');
+});

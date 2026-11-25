@@ -17,7 +17,7 @@ import {
   type EntryOf,
 } from '@workspace/video-project';
 import type { db } from '@/server/db';
-import { studioLibraries, studioProposals } from '@/server/db/schema';
+import { studioLibraries, studioProposals, studioRequests } from '@/server/db/schema';
 import { ValidationError } from '@/server/lib/utils';
 import { AssetService } from './asset-service';
 import { LibraryService, LibraryConflictError } from './library-service';
@@ -41,8 +41,9 @@ import {
   previewCandidate,
 } from './component-validation';
 
+type StageSummary = { proposalId: string; diagnostics: Diagnostic[]; previewUrl?: string };
 type Row = typeof studioProposals.$inferSelect;
-type Database = typeof db;
+type Database = Pick<typeof db, 'select' | 'insert' | 'update' | 'transaction'>;
 const where = (owner: string, project: string, id: string) => {
   if (!z.uuid().safeParse(id).success) throw new ProjectNotFoundError();
   return and(
@@ -153,7 +154,15 @@ export class ProposalService {
     });
     return build(owner, { ...base, document }, signal);
   }
-  async stage(owner: string, project: string, raw: unknown, signal?: AbortSignal) {
+  async stage(
+    owner: string,
+    project: string,
+    raw: unknown,
+    signal?: AbortSignal,
+    finalize: (persist: (db: Database) => Promise<StageSummary>) => Promise<StageSummary> = (
+      persist
+    ) => persist(this.database)
+  ) {
     const parsed = ProposalDeliverySchema.safeParse(raw);
     if (!parsed.success)
       throw new ValidationError(
@@ -191,8 +200,8 @@ export class ProposalService {
         eq(studioProposals.requestId, input.requestId),
         eq(studioProposals.sourceDigest, sourceDigest)
       );
-    const lookup = async () =>
-      (await this.database.select().from(studioProposals).where(identity))[0];
+    const lookup = async (db: Database = this.database) =>
+      (await db.select().from(studioProposals).where(identity))[0];
     const summary = (r: Row) => ({
       proposalId: r.id,
       diagnostics: r.diagnostics,
@@ -201,31 +210,33 @@ export class ProposalService {
       }),
     });
     const existing = await lookup();
-    if (existing && existing.status !== 'invalid') return summary(existing);
+    if (existing && existing.status !== 'invalid') return finalize(async () => summary(existing));
     const validated = ProposalInputSchema.safeParse(input);
     if (!validated.success) {
-      if (existing) return summary(existing);
+      if (existing) return finalize(async () => summary(existing));
       const diagnostics: Diagnostic[] = validated.error.issues.slice(0, 8).map((issue) => ({
         severity: 'error',
         code: 'proposal-invalid',
         message: (issue.path.join('.') + ' ' + issue.message).slice(0, 500),
       }));
-      const [row] = await this.database
-        .insert(studioProposals)
-        .values({
-          id: randomUUID(),
-          ownerId: owner,
-          projectId: project,
-          requestId: input.requestId,
-          baseRevision: base.revision,
-          input,
-          sourceDigest,
-          diagnostics,
-          status: 'invalid',
-        })
-        .onConflictDoNothing()
-        .returning();
-      return summary(row ?? (await lookup())!);
+      return finalize(async (db) => {
+        const [row] = await db
+          .insert(studioProposals)
+          .values({
+            id: randomUUID(),
+            ownerId: owner,
+            projectId: project,
+            requestId: input.requestId,
+            baseRevision: base.revision,
+            input,
+            sourceDigest,
+            diagnostics,
+            status: 'invalid',
+          })
+          .onConflictDoNothing()
+          .returning();
+        return summary(row ?? (await lookup(db))!);
+      });
     }
     const proposal = validated.data;
     const id = existing?.id ?? randomUUID(),
@@ -285,39 +296,41 @@ export class ProposalService {
             : 'No se pudo validar el componente.',
       });
     }
-    if (existing) {
-      await this.database
-        .update(studioProposals)
-        .set({
+    return finalize(async (db) => {
+      if (existing) {
+        await db
+          .update(studioProposals)
+          .set({
+            bundleHash,
+            moduleHash,
+            samples,
+            diagnostics,
+            status: diagnostics.some((d) => d.severity === 'error') ? 'invalid' : 'ready',
+          })
+          .where(and(where(owner, project, id), eq(studioProposals.status, 'invalid')));
+        return summary((await lookup(db))!);
+      }
+      const [row] = await db
+        .insert(studioProposals)
+        .values({
+          id,
+          ownerId: owner,
+          projectId: project,
+          requestId: input.requestId,
+          baseRevision: base.revision,
+          input,
+          candidate,
+          sourceDigest,
           bundleHash,
           moduleHash,
           samples,
           diagnostics,
           status: diagnostics.some((d) => d.severity === 'error') ? 'invalid' : 'ready',
         })
-        .where(and(where(owner, project, id), eq(studioProposals.status, 'invalid')));
-      return summary((await lookup())!);
-    }
-    const [row] = await this.database
-      .insert(studioProposals)
-      .values({
-        id,
-        ownerId: owner,
-        projectId: project,
-        requestId: input.requestId,
-        baseRevision: base.revision,
-        input,
-        candidate,
-        sourceDigest,
-        bundleHash,
-        moduleHash,
-        samples,
-        diagnostics,
-        status: diagnostics.some((d) => d.severity === 'error') ? 'invalid' : 'ready',
-      })
-      .onConflictDoNothing()
-      .returning();
-    return summary(row ?? (await lookup())!);
+        .onConflictDoNothing()
+        .returning();
+      return summary(row ?? (await lookup(db))!);
+    });
   }
   async preview(
     owner: string,
@@ -399,6 +412,17 @@ export class ProposalService {
           .update(studioProposals)
           .set({ appliedRevision: result.revision, status: 'applied' })
           .where(where(owner, project, id));
+        await tx
+          .update(studioRequests)
+          .set({ resultRevision: result.revision })
+          .where(
+            and(
+              eq(studioRequests.id, row.requestId),
+              eq(studioRequests.ownerId, owner),
+              eq(studioRequests.projectId, project),
+              eq(studioRequests.proposalId, row.id)
+            )
+          );
         return result;
       },
       { isolationLevel: 'read committed' }
