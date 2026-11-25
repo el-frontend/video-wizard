@@ -526,9 +526,17 @@ async function browserAction(f, action, argv) {
       await page.goto(f.origin + '/designer/' + project.document.id);
       await page.getByRole('button', { name: 'Añadir escena' }).click();
       await page.getByText('Referencias de la escena', { exact: true }).click();
+      const pinned = JSON.stringify([entry.id, entry.version]);
+      const catalog = await api(
+        '/api/studio/libraries/component?verified=1&engine=' + entry.engine
+      );
+      assert.ok(
+        catalog.some((l) => l.id === entry.id && l.version === entry.version),
+        'La versión no está en el catálogo verificado.'
+      );
       await page
-        .getByLabel('Componente visual', { exact: true })
-        .selectOption(JSON.stringify([entry.id, entry.version]));
+        .getByRole('combobox', { name: /^Componente visual/ })
+        .selectOption(pinned, { timeout: 8000 });
       const saved = page.waitForResponse(
         (r) =>
           r.request().method() === 'PUT' &&
