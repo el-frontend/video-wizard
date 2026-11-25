@@ -8,6 +8,7 @@ import {
   CompanionRequestInputSchema,
   ProposalDeliverySchema,
   type CompanionRequest,
+  type EditorSelection,
 } from '@workspace/video-project';
 import type { db } from '@/server/db';
 import {
@@ -111,6 +112,17 @@ const scoped = (b: Binding) =>
   );
 function active(row: Row) {
   if (terminal(row)) deny();
+}
+function requireVoiceTarget(
+  base: Awaited<ReturnType<typeof readBaseRevision>>,
+  selection: EditorSelection
+) {
+  const scene = base.document.scenes.find((s) => s.id === selection.sceneId);
+  const layer = scene?.layers.find((l) => l.id === selection.layerId);
+  if (!scene || layer?.type !== 'audio' || base.importContext?.narration?.playback === 'master')
+    invalid('Activa las tomas y selecciona una capa de audio de escena.');
+  if (!scene.layers.some((l) => l.type === 'captions' && l.sourceAudioLayerId === layer.id))
+    invalid('Vincula una capa de subtítulos a esta toma antes de solicitar la voz.');
 }
 async function change(tx: Tx, row: Row, patch: Partial<typeof requests.$inferInsert>) {
   const [saved] = await tx.update(requests).set(patch).where(eq(requests.id, row.id)).returning();
@@ -234,11 +246,7 @@ export class RequestService {
           !(layer?.type === 'captions' && layer.cues.some((c) => c.id === s.captionId)))
       )
         invalid('La selección no coincide con la revisión.');
-      if (
-        input.kind === 'voice' &&
-        (!scene || layer?.type !== 'audio' || base.importContext?.narration?.playback === 'master')
-      )
-        invalid('Activa las tomas y selecciona una capa de audio de escena.');
+      if (input.kind === 'voice') requireVoiceTarget(base, s);
       if (input.kind === 'shorts') {
         if (!input.sourceAssetId) invalid('Selecciona el video de origen.');
         const duration = measuredVideo(
@@ -419,9 +427,10 @@ export class RequestService {
       deny();
   }
   read(secret: string, project: string) {
-    return this.authorized(secret, project, null, async (tx, r) =>
-      new ProjectService(tx).get(r.ownerId, r.projectId)
-    );
+    return this.authorized(secret, project, null, async (tx, r) => {
+      active(r);
+      return new ProjectService(tx).get(r.ownerId, r.projectId);
+    });
   }
   async assertHumanDelivery(raw: unknown) {
     const input = parse(ProposalDeliverySchema, raw);
@@ -552,7 +561,8 @@ export class RequestService {
           throw new RequestCollision(
             'La generación ya se inició. Comprueba el archivo antes de continuar.'
           );
-        await readBaseRevision(tx, r.ownerId, project, r.payload.baseRevision);
+        const base = await readBaseRevision(tx, r.ownerId, project, r.payload.baseRevision);
+        requireVoiceTarget(base, r.payload.selection);
         return change(tx, r, {
           generationStarted: new Date(),
           status: 'running',
@@ -572,12 +582,15 @@ export class RequestService {
     const uploaded = await new AssetService(this.database, this.dir).ingest(
       owner,
       input,
-      (register) =>
+      (register, measured) =>
         this.authorized(secret, undefined, ['voice'], async (tx, r) => {
-          if (!r.assetId) active(r);
+          if (r.assetId) {
+            const reserved = await new AssetService(tx, this.dir).get(r.ownerId, r.assetId);
+            if (reserved.hash !== measured.hash) collision();
+          } else active(r);
+          if (!measured.hasAudio || !measured.durationMs)
+            invalid('No se pudo medir una toma de voz.');
           const asset = await register(tx);
-          if (!asset.hasAudio || !asset.durationMs) invalid('No se pudo medir una toma de voz.');
-          if (r.assetId && r.assetId !== asset.id) collision();
           if (!r.assetId) await change(tx, r, { assetId: asset.id });
           return asset;
         })
@@ -631,12 +644,15 @@ export class RequestService {
       secret,
       project,
       ['shorts'],
-      async (tx, r) => ({
-        asset: AssetDescriptorSchema.strip().parse(
-          await new AssetService(tx, this.dir).get(r.ownerId, r.payload.sourceAssetId!)
-        ),
-        captions: r.payload.sourceCaptions ?? [],
-      }),
+      async (tx, r) => {
+        active(r);
+        return {
+          asset: AssetDescriptorSchema.strip().parse(
+            await new AssetService(tx, this.dir).get(r.ownerId, r.payload.sourceAssetId!)
+          ),
+          captions: r.payload.sourceCaptions ?? [],
+        };
+      },
       id
     );
   }

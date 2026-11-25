@@ -28,12 +28,12 @@ export function AssistantPanel({
   onRanges,
 }: Props) {
   const [open, setOpen] = useState(false),
-    [binding, setBinding] = useState(''),
     [kind, setKind] = useState<CompanionRequest['kind']>(source ? 'shorts' : 'feedback'),
     [message, setMessage] = useState('');
   const studio = useCompanion(project, open),
     id = useId(),
-    chosen = studio.bindings.find((b) => b.bindingId === binding) ?? studio.bindings[0];
+    chosen =
+      !studio.target?.unavailable && studio.bindings.find((b) => b.bindingId === studio.target?.id);
   const receipts = studio.receipts.filter((r) => !source || r.sourceAssetId === source.id);
   return (
     <details className="edit-panel assistant-panel" onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -45,10 +45,17 @@ export function AssistantPanel({
           <label htmlFor={id + 'binding'}>Conversación vinculada</label>
           <select
             id={id + 'binding'}
-            value={chosen?.bindingId ?? ''}
-            onChange={(e) => setBinding(e.target.value)}
+            value={chosen ? chosen.bindingId : ''}
+            onChange={(e) => studio.selectBinding(e.target.value)}
           >
-            {!studio.bindings.length && <option value="">Sin vínculo local</option>}
+            {studio.target?.unavailable ? (
+              <option value="" disabled>
+                Conversación {studio.target.id.slice(0, 8)} no disponible. Selecciona otra
+                conversación.
+              </option>
+            ) : (
+              !studio.bindings.length && <option value="">Sin vínculo local</option>
+            )}
             {studio.bindings.map((b) => (
               <option key={b.bindingId} value={b.bindingId}>
                 {b.provider === 'claude' ? 'Claude' : 'Codex'} · {b.bindingId.slice(0, 8)}

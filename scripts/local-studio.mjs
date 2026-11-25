@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { rendererMediaDirectory } from '../apps/companion/src/renderer-media.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -107,8 +108,7 @@ async function main() {
     }
   }
   assert.equal(statSync(privateEnv).mode & 0o777, 0o600, 'Expected mode 0600 on .env.studio-auth.');
-  const data = webEnv.STUDIO_DATA_DIR || join(root, '.studio-data');
-  assert.ok(data.startsWith('/'), 'STUDIO_DATA_DIR must be absolute.');
+  const data = rendererMediaDirectory(root, webEnv);
   const env = {
     ...process.env,
     ...webEnv,

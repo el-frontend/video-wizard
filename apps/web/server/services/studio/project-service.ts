@@ -527,7 +527,11 @@ export class ProjectService {
             durationMs: take.durationMs,
             provider: 'Motion Studio',
             spokenText: take.spokenText ?? '',
-            stale: take.stale,
+            stale:
+              take.stale ||
+              !take.spokenText?.trim() ||
+              (scene.editorial?.narration !== undefined &&
+                take.spokenText !== scene.editorial.narration),
           },
         });
         for (const layer of scene.layers)

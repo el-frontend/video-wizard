@@ -13,6 +13,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 export function useCompanion(project: string, open: boolean) {
+  const [target, setTarget] = useState<{ id: string; unavailable: boolean } | null>(null);
   const [bindings, setBindings] = useState<PublicBinding[]>([]),
     [receipts, setReceipts] = useState<CompanionRequest[]>([]);
   const [error, setError] = useState(''),
@@ -28,6 +29,12 @@ export function useCompanion(project: string, open: boolean) {
       ]);
       if (!signal?.aborted) {
         setBindings(b);
+        setTarget((current) => {
+          if (!current) return b[0] ? { id: b[0].bindingId, unavailable: false } : null;
+          if (!current.unavailable && !b.some((item) => item.bindingId === current.id))
+            return { ...current, unavailable: true };
+          return current;
+        });
         setReceipts(r);
       }
     },
@@ -87,5 +94,8 @@ export function useCompanion(project: string, open: boolean) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
-  return { bindings, receipts, busy, error, run, send, pair };
+  function selectBinding(id: string) {
+    setTarget({ id, unavailable: false });
+  }
+  return { bindings, target, selectBinding, receipts, busy, error, run, send, pair };
 }

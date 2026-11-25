@@ -1,6 +1,6 @@
 # Conversaciones vinculadas del diseñador
 
-El panel **Asistente de la conversación** guarda una solicitud con la revisión, el motor y la selección del diseñador. El companion entrega la solicitud a la conversación local elegida. El identificador público del vínculo aparece en el panel. El identificador de sesión del proveedor reside en el registro privado del Mac.
+El panel **Asistente de la conversación** guarda una solicitud con la revisión, el motor y la selección del diseñador. El companion entrega la solicitud a la conversación local elegida. El identificador público del vínculo aparece en el panel. Si el vínculo caduca mientras escribes, el panel conserva el borrador y te pide seleccionar la conversación antes de enviarlo. El identificador de sesión del proveedor reside en el registro privado del Mac.
 
 ## Emparejar un vínculo existente
 
@@ -12,7 +12,7 @@ node scripts/local-studio.mjs companion pair --binding-id "$B" --origin "$O" --f
 node scripts/local-studio.mjs companion dispatch --binding-id "$B" --project-id "$P"
 ```
 
-El directorio anterior contiene `bindings/`. La migración copia y vuelve a leer el registro, comprueba el checkout y conserva el ID, el destino y la evidencia de Claude. Se puede repetir. La ubicación privada nueva es `.studio/companion`; puedes elegir otra con `--config-dir` o `STUDIO_COMPANION_DIR`. Usa la misma ubicación en los comandos posteriores. El montaje de medios del renderer y las credenciales de servicios quedan fuera de ese directorio.
+El directorio anterior contiene `bindings/`. La migración copia y vuelve a leer el registro, comprueba el checkout y conserva el ID, el destino y la evidencia de Claude. Se puede repetir. La ubicación privada nueva es `.studio/companion`; puedes elegir otra con `--config-dir` o `STUDIO_COMPANION_DIR`. Usa la misma ubicación en los comandos posteriores. Elige un directorio separado del montaje indicado por `STUDIO_DATA_DIR` en la configuración de la web. La comprobación resuelve los enlaces simbólicos y exige que ambos árboles sean independientes. El montaje de medios del renderer y las credenciales de servicios quedan fuera de ese directorio.
 
 Cada invocación de `dispatch` reclama una solicitud creada para ese proyecto y vínculo. Puedes especificar `--request-id "$R"` para una solicitud concreta. El recibo muestra si la conversación está en cola, en espera o si el transporte perdió la confirmación. Ante una entrega incierta, comprueba la conversación y el recibo. El companion mantiene el intento original para recibir su callback.
 
@@ -27,7 +27,7 @@ node scripts/local-studio.mjs companion action "$R" feedback --approved --file "
 node scripts/local-studio.mjs companion action "$R" status --file "$ESTADO"
 ```
 
-Los archivos JSON de entrada deben ser privados. `read` obtiene el head para compararlo con la revisión base del recibo. `feedback` recibe `{baseRevision,text}` y modifica el texto seleccionado. Si el editor cambió, la API devuelve 409. Una repetición idéntica recupera la revisión exacta de la acción, incluso cuando el head ya avanzó.
+Los archivos JSON de entrada deben ser privados. `read` obtiene la revisión actual mientras el intento está abierto. Al completarse, cancelarse o fallar el intento, se cierran las lecturas del proyecto y de la fuente de Shorts. `feedback` recibe `{baseRevision,text}` y modifica el texto seleccionado. Si el editor cambió, la API devuelve 409. Una repetición idéntica recupera la revisión exacta de la acción, incluso cuando el head ya avanzó.
 
 `proposal` admite el contrato R3 con el request, la revisión y el motor del recibo. El diseñador conserva los diagnósticos de una propuesta inválida. El propietario puede previsualizar la propuesta, aplicarla y guardar la versión en biblioteca desde **Revisar propuestas**. Cada decisión es explícita. El callback admite, por ejemplo, `{"status":"completed"}` después de entregar el resultado. Una nota breve puede acompañar `waiting`, `failed` o `delivery-unknown`. Evita incluir credenciales o enlaces privados en las notas.
 
@@ -37,7 +37,7 @@ En Shorts, selecciona el proyecto con la conversación vinculada. La acción `so
 
 En una importación con narración maestra, usa **Activar tomas de escena** antes de seleccionar la capa de audio de la escena. La operación conserva el archivo maestro, las tomas importadas, el historial, la música y los tiempos de subtítulos. El inventario D6 describe el origen; la capa de audio de la revisión describe la toma que se reproduce.
 
-Confirma en el chat el texto, perfil y dirección. Comprueba que el conector esté disponible en esa sesión. Registra el inicio antes de invocarlo. Si la generación pudiera haberse ejecutado y se pierde la respuesta, conserva la incertidumbre y recupera el archivo o la evidencia del proveedor.
+Vincula una capa de subtítulos al audio elegido antes de pedir voz. El diseñador comprueba ese vínculo en la revisión que se usará para la toma. Confirma en el chat el texto, perfil y dirección. Comprueba que el conector esté disponible en esa sesión. Registra el inicio antes de invocarlo. Si la generación pudiera haberse ejecutado y se pierde la respuesta, conserva la incertidumbre y recupera el archivo o la evidencia del proveedor.
 
 ```sh
 node scripts/local-studio.mjs companion action "$R" begin-voice --approved

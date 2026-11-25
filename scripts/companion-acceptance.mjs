@@ -50,7 +50,7 @@ function isolatedCopy(space) {
   const names = run('git', ['ls-files', '-co', '--exclude-standard', '-z'])
     .split('\0')
     .filter((s) =>
-      /^(apps\/(web|companion|remotion-server|hyperframes-worker)\/|packages\/|pnpm-workspace.yaml$|pnpm-lock.yaml$|package.json$)/.test(
+      /^(apps\/(web|companion|remotion-server|hyperframes-worker)\/|packages\/|scripts\/local-studio\.mjs$|pnpm-workspace.yaml$|pnpm-lock.yaml$|package.json$)/.test(
         s
       )
     );

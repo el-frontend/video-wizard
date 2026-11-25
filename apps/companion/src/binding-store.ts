@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { privateDir } from './private-files';
-import { join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { rendererMediaDirectory } from './renderer-media.mjs';
 import { z } from 'zod';
 import { BindingSchema, SessionIdSchema, type Binding } from './protocol';
 
@@ -13,6 +14,20 @@ type StoredBinding = z.infer<typeof StoredBindingSchema>;
 
 export class SessionBusyError extends Error {}
 
+// Resolve symlinked parents even when the final directory has not been created yet.
+async function canonicalDirectory(path: string): Promise<string> {
+  try {
+    await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return join(await canonicalDirectory(dirname(path)), basename(path));
+  }
+  return realpath(path);
+}
+function contains(parent: string, child: string) {
+  const path = relative(parent, child);
+  return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path);
+}
 export class BindingStore {
   private constructor(
     readonly workspace: string,
@@ -28,13 +43,27 @@ export class BindingStore {
   }): Promise<BindingStore> {
     const root = await realpath(workspace);
     const directory = resolve(root, dataDir || '.studio/companion');
-    const media = resolve(root, process.env.STUDIO_DATA_DIR || '.studio-data');
-    if (directory === media || directory.startsWith(media + '/') || directory === root)
-      throw Error('El companion requiere un directorio privado fuera de medios.');
-    const resolved = await privateDir(directory),
-      mediaRoot = await realpath(media).catch(() => media);
-    if (resolved === mediaRoot || resolved.startsWith(mediaRoot + '/'))
-      throw Error('El directorio privado coincide con el montaje de medios.');
+    const mounts = new Set([
+      rendererMediaDirectory(root),
+      resolve(root, process.env.STUDIO_DATA_DIR || '.studio-data'),
+    ]);
+    const checkLocation = async (candidate: string) => {
+      for (const mount of mounts) {
+        const media = await canonicalDirectory(mount);
+        if (
+          candidate === root ||
+          contains(media, candidate) ||
+          contains(candidate, media) ||
+          contains(mount, directory) ||
+          contains(directory, mount)
+        )
+          throw Error('El companion requiere un directorio privado fuera de medios.');
+      }
+    };
+    await checkLocation(await canonicalDirectory(directory));
+    const resolved = await privateDir(directory);
+    // Creating a previously missing path can reveal aliases on case-insensitive volumes.
+    await checkLocation(resolved);
     return new BindingStore(root, resolved);
   }
 

@@ -35,6 +35,7 @@ const FONT_SIGNATURES = new Map([
 
 type AssetDb = Pick<typeof db, 'select' | 'insert'>;
 type StoredAsset = typeof studioAssets.$inferSelect;
+type MeasuredAsset = Pick<AssetRecord, 'hash' | 'hasAudio' | 'durationMs'>;
 interface AssetInput {
   stream: AsyncIterable<Uint8Array> | ReadableStream<Uint8Array>;
   filename: string;
@@ -168,9 +169,10 @@ export class AssetService {
   async ingest(
     ownerId: string,
     { stream, filename, mediaType }: AssetInput,
-    finalize: (register: (db: AssetDb) => Promise<AssetRecord>) => Promise<AssetRecord> = (
-      register
-    ) => register(this.db)
+    finalize: (
+      register: (db: AssetDb) => Promise<AssetRecord>,
+      measured: MeasuredAsset
+    ) => Promise<AssetRecord> = (register) => register(this.db)
   ): Promise<AssetRecord> {
     if (
       !filename.trim() ||
@@ -214,20 +216,17 @@ export class AssetService {
       const metadata = await readMetadata(path, mediaType, sizeBytes);
       const destination = await assetPath(dataDir, ownerId, hash, true);
 
-      try {
-        // A hard link promotes complete bytes atomically without replacing another upload.
-        await link(path, destination);
-      } catch (error) {
-        if (!isFileError(error, 'EEXIST')) throw error;
-        const { file } = await openAssetFile(destination);
-        try {
-          if ((await hashFile(file)) !== hash) throw new AssetCorruptError();
-        } finally {
-          await file.close();
+      const alreadyPresent = new Error('Asset destination already exists');
+      let verifiedExisting = false;
+      const register = async (db: AssetDb) => {
+        if (!verifiedExisting) {
+          try {
+            await link(path, destination);
+          } catch (error) {
+            if (isFileError(error, 'EEXIST')) throw alreadyPresent;
+            throw error;
+          }
         }
-      }
-
-      return await finalize(async (db) => {
         const [inserted] = await db
           .insert(studioAssets)
           .values({
@@ -249,7 +248,22 @@ export class AssetService {
           .where(and(eq(studioAssets.ownerId, ownerId), eq(studioAssets.hash, hash)));
         if (!existing) throw new Error('Studio asset was removed during ingestion.');
         return toRecord(existing);
-      });
+      };
+      const measured = { hash, ...metadata };
+      try {
+        return await finalize(register, measured);
+      } catch (error) {
+        if (error !== alreadyPresent) throw error;
+        // Release any request lock before reading an existing content-addressed file.
+        const { file } = await openAssetFile(destination);
+        try {
+          if ((await hashFile(file)) !== hash) throw new AssetCorruptError();
+        } finally {
+          await file.close();
+        }
+        verifiedExisting = true;
+        return await finalize(register, measured);
+      }
     } finally {
       // Leave promoted bytes intact on database failure so another upload can claim them safely.
       await rm(temporary, { recursive: true, force: true });
