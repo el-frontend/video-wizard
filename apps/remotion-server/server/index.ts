@@ -65,9 +65,8 @@ async function main() {
   });
   const shutdown = () => {
     closeBundle?.();
-    server.close(() => {
-      void closeStudio();
-    });
+    server.close();
+    void closeStudio().catch(() => console.error('Studio renderer shutdown failed.'));
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);

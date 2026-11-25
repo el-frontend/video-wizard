@@ -15,6 +15,7 @@ const operation = z.strictObject({
   scope: z.string().regex(/^[a-z][a-z.-]*$/),
   jobId: reference.optional(),
   projectId: reference.optional(),
+  attemptId: reference.optional(),
   previewId: reference.optional(),
   proposalId: reference.optional(),
   rendererJobId: reference.optional(),

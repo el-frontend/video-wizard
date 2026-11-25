@@ -115,6 +115,7 @@ async function main() {
     BETTER_AUTH_SECRET: envFile(privateEnv).BETTER_AUTH_SECRET ?? webEnv.BETTER_AUTH_SECRET,
     STUDIO_RENDER_SECRET: render.STUDIO_RENDER_SECRET,
     STUDIO_DATA_DIR: data,
+    STUDIO_EXPORT_DIR: join(data, 'export-runtime'),
     BETTER_AUTH_URL: 'http://app.video-wizard.localhost:3000',
     STUDIO_EDITOR_ORIGIN: 'http://app.video-wizard.localhost:3000',
     STUDIO_PREVIEW_ORIGIN: 'http://preview.video-wizard.localhost:3001',
@@ -235,6 +236,8 @@ async function main() {
     );
   if (command === 'renderer') {
     assert.ok(existsSync(data), 'Studio storage must exist.');
+    const staging = join(env.STUDIO_EXPORT_DIR, 'staging');
+    mkdirSync(staging, { recursive: true, mode: 0o700 });
     const outputs = join(root, 'apps/remotion-server/renders');
     mkdirSync(outputs, { recursive: true });
     return service(
@@ -252,6 +255,10 @@ async function main() {
         '127.0.0.1:3001:3001',
         '--mount',
         'type=bind,source=' + data + ',target=/app/.studio-data,readonly',
+        '--mount',
+        'type=bind,source=' + staging + ',target=/var/studio-export-staging',
+        '-e',
+        'STUDIO_EXPORT_STAGING=/var/studio-export-staging',
         '--mount',
         'type=bind,source=' + outputs + ',target=/app/apps/remotion-server/renders',
         '-e',

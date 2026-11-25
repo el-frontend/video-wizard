@@ -1,7 +1,7 @@
 import { GeneratedVisual } from './generated-visual';
 import { visualContext } from '@workspace/render-contract';
 import type { ComponentType, CSSProperties } from 'react';
-import { Audio, Img, OffthreadVideo, useCurrentFrame } from 'remotion';
+import { Audio, Img, Html5Video, useCurrentFrame } from 'remotion';
 import {
   contrastRatio,
   videoPlayback,
@@ -74,7 +74,7 @@ export function LayerRenderer({
   if (layer.type === 'video')
     return src ? (
       <div style={style}>
-        <OffthreadVideo
+        <Html5Video
           src={src}
           trimBefore={trimBefore}
           volume={layer.volume}

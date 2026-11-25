@@ -88,6 +88,7 @@ services:
       - STUDIO_PREVIEW_ORIGIN=${STUDIO_PREVIEW_ORIGIN:-http://preview.video-wizard.localhost:3001}
       - NODE_ENV=production
       - PORT=3001
+      - STUDIO_EXPORT_STAGING=/var/studio-export-staging
       - RENDERS_DIR=./renders
       # Cap concurrent Chromium tabs per render to bound memory in the
       # container (see REMOTION_PERFORMANCE.md). Raise/remove on hosts with
@@ -99,6 +100,7 @@ services:
     volumes:
       - ./apps/remotion-server/renders:/app/apps/remotion-server/renders
       - studio_data:/app/.studio-data:ro
+      - ./.studio-data/export-runtime/staging:/var/studio-export-staging
     depends_on:
       - processing-engine
     restart: unless-stopped
@@ -115,8 +117,11 @@ services:
       - '127.0.0.1:3000:3000'
     env_file:
       - .env.docker
+    environment:
+      STUDIO_EXPORT_DIR: /var/studio-exports
     volumes:
       - studio_data:/app/.studio-data
+      - ./.studio-data/export-runtime/published:/var/studio-exports/published:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -137,8 +142,11 @@ services:
       - video-wizard-network
     env_file:
       - .env.docker
+    environment:
+      STUDIO_EXPORT_DIR: /var/studio-exports
     volumes:
       - studio_data:/app/.studio-data
+      - ./.studio-data/export-runtime:/var/studio-exports
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -21,6 +21,7 @@ import { CaptionEditor } from './caption-editor';
 import { AudioInspector } from './audio-inspector';
 import { SceneExtension } from './scene-extension';
 import { useEditorDependencies } from '../hooks/use-editor-dependencies';
+import { ExportPanel } from './export-panel';
 import { RevisionHistory } from './revision-history';
 import { ConflictPanel } from './conflict-panel';
 import { ImportResources } from './import-resources';
@@ -387,6 +388,17 @@ export function Designer({ initial }: { initial: ProjectRecord }) {
           />
         </>
       )}
+      <ExportPanel
+        key={saved.document.id}
+        projectId={saved.document.id}
+        revision={saved.revision}
+        disabled={
+          session.hasUnsavedChanges() ||
+          session.resolving ||
+          session.replacingAudio ||
+          timingIssues.length > 0
+        }
+      />
       <RevisionHistory
         record={session.conflict ?? saved}
         disabled={session.resolving || session.replacingAudio || session.status === 'saving'}

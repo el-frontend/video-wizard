@@ -1,3 +1,4 @@
+import { hasExportAudio } from '@workspace/render-contract/export';
 import { generatedAssetDiagnostics } from '@workspace/render-contract/generated-assets';
 import { verifyModule } from '@workspace/render-contract/component-bundle';
 import { containsTime } from '@workspace/video-project';
@@ -134,13 +135,19 @@ export class RemotionProjectAdapter implements EngineAdapter {
     }
     return diagnostics;
   }
-  async prepare(snapshot: ExportSnapshot, workspace: string): Promise<PreparedComposition> {
+  async prepare(
+    snapshot: ExportSnapshot,
+    workspace: string,
+    signal?: AbortSignal
+  ): Promise<PreparedComposition> {
     const diagnostics = await this.validate(snapshot);
     const error = diagnostics.find((d) => d.severity === 'error');
     if (error) throw new Error(error.message);
+    signal?.throwIfAborted();
     const registry = await buildRegistry(snapshot, workspace);
     const input = browserInput(snapshot);
-    await stageMedia(snapshot, join(workspace, 'public', 'media'), this.dataDir);
+    await stageMedia(snapshot, join(workspace, 'public', 'media'), this.dataDir, signal);
+    signal?.throwIfAborted();
     const entryPoint = join(workspace, 'render.ts');
     await writeFile(
       entryPoint,
@@ -168,6 +175,7 @@ export class RemotionProjectAdapter implements EngineAdapter {
         },
       }),
     });
+    signal?.throwIfAborted();
     if (registry.modules.size) {
       const scripts = [];
       for (const [hash, module] of registry.modules) {
@@ -183,7 +191,10 @@ export class RemotionProjectAdapter implements EngineAdapter {
     }
     await writeFile(
       join(workspace, 'render-manifest.json'),
-      JSON.stringify({ moduleHashes: [...registry.modules.keys()] })
+      JSON.stringify({
+        moduleHashes: [...registry.modules.keys()],
+        hasAudio: hasExportAudio(snapshot),
+      })
     );
     return {
       engine: 'remotion',
@@ -231,7 +242,11 @@ export class RemotionProjectAdapter implements EngineAdapter {
     const output = join(prepared.workspace, 'video.mp4');
     try {
       signal.throwIfAborted();
+      const { hasAudio } = JSON.parse(
+        await readFile(join(prepared.workspace, 'render-manifest.json'), 'utf8')
+      );
       await renderMedia({
+        muted: hasAudio === false,
         ...options,
         codec: 'h264',
         outputLocation: output,

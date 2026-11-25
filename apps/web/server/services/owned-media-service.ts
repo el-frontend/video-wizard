@@ -1,5 +1,6 @@
 import { UNKNOWN_RENDER_ADMISSION } from './render-admission';
 import { OwnedClipInputSchema } from '@/server/types/clip-render';
+import { storedExport } from './studio/export-service';
 import { z } from 'zod';
 import type { AssetRecord } from '@workspace/video-project';
 import { db } from '@/server/db';
@@ -171,6 +172,19 @@ const submittingReceipt = z.object({ phase: z.literal('submitting') });
 /** Historical receipts can contain engine locators. Project responses from proven identifiers. */
 export function publicJob(job: Job) {
   if (job.type === 'analysis') return job;
+  if (job.type === 'studio_export') {
+    const { snapshot, snapshotHash } = storedExport(job);
+    return {
+      ...job,
+      inputData: {
+        revision: snapshot.revision,
+        projectId: snapshot.document.id,
+        engine: snapshot.document.engine,
+        snapshotHash,
+      },
+      resultData: null,
+    };
+  }
   const input =
     job.type === 'render'
       ? storedRenderInput.safeParse(job.inputData)

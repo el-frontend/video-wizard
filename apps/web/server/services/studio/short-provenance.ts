@@ -30,7 +30,11 @@ export function matchesCrop(job: Job | null, sourceId: string, v: PlaybackVarian
 }
 
 /** Recheck imported or edited documents against the owner's completed worker receipts. */
-export async function cropDiagnostics(owner: string, document: ProjectDraft) {
+export async function cropDiagnostics(
+  owner: string,
+  document: ProjectDraft,
+  lookup?: (id: string, owner: string) => Promise<Job | null>
+) {
   const diagnostics: Diagnostic[] = [];
   const variants = document.scenes.flatMap((scene) =>
     scene.layers.flatMap((layer) =>
@@ -40,11 +44,14 @@ export async function cropDiagnostics(owner: string, document: ProjectDraft) {
     )
   );
   if (!variants.length) return diagnostics;
-  const { jobHistoryService } = await import('../job-history-service');
+  const read =
+    lookup ??
+    (async (id: string, owner: string) =>
+      (await import('../job-history-service')).jobHistoryService.getById(id, owner));
   const jobs = new Map(
     await Promise.all(
       [...new Set(variants.map((v) => v.variant.jobId))].map(
-        async (id) => [id, await jobHistoryService.getById(id, owner)] as const
+        async (id) => [id, await read(id, owner)] as const
       )
     )
   );

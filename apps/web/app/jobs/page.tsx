@@ -22,6 +22,7 @@ const TYPE_LABELS: Record<JobType, string> = {
   render: 'Render',
   clip_creation: 'Clip',
   analysis: 'Analysis',
+  studio_export: 'Exportación de Studio',
 };
 
 const STATUS_VARIANTS: Record<JobStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -31,6 +32,7 @@ const STATUS_VARIANTS: Record<JobStatus, 'default' | 'secondary' | 'destructive'
   completed: 'default',
   failed: 'destructive',
   cancelled: 'outline',
+  cancelling: 'secondary',
 };
 
 export default workspacePage('/jobs', async (user, { searchParams }) => {
@@ -156,6 +158,7 @@ function summarizeInput(input: unknown): string {
   if (!input || typeof input !== 'object') return '—';
   const obj = input as Record<string, unknown>;
   const parts: string[] = [];
+  if (typeof obj.revision === 'string') parts.push('Revisión ' + obj.revision.slice(0, 8));
   if (typeof obj.template === 'string') parts.push(`template: ${obj.template}`);
   if (typeof obj.aspectRatio === 'string') parts.push(`ratio: ${obj.aspectRatio}`);
   if (typeof obj.language === 'string') parts.push(`lang: ${obj.language}`);
@@ -169,6 +172,7 @@ function isJobType(value: unknown): value is JobType {
     value === 'transcription' ||
     value === 'render' ||
     value === 'clip_creation' ||
+    value === 'studio_export' ||
     value === 'analysis'
   );
 }
@@ -180,6 +184,7 @@ function isJobStatus(value: unknown): value is JobStatus {
     value === 'processing' ||
     value === 'completed' ||
     value === 'failed' ||
+    value === 'cancelling' ||
     value === 'cancelled'
   );
 }

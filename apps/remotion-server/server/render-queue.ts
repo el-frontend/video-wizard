@@ -164,8 +164,13 @@ export const makeRenderQueue = ({
     return id;
   }
   function schedule(id: string, run: () => Promise<void>) {
-    pending.push({ id, run });
+    const task = { id, run };
+    pending.push(task);
     pump();
+    return () => {
+      const index = pending.indexOf(task);
+      if (index >= 0) pending.splice(index, 1);
+    };
   }
 
   return {

@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./generated-assets": "./src/generated-assets.ts",
     "./component-bundle": "./src/component-bundle.ts",
+    "./export": "./src/export.ts",
     "./storage": "./src/storage.ts",
     "./font": "./src/font.ts"
   },

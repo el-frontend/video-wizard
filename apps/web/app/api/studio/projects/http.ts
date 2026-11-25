@@ -1,3 +1,4 @@
+import { ExportKeyCollision } from '@/server/services/studio/export-service';
 import { CapabilityError, RequestCollision } from '@/server/services/studio/request-service';
 import { NextResponse } from 'next/server';
 
@@ -52,7 +53,11 @@ export async function studioResponse<T>(action: () => Promise<T>, status = 200) 
         { status: 409 }
       );
     }
-    if (error instanceof LibraryConflictError || error instanceof RequestCollision)
+    if (
+      error instanceof LibraryConflictError ||
+      error instanceof RequestCollision ||
+      error instanceof ExportKeyCollision
+    )
       return NextResponse.json({ success: false, error: error.message }, { status: 409 });
     if (
       error instanceof LibraryNotFoundError ||

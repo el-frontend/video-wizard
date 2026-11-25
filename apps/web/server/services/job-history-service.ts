@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 
 import { db } from '@/server/db';
 import { jobs } from '@/server/db/schema';
@@ -57,12 +57,15 @@ class JobHistoryService {
     await db
       .update(jobs)
       .set({ status: 'processing', startedAt: new Date() })
-      .where(eq(jobs.id, jobId));
+      .where(and(eq(jobs.id, jobId), ne(jobs.type, 'studio_export')));
   }
 
   async updateProgress(jobId: string, progress: number): Promise<void> {
     const clamped = Math.max(0, Math.min(100, Math.round(progress)));
-    await db.update(jobs).set({ progress: clamped }).where(eq(jobs.id, jobId));
+    await db
+      .update(jobs)
+      .set({ progress: clamped })
+      .where(and(eq(jobs.id, jobId), ne(jobs.type, 'studio_export')));
   }
 
   async complete(jobId: string, resultData: unknown): Promise<void> {
@@ -74,7 +77,7 @@ class JobHistoryService {
         resultData: resultData as never,
         completedAt: new Date(),
       })
-      .where(eq(jobs.id, jobId));
+      .where(and(eq(jobs.id, jobId), ne(jobs.type, 'studio_export')));
   }
 
   async fail(jobId: string, errorMessage: string): Promise<void> {
@@ -85,7 +88,7 @@ class JobHistoryService {
         errorMessage,
         completedAt: new Date(),
       })
-      .where(eq(jobs.id, jobId));
+      .where(and(eq(jobs.id, jobId), ne(jobs.type, 'studio_export')));
   }
 
   async listByUser(userId: string, options: ListJobsOptions = {}): Promise<Job[]> {

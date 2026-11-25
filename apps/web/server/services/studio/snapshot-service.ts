@@ -14,7 +14,8 @@ const descriptor = AssetDescriptorSchema.omit({ ownerId: true }).strip();
 
 export function snapshotBuilder(
   assets: Pick<AssetService, 'get' | 'verify'>,
-  library: Pick<LibraryService, 'get' | 'readBundle'>
+  library: Pick<LibraryService, 'get' | 'readBundle'>,
+  lookup?: Parameters<typeof cropDiagnostics>[2]
 ) {
   return async function buildSnapshot(
     ownerId: string,
@@ -27,10 +28,11 @@ export function snapshotBuilder(
       revision: record.revision,
       document: structuredClone(record.document),
       bundles: Object.create(null),
+      ...(record.importContext && { importContext: structuredClone(record.importContext) }),
       diagnostics: importDiagnostics(record.importContext),
       dependencies: { assets: Object.create(null), libraries: Object.create(null) },
     };
-    snapshot.diagnostics.push(...(await cropDiagnostics(ownerId, record.document)));
+    snapshot.diagnostics.push(...(await cropDiagnostics(ownerId, record.document, lookup)));
     const ids = new Set(record.document.assetIds);
     for (const ref of projectPins(record.document)) {
       signal?.throwIfAborted();

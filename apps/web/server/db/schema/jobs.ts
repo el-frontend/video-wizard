@@ -13,6 +13,7 @@ export const jobTypeEnum = pgEnum('job_type', [
   'render',
   'clip_creation',
   'analysis',
+  'studio_export',
 ]);
 
 export const jobStatusEnum = pgEnum('job_status', [
@@ -22,6 +23,7 @@ export const jobStatusEnum = pgEnum('job_status', [
   'completed',
   'failed',
   'cancelled',
+  'cancelling',
 ]);
 
 export const queueStatusEnum = pgEnum('queue_status', ['active', 'paused']);
@@ -67,6 +69,14 @@ export const jobs = pgTable(
   (table) => [
     index('jobs_status_idx').on(table.status),
     index('jobs_user_id_status_idx').on(table.userId, table.status),
+    t
+      .uniqueIndex('jobs_export_key_idx')
+      .on(
+        table.userId,
+        sql`(${table.inputData}->>'projectId')`,
+        sql`(${table.inputData}->>'idempotencyKey')`
+      )
+      .where(sql`${table.inputData}->>'kind' = 'studio-export-v1'`),
     check('jobs_progress_range', sql`${table.progress} >= 0 AND ${table.progress} <= 100`),
   ]
 );
@@ -123,6 +133,9 @@ export const queueTasks = pgTable(
 
     /** Number of times this task has been attempted */
     attempts: t.integer('attempts').notNull().default(0),
+
+    attemptId: t.uuid('attempt_id'),
+    leaseUntil: t.timestamp('lease_until', { withTimezone: true }),
 
     /** Maximum retries before marking as failed */
     maxRetries: t.integer('max_retries').notNull().default(3),

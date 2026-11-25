@@ -9,7 +9,7 @@ import { shortSource } from '@/server/services/studio/shorts';
 import { OwnedClipInputSchema } from '@/server/types/clip-render';
 
 export type JobHandler = (job: Job) => Promise<unknown>;
-export const handlers: Record<JobType, JobHandler> = {
+export const handlers: Record<Exclude<JobType, 'studio_export'>, JobHandler> = {
   async render(job) {
     const input = storedRenderInput.safeParse(job.inputData);
     if (!input.success) throw new Error(reingest);

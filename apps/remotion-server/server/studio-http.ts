@@ -1,3 +1,4 @@
+import { installExportRoutes } from './export-http.js';
 import { compileComponent } from './component-compiler.js';
 import { checkMounted } from './component-mount.mjs';
 import express from 'express';
@@ -71,7 +72,7 @@ export function installStudioRoutes(
     editorOrigin: string;
     previewOrigin: string;
     dataDir?: string;
-    schedule?: (id: string, run: () => Promise<void>) => void;
+    schedule?: (id: string, run: () => Promise<void>) => void | (() => void);
   }
 ) {
   const editor = new URL(config.editorOrigin).origin,
@@ -94,6 +95,12 @@ export function installStudioRoutes(
   }
   const remotion = new RemotionProjectAdapter(config.dataDir);
   const native = new HyperframesProjectAdapter(config.dataDir);
+  const closeExports = installExportRoutes(
+    app,
+    config.secret,
+    { remotion, hyperframes: native },
+    config.schedule
+  );
   const expires = () => Date.now() + 60 * 60 * 1000;
   const collect = setInterval(() => {
     for (const [key, batch] of retirements) {
@@ -520,6 +527,7 @@ export function installStudioRoutes(
   return {
     close: async () => {
       clearInterval(collect);
+      await closeExports();
       const closing = [...sessions.values()];
       sessions.clear();
       await Promise.all(

@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { db } from '@/server/db';
 import { jobs, queueTasks, taskQueues } from '@/server/db/schema';
 import { ServiceError } from '@/server/lib/utils';
+
+type QueueTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export const leaseDeadline = sql`clock_timestamp() + interval '30 seconds'`;
 
 import type { Job, JobType } from './job-history-service';
 
@@ -21,6 +25,7 @@ interface EnqueueInput {
 }
 
 export interface ClaimedTask {
+  previousAttemptId?: string;
   task: QueueTask;
   job: Job;
 }
@@ -89,27 +94,33 @@ class QueueService {
   }
 
   /** Publish the history row and executable task in the same commit. */
-  async enqueue({ userId, type, inputData, queueName, position = 0, maxRetries }: EnqueueInput) {
-    const queue = await this.ensureQueue(queueName);
-    return db.transaction(async (tx) => {
-      const [job] = await tx
-        .insert(jobs)
-        .values({ userId, type, inputData, status: 'queued' })
-        .returning({ id: jobs.id });
-      if (!job) throw new ServiceError('Failed to create queued job');
-      const [task] = await tx
-        .insert(queueTasks)
-        .values({
-          jobId: job.id,
-          queueId: queue.id,
-          status: 'pending',
-          position,
-          maxRetries,
-        })
-        .returning({ id: queueTasks.id });
-      if (!task) throw new ServiceError('Failed to create queue task');
-      return job;
-    });
+  async enqueue(input: EnqueueInput) {
+    const queue = await this.ensureQueue(input.queueName);
+    return db.transaction((tx) => this.enqueueInTransaction(tx, queue.id, input));
+  }
+
+  async enqueueInTransaction(
+    tx: QueueTx,
+    queueId: string,
+    { userId, type, inputData, position = 0, maxRetries }: Omit<EnqueueInput, 'queueName'>
+  ) {
+    const [job] = await tx
+      .insert(jobs)
+      .values({ userId, type, inputData, status: 'queued' })
+      .returning({ id: jobs.id });
+    if (!job) throw new ServiceError('Failed to create queued job');
+    const [task] = await tx
+      .insert(queueTasks)
+      .values({
+        jobId: job.id,
+        queueId,
+        status: 'pending',
+        position,
+        maxRetries,
+      })
+      .returning({ id: queueTasks.id });
+    if (!task) throw new ServiceError('Failed to create queue task');
+    return job;
   }
 
   /**
@@ -131,36 +142,76 @@ class QueueService {
 
     return await db.transaction(async (tx) => {
       const [candidate] = await tx
-        .select({ id: queueTasks.id })
+        .select({ task: queueTasks, type: jobs.type })
         .from(queueTasks)
+        .innerJoin(jobs, eq(jobs.id, queueTasks.jobId))
         .where(
           and(
             eq(queueTasks.queueId, queue.id),
-            eq(queueTasks.status, 'pending'),
-            or(isNull(queueTasks.nextRetryAt), lte(queueTasks.nextRetryAt, new Date()))
+            or(
+              and(
+                eq(queueTasks.status, 'pending'),
+                or(
+                  isNull(queueTasks.nextRetryAt),
+                  lte(queueTasks.nextRetryAt, sql`clock_timestamp()`)
+                )
+              ),
+              and(
+                eq(jobs.type, 'studio_export'),
+                sql`${queueTasks.status} in ('processing','cancelling')`,
+                lte(queueTasks.leaseUntil, sql`clock_timestamp()`)
+              )
+            )
           )
         )
         .orderBy(asc(queueTasks.position), asc(queueTasks.createdAt))
         .limit(1)
-        .for('update', { skipLocked: true });
+        .for('update', { of: queueTasks, skipLocked: true });
 
       if (!candidate) return null;
 
+      const studio = candidate.type === 'studio_export';
+      if (
+        studio &&
+        (candidate.task.status === 'cancelling' ||
+          candidate.task.attempts >= candidate.task.maxRetries)
+      ) {
+        const status = candidate.task.status === 'cancelling' ? 'cancelled' : 'failed';
+        await tx
+          .update(queueTasks)
+          .set({ status, leaseUntil: null })
+          .where(eq(queueTasks.id, candidate.task.id));
+        await tx
+          .update(jobs)
+          .set({
+            status,
+            completedAt: sql`clock_timestamp()`,
+            resultData: null,
+            errorMessage: status === 'failed' ? 'Se agotaron los intentos de exportación.' : null,
+          })
+          .where(eq(jobs.id, candidate.task.jobId));
+        return null;
+      }
       const [claimedTask] = await tx
         .update(queueTasks)
         .set({
           status: 'processing',
           attempts: sql`${queueTasks.attempts} + 1`,
           nextRetryAt: null,
+          ...(studio && { attemptId: randomUUID(), leaseUntil: leaseDeadline }),
         })
-        .where(eq(queueTasks.id, candidate.id))
+        .where(eq(queueTasks.id, candidate.task.id))
         .returning();
 
       if (!claimedTask) return null;
 
       const [linkedJob] = await tx
         .update(jobs)
-        .set({ status: 'processing', startedAt: new Date() })
+        .set({
+          status: 'processing',
+          startedAt: sql`clock_timestamp()`,
+          ...(studio && { progress: 0, resultData: null }),
+        })
         .where(eq(jobs.id, claimedTask.jobId))
         .returning();
 
@@ -174,7 +225,11 @@ class QueueService {
         return null;
       }
 
-      return { task: claimedTask, job: linkedJob };
+      return {
+        task: claimedTask,
+        job: linkedJob,
+        ...(studio && candidate.task.attemptId && { previousAttemptId: candidate.task.attemptId }),
+      };
     });
   }
 
@@ -183,7 +238,19 @@ class QueueService {
    */
   async complete(taskId: string, jobId: string, resultData: unknown): Promise<void> {
     await db.transaction(async (tx) => {
-      await tx.update(queueTasks).set({ status: 'completed' }).where(eq(queueTasks.id, taskId));
+      const [legacy] = await tx
+        .update(queueTasks)
+        .set({ status: 'completed' })
+        .where(
+          and(
+            eq(queueTasks.id, taskId),
+            eq(queueTasks.jobId, jobId),
+            isNull(queueTasks.attemptId),
+            eq(queueTasks.status, 'processing')
+          )
+        )
+        .returning({ id: queueTasks.id });
+      if (!legacy) return;
 
       await tx
         .update(jobs)
@@ -212,6 +279,7 @@ class QueueService {
       const [current] = await tx
         .select({
           attempts: queueTasks.attempts,
+          attemptId: queueTasks.attemptId,
           maxRetries: queueTasks.maxRetries,
           status: queueTasks.status,
         })
@@ -225,7 +293,11 @@ class QueueService {
       }
 
       // A committed completion may lose its acknowledgement to the worker.
-      if (current.status === 'completed') return { retrying: false, nextRetryAt: null };
+      if (
+        current.attemptId ||
+        ['completed', 'cancelled', 'cancelling', 'failed'].includes(current.status)
+      )
+        return { retrying: false, nextRetryAt: null };
       if (retryable && current.attempts < current.maxRetries) {
         const nextRetryAt = computeNextRetry(current.attempts);
 

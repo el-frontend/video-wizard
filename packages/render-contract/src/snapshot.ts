@@ -14,7 +14,10 @@ import { sceneFrames } from './scene-frames';
 import { projectAppearance } from './project-appearance';
 export * from './dependencies';
 
-export interface ExportSnapshot extends Pick<ProjectRecord, 'ownerId' | 'revision' | 'document'> {
+export interface ExportSnapshot extends Pick<
+  ProjectRecord,
+  'ownerId' | 'revision' | 'document' | 'importContext'
+> {
   dependencies: ResolvedDependencies;
   /** Pinned library source bytes. Opaque until validated by the appropriate engine. */
   bundles: Record<string, { sha256: string; base64: string }>;
