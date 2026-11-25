@@ -1,5 +1,6 @@
 'use client';
 
+import { durationFrames } from '@/features/video/lib/legacy-timing';
 import { cn } from '@/lib/utils';
 import { VideoComposition } from '@/remotion/compositions/VideoComposition';
 import { REMOTION_CONFIG } from '@/remotion/config';
@@ -9,6 +10,7 @@ import { useCallback, useState } from 'react';
 
 interface VideoEditorPreviewProps {
   videoUrl: string;
+  sourceDurationMs: number;
   subtitles: SubtitleSegment[];
   initialTemplate?: CaptionTemplate;
   onTemplateChange?: (template: CaptionTemplate) => void;
@@ -17,12 +19,13 @@ interface VideoEditorPreviewProps {
 
 /**
  * Video Editor Preview Component (Phase T)
- * 
+ *
  * Provides real-time preview of video with subtitles
  * Uses Remotion Player for interactive playback
  */
 export function VideoEditorPreview({
   videoUrl,
+  sourceDurationMs,
   subtitles,
   className,
   initialTemplate = 'default',
@@ -37,12 +40,6 @@ export function VideoEditorPreview({
     },
     [onTemplateChange]
   );
-
-  // Calculate duration from subtitles
-  const durationInFrames =
-    subtitles.length > 0
-      ? Math.ceil(subtitles[subtitles.length - 1].end * REMOTION_CONFIG.DEFAULT_FPS)
-      : 300;
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,7 +68,12 @@ export function VideoEditorPreview({
       </div>
 
       {/* Video Player */}
-      <div className={cn("relative aspect-9/16 bg-black rounded-lg overflow-hidden shadow-2xl", className)}>
+      <div
+        className={cn(
+          'relative aspect-9/16 bg-black rounded-lg overflow-hidden shadow-2xl',
+          className
+        )}
+      >
         <Player
           component={VideoComposition}
           inputProps={{
@@ -80,7 +82,7 @@ export function VideoEditorPreview({
             template,
             backgroundColor: '#000000',
           }}
-          durationInFrames={durationInFrames}
+          durationInFrames={durationFrames(sourceDurationMs, REMOTION_CONFIG.DEFAULT_FPS)}
           fps={REMOTION_CONFIG.DEFAULT_FPS}
           compositionWidth={REMOTION_CONFIG.DEFAULT_WIDTH}
           compositionHeight={REMOTION_CONFIG.DEFAULT_HEIGHT}

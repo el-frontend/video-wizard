@@ -1,281 +1,159 @@
-/**
- * Subtitle Generation Service
- *
- * Handles video transcription and subtitle generation without content analysis
- */
+import { serviceHeaders, serviceKey } from '@workspace/service-auth';
+import { renderAdmission, UnknownRenderAdmissionError } from './render-admission';
+import type { LegacyRenderAdmission } from '@/server/types/video-render';
+import type { ReadableStream } from 'node:stream/web';
+import { z } from 'zod';
+import { db } from '@/server/db';
+import { durationFrames, secondsToLegacyMs } from '@/features/video/lib/legacy-timing';
+import { toLegacySeconds } from '@/features/studio-shorts/lib/timing';
+import {
+  resolveOwnedVideo,
+  resolveBrand,
+  renderCaptions,
+  type storedRenderInput,
+  type transcriptionInput,
+} from './owned-media-service';
+import { AssetService } from './studio/asset-service';
+import { shortSource } from './studio/shorts';
 
-import type { CaptionTemplate } from '@/remotion/types';
-
-export interface SubtitleSegment {
-  start: number; // milliseconds
-  end: number; // milliseconds
-  text: string;
-}
-
-export interface TranscriptionResult {
-  segments: Array<{
-    start: number;
-    end: number;
-    text: string;
-  }>;
-  text: string;
-  language: string;
-  segment_count: number;
-}
-
-export interface SubtitleGenerationInput {
-  videoPath: string;
-  language?: string; // Language code or 'auto' for auto-detection
-}
-
-export interface SubtitleGenerationResult {
-  subtitles: SubtitleSegment[];
-  language: string;
-  totalSegments: number;
-  videoDuration: number; // milliseconds
-}
-
-export interface BrandKitInput {
-  logoUrl?: string;
-  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  logoScale?: number;
-  primaryColor?: string;
-  secondaryColor?: string;
-  textColor?: string;
-  backgroundColor?: string;
-  fontFamily?: string;
-}
-
-export interface RenderSubtitlesInput {
-  videoPath: string;
-  subtitles: SubtitleSegment[];
-  template: CaptionTemplate;
-  language: string;
-  aspectRatio?: string;
-  brandKit?: BrandKitInput;
-}
-
-export interface RenderSubtitlesResult {
-  jobId: string;
-  videoUrl: string;
-}
-
+const assets = new AssetService(db);
 export class SubtitleGenerationService {
-  /** URL the server uses to call the Python engine (in-network). */
-  private pythonEngineUrl: string;
-  private remotionServerUrl: string;
-  /** URL embedded in payloads sent to Remotion (so its renderer can fetch). */
-  private pythonEngineInternalUrl: string;
+  constructor(
+    private readonly renderOrigin = process.env.REMOTION_SERVER_URL || 'http://localhost:3001'
+  ) {}
 
-  constructor() {
-    // Prefer the in-network address when running in Docker, fall back to
-    // the browser-facing one for host-based dev (port-mapped to localhost).
-    this.pythonEngineUrl =
-      process.env.PYTHON_ENGINE_INTERNAL_URL ||
-      process.env.NEXT_PUBLIC_PYTHON_ENGINE_URL ||
-      'http://localhost:8000';
-    this.remotionServerUrl = process.env.REMOTION_SERVER_URL || 'http://localhost:3001';
-    this.pythonEngineInternalUrl =
-      process.env.PYTHON_ENGINE_INTERNAL_URL || 'http://processing-engine:8000';
+  async transcribe(owner: string, input: z.infer<typeof transcriptionInput>, jobId?: string) {
+    const source = await resolveOwnedVideo(owner, input);
+    const { cues, language } = await shortSource.transcribe(
+      owner,
+      source.assetId,
+      input.language ?? undefined,
+      jobId
+    );
+    const segments = toLegacySeconds(cues);
+    return {
+      sourceAssetId: source.assetId,
+      sourceDurationMs: source.durationMs,
+      segments,
+      full_text: segments.map((segment) => segment.text).join(' '),
+      language: language ?? input.language ?? 'en',
+      segment_count: segments.length,
+    };
   }
 
-  /**
-   * Generate subtitles from video transcription
-   */
-  async generateSubtitles(input: SubtitleGenerationInput): Promise<SubtitleGenerationResult> {
-    try {
-      // Call Python processing engine to transcribe video
-      const response = await fetch(`${this.pythonEngineUrl}/transcribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          video_path: input.videoPath,
-          language: input.language === 'auto' ? null : input.language,
-          cleanup: false, // Don't delete audio file yet
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to transcribe video');
-      }
-
-      const transcriptionData: TranscriptionResult = await response.json();
-
-      // Transform segments to milliseconds format
-      const subtitles: SubtitleSegment[] = transcriptionData.segments.map((segment) => ({
-        start: Math.round(segment.start * 1000),
-        end: Math.round(segment.end * 1000),
-        text: segment.text.trim(),
-      }));
-
-      // Calculate video duration from last subtitle
-      const lastSubtitle = subtitles[subtitles.length - 1];
-      const videoDuration = lastSubtitle ? lastSubtitle.end : 0;
-
-      return {
-        subtitles,
-        language: transcriptionData.language || 'en',
-        totalSegments: transcriptionData.segment_count,
-        videoDuration,
-      };
-    } catch (error) {
-      console.error('Error generating subtitles:', error);
-      throw error;
-    }
+  async generateSubtitles(
+    owner: string,
+    input: z.infer<typeof transcriptionInput>,
+    jobId?: string
+  ) {
+    const result = await this.transcribe(owner, input, jobId);
+    return {
+      sourceAssetId: result.sourceAssetId,
+      subtitles: secondsToLegacyMs(result.segments),
+      language: result.language,
+      totalSegments: result.segment_count,
+      sourceDurationMs: result.sourceDurationMs,
+      videoDuration: result.sourceDurationMs,
+    };
   }
 
-  /**
-   * Render video with subtitles using Remotion Server.
-   *
-   * Optional `onProgress` is invoked with an integer 0-100 every time the
-   * upstream Remotion server reports progress. The worker uses it to keep
-   * the user-facing job's progress bar moving while the render runs.
-   */
-  async renderWithSubtitles(
-    input: RenderSubtitlesInput,
-    onProgress?: (percent: number) => void | Promise<void>
-  ): Promise<RenderSubtitlesResult> {
-    try {
-      // Transform subtitles to Remotion format
-      const formattedSubtitles = input.subtitles.map((sub, index) => ({
-        id: index + 1,
-        start: sub.start / 1000, // Convert to seconds
-        end: sub.end / 1000, // Convert to seconds
-        text: sub.text,
-      }));
-
-      // Calculate duration in frames
-      const lastSubtitle = formattedSubtitles[formattedSubtitles.length - 1];
-      const clipDurationMs = lastSubtitle ? lastSubtitle.end * 1000 : 10000;
-      const fps = 30;
-      const durationInFrames = Math.ceil((clipDurationMs / 1000) * fps);
-
-      // Use internal URL for container-to-container communication
-      const vUrl = new URL(`${this.pythonEngineInternalUrl}/${input.videoPath}`).toString();
-
-      const aspectRatio = input.aspectRatio || '9:16';
-
-      console.log('Creating render job:', {
-        vUrl,
-        subtitleCount: formattedSubtitles.length,
+  async render(
+    owner: string,
+    webJobId: string,
+    input: z.infer<typeof storedRenderInput>,
+    onProgress?: (pct: number) => Promise<void>
+  ) {
+    const sourceAsset = await resolveOwnedVideo(owner, input);
+    const { brandKit, logoAsset } = await resolveBrand(owner, input.brandKit);
+    const admission: LegacyRenderAdmission = {
+      compositionId: 'VideoWithSubtitles',
+      webJobId,
+      sourceAsset,
+      logoAsset,
+      inputProps: {
+        subtitles: renderCaptions(input),
         template: input.template,
         language: input.language,
-        aspectRatio,
-        durationInFrames,
+        aspectRatio: input.aspectRatio,
+        backgroundColor: '#000000',
+        durationInFrames: durationFrames(sourceAsset.durationMs, 30),
+        brandKit,
+      },
+    };
+    serviceKey(process.env.STUDIO_RENDER_SECRET ?? '');
+    const headers = (scope: string, rendererJobId?: string) =>
+      serviceHeaders({
+        audience: 'video-wizard-renderer',
+        ownerId: owner,
+        scope,
+        jobId: webJobId,
+        rendererJobId,
       });
-
-      // Create render job on Remotion server
-      const renderResponse = await fetch(`${this.remotionServerUrl}/renders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          compositionId: 'VideoWithSubtitles',
-          inputProps: {
-            videoUrl: vUrl,
-            subtitles: formattedSubtitles,
-            template: input.template,
-            language: input.language,
-            aspectRatio,
-            backgroundColor: '#000000',
-            durationInFrames,
-            brandKit: input.brandKit,
-          },
-        }),
-      });
-
-      if (!renderResponse.ok) {
-        const errorData = await renderResponse.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to create render job');
+    let jobId = await renderAdmission.reserve(owner, webJobId);
+    if (!jobId) {
+      try {
+        const response = await fetch(this.renderOrigin + '/renders', {
+          method: 'POST',
+          redirect: 'error',
+          headers: { ...(await headers('render.create')), 'Content-Type': 'application/json' },
+          body: JSON.stringify(admission),
+        });
+        if (!response.ok) throw new UnknownRenderAdmissionError();
+        jobId = z.object({ jobId: z.uuid() }).parse(await response.json()).jobId;
+      } catch {
+        // Once the request has left this process, a failed response cannot establish non-admission.
+        throw new UnknownRenderAdmissionError();
       }
-
-      const { jobId } = await renderResponse.json();
-
-      console.log('Render job created:', jobId);
-
-      // Poll for job completion
-      const videoUrl = await this.pollRenderJob(jobId, onProgress);
-
-      return {
-        jobId,
-        videoUrl,
-      };
-    } catch (error) {
-      console.error('Error rendering video with subtitles:', error);
-      throw error;
+      // If this write loses its acknowledgement, a retry rereads the durable receipt.
+      await renderAdmission.accept(owner, webJobId, jobId);
     }
-  }
-
-  /**
-   * Poll render job status until completion. When `onProgress` is given,
-   * forward the upstream progress (0-100 integer) on every status check.
-   */
-  private async pollRenderJob(
-    jobId: string,
-    onProgress?: (percent: number) => void | Promise<void>
-  ): Promise<string> {
-    let attempts = 0;
-    let lastReportedProgress = -1;
-    const pollIntervalMs = 2000;
-    const maxAttempts = Math.ceil((30 * 60 * 1000) / pollIntervalMs); // 30 minutes max
-
-    while (attempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-
-      const statusResponse = await fetch(`${this.remotionServerUrl}/renders/${jobId}`);
-
-      if (!statusResponse.ok) {
-        throw new Error('Failed to check render status');
+    const resource = this.renderOrigin + '/renders/' + jobId;
+    let lastProgress = -1;
+    for (let attempt = 0; attempt < 900; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const status = await fetch(resource, {
+        headers: await headers('render.read', jobId),
+        redirect: 'error',
+        cache: 'no-store',
+      });
+      if (!status.ok) throw new Error('No se pudo consultar la exportación.');
+      const receipt = await status.json();
+      if (receipt.status === 'failed' || receipt.status === 'cancelled')
+        throw new Error('La exportación falló.');
+      if (receipt.status === 'completed') {
+        // The renderer controls its receipt URL. Only fetch this exact job's fixed artifact.
+        const file = await fetch(resource + '.mp4', {
+          headers: await headers('render.artifact', jobId),
+          redirect: 'error',
+          cache: 'no-store',
+        });
+        if (!file.ok || !file.body) throw new Error('No se pudo recuperar la exportación.');
+        const output = await assets.ingest(owner, {
+          filename: webJobId + '.mp4',
+          mediaType: 'video/mp4',
+          stream: file.body as ReadableStream<Uint8Array>,
+        });
+        return {
+          jobId: webJobId,
+          sourceAssetId: sourceAsset.assetId,
+          outputAssetId: output.id,
+          videoUrl: '/api/studio/assets/' + output.id,
+        };
       }
-
-      const jobStatus = await statusResponse.json();
-
-      if (jobStatus.status === 'completed') {
-        console.log('Render completed:', jobStatus.videoUrl);
-        return jobStatus.videoUrl;
-      }
-
-      if (jobStatus.status === 'failed') {
-        throw new Error(jobStatus.error?.message || 'Render job failed');
-      }
-
-      if (jobStatus.status === 'in-progress' && typeof jobStatus.progress === 'number') {
-        const pct = Math.round(jobStatus.progress * 100);
-        console.log(`Render progress: ${pct}%`);
-
-        if (onProgress && pct !== lastReportedProgress) {
-          lastReportedProgress = pct;
+      if (receipt.status === 'in-progress' && typeof receipt.progress === 'number' && onProgress) {
+        const percent = Math.round(receipt.progress * 100);
+        if (percent !== lastProgress) {
+          lastProgress = percent;
+          // The renderer already accepted this job. A progress write cannot invalidate it.
           try {
-            await onProgress(pct);
-          } catch (progressError) {
-            // Don't fail the render just because progress reporting failed.
-            console.warn('Progress callback threw:', progressError);
+            await onProgress(percent);
+          } catch {
+            console.warn('Could not record render progress.');
           }
         }
       }
-
-      attempts++;
     }
-
-    throw new Error('Render job timed out');
-  }
-
-  /**
-   * Get render job status
-   */
-  async getRenderStatus(jobId: string) {
-    const response = await fetch(`${this.remotionServerUrl}/renders/${jobId}`);
-
-    if (!response.ok) {
-      throw new Error('Failed to get render status');
-    }
-
-    return response.json();
+    throw new Error('Se agotó el tiempo de exportación.');
   }
 }
-
 export const subtitleGenerationService = new SubtitleGenerationService();

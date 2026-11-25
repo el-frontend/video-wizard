@@ -5,7 +5,10 @@ import { requireEnv } from '../lib/utils';
  * AI models configuration
  */
 export const AI_MODELS = {
-  contentAnalysis: openai('gpt-5-mini'),
+  get contentAnalysis() {
+    validateAIConfig();
+    return openai('gpt-5-mini');
+  },
 } as const;
 
 /**
@@ -13,7 +16,7 @@ export const AI_MODELS = {
  */
 export function getOpenAIConfig() {
   const apiKey = requireEnv('OPENAI_API_KEY');
-  
+
   return {
     apiKey,
   };

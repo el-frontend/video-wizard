@@ -1,0 +1,71 @@
+# Video Wizard: autenticación unificada
+
+Estado: propuesta integrada aceptada por Carlos el 21 de noviembre de 2026. La implementación de video queda detenida mientras se completa esta migración. Base de código: `98a0c5d` en `feature/integral-studio`.
+
+## Resultado
+
+Una instalación local tiene una sola identidad por persona. Todas las herramientas requieren entrar; no se puede saltar el control usando un enlace directo, el puerto de Python, un archivo de render o una API antigua. Better Auth se ejecuta en el backend Next.js existente y su cliente React gestiona registro, ingreso, sesión y salida. PostgreSQL conserva los propietarios de proyectos y archivos. No se añade otro servidor de autenticación, OAuth, roles, correo transaccional ni claves de proveedores.
+
+## Identidad y migración
+
+- Better Auth y su adaptador Drizzle se fijan en `1.7.27` (release estable comprobada en el repositorio oficial el 21 de noviembre). Su peer dependency requiere Drizzle `^0.45.2`: se permite únicamente el parche de ORM `0.45.1 → 0.45.2`, sin actualizar Next/React/Drizzle Kit en bloque.
+- Se conserva `users` con sus UUID actuales y todas las relaciones y rutas de almacenamiento. Las altas nuevas también generan UUID. No se recrean usuarios por correo ni se borran cuentas, trabajos, proyectos, revisiones o recursos.
+- Una migración Drizzle posterior a `0007` añade tablas Better Auth de cuentas, sesiones, verificaciones y JWKS, sin reutilizar por accidente las tablas incompatibles de Auth.js. Mantiene las tablas antiguas durante la ventana de reversión y registra sus conteos, sin exponer contenido.
+- Añade un campo booleano de verificación compatible con Better Auth y lo rellena desde el timestamp antiguo; conserva el timestamp. Un nombre ausente recibe el correo como nombre visible. Los fixtures que insertan únicamente UUID/correo siguen siendo válidos.
+- Preflight transaccional de correos normalizados (trim/minúsculas): ante colisión, abortar con diagnóstico sin modificar datos ni fusionar cuentas. Backfill de una cuenta `credential` por usuario con hash, ligado al UUID original, idempotente y sin sobrescribir una credencial ya migrada.
+- Verificación de hashes bcrypt heredados con el verificador existente; contraseñas nuevas con scrypt de Better Auth y verificación que distingue ambos formatos. Bcrypt heredado conserva exactamente su comportamiento, sin normalización, recorte ni truncación adicional. Las altas scrypt siguen la política NFKC del algoritmo de Better Auth 1.7.27; documentar y probar esa diferencia Unicode, sin rehashear silenciosamente cuentas heredadas. El ingreso conserva las contraseñas largas/Unicode históricas; el registro conserva mínimo 8 y adopta máximo 128 para nuevas credenciales. Comprobar en la versión instalada que el límite de registro no rechaza un ingreso heredado válido.
+- Las sesiones Auth.js dejan de aceptarse al cambiar. Se informa del nuevo ingreso requerido. El antiguo `password_hash` se conserva; no es la fuente de verdad tras el corte. La reversión de código no permite altas/cambios nuevos sin un procedimiento explícito; no prometer rollback transparente.
+
+## Sesión y JWT de usuario
+
+- Sesión Better Auth persistida: cookie HttpOnly, SameSite Lax, Secure con HTTPS, duración 7 días y renovación como máximo diaria. Sin caché de sesión que permita aceptar una sesión revocada. Origen base configurado explícitamente; trusted origins acotados, sin comodines. CSRF/origin checks de Better Auth permanecen habilitados.
+- Plugin JWT/JWKS: firma EdDSA, duración 15 minutos, `iss = BETTER_AUTH_URL`, `aud = video-wizard-api`, `sub = users.id`, `sid = id de sesión`, `token_use = user`, tiempos y `kid`. Payload por lista permitida: no serializar la fila completa ni hashes, tokens de sesión, secretos o configuración. El JWT no sustituye la cookie principal de Better Auth.
+- Un único resolvedor autoriza las APIs: Bearer presente se verifica (algoritmo, firma, emisor, audiencia, caducidad, UUID/sub, perfil y sesión activa perteneciente al mismo usuario). Bearer inválido nunca cae a una cookie válida. Sin Bearer, la sesión de cookie permite SSR y solicitudes del mismo origen, incluidos video/audio/descargas. Para mutaciones con cookie se valida origen del mismo sitio; no abrir CORS con credenciales a cualquier origen.
+- Todas las llamadas JSON de la interfaz pasan por un fetch compartido que obtiene el JWT usando `authClient.token()`, lo guarda únicamente en memoria, renueva antes de expirar y agrega Authorization sin perder headers/cuerpo/AbortSignal. No persistir tokens en localStorage, querystrings, logs ni archivos. Al cerrar sesión, borrar cache y revocar sesión; los JWT antiguos dejan de funcionar por la comprobación de `sid`.
+- Las páginas server y los medios usan cookies verificadas. Guards de página y API aplican autorización real; un proxy que solo comprueba existencia de cookie no cuenta como control. Mantener 401 JSON en ausencia de autenticación, 404 de pertenencia y 409 con revisión vigente.
+
+## Navegación y edición
+
+Todas las páginas funcionales, incluido `/`, Video Wizard, Subtitle Generator, Content Intelligence, editor heredado, diseñador, bibliotecas, proyectos, shorts y jobs, requieren sesión. Registro e ingreso permanecen públicos; se conserva el registro por correo/contraseña actual. Recursos estáticos de interfaz, endpoints del protocolo Better Auth y JWKS son excepciones públicas documentadas. `/remotion` y `/api/render-final`, aunque respondan 501, también requieren identidad.
+
+El shell de autenticación no muestra la navegación privada. El shell de trabajo muestra el usuario y permite cerrar sesión. El retorno después de entrar conserva la ruta y query local, descarta URLs externas, protocol-relative y codificaciones equivalentes; fallback `/projects`.
+
+Una expiración en el diseñador muestra reautenticación sin desmontar el documento en memoria ni borrar cambios locales. La recuperación reintenta lecturas, nunca reproduce automáticamente una mutación de resultado desconocido. El cierre explícito advierte si hay cambios sin guardar y permite cancelar; solo abandona al confirmar o guardar correctamente. No se adelanta aquí D6 (recuperación persistente de borradores).
+
+El kit de marca legacy guardado en localStorage debe pasar a una clave por UUID. No asignar ni mostrar automáticamente el kit antiguo sin dueño al primer usuario que entre; conservarlo sin usar como dato local no atribuido. No necesita un nuevo flujo de importación en esta entrega. Los cambios de cuenta invalidan el estado/cache de usuario y ningún usuario ve el kit del anterior.
+
+## APIs antiguas, archivos y servicios
+
+Se migran también las rutas antiguas: autenticar no basta si el navegador puede suministrar una ruta de otro propietario. Las entradas de video serán `sourceAssetId` propio o `jobId` propio con procedencia verificada. El backend resuelve la ruta física. Rechazar rutas arbitrarias/URLs de archivos suministradas por clientes; jobs históricos sin procedencia verificable reciben diagnóstico y opción de reingesta, nunca propietario supuesto. `/editor/[id]` resuelve el job del dueño y no transcribe desde querystrings ni muestra datos de ejemplo como si fueran reales.
+
+Subtitle Generator usa la misma ingesta/YouTube/transcripción autenticada que Shorts; no accede directamente a Python. Los resultados y renders se registran como recursos del dueño o se sirven mediante un proxy autenticado que valida el job y su archivo exacto. El browser no recibe URLs públicas de `/uploads`, `/output` ni `/renders`. Mantener reproducción HTTP Range/206/416, HEAD cuando corresponda y cache privado/no-store.
+
+Next y el worker firman JWT de servicio HS256 con un secreto de al menos 32 bytes **distinto del secreto Better Auth**, reutilizando el valor privado `STUDIO_RENDER_SECRET` para minimizar configuración. `iss = video-wizard-backend`, `aud = video-wizard-processing` o `video-wizard-renderer`, `token_use = service`, `sub = video-wizard-worker`, `ownerId` UUID, scope exacto y referencias de operación (job/project/preview cuando existan), `iat/exp` con TTL 5 minutos. Validar firma, algoritmo, emisor, audiencia, perfil y scope antes de operar; dueño se deriva del JWT y se coteja con snapshot/job, nunca de un header libre. Una llamada de servicio autorizada puede completar un render largo: el TTL controla admisión, no aborta el trabajo en curso. El worker emite un JWT fresco en cada llamada/reintento y no depende de la sesión humana.
+
+Python y renderer rechazan por defecto las operaciones y archivos internos sin JWT. Eliminar montajes estáticos públicos o colocarlos tras autorización de servicio. Escucha/Compose limita los puertos internos a localhost o red interna según el servicio, sin tratar eso como sustituto de JWT. Salud mínima pública sin rutas físicas/datos de usuarios. El navegador solo necesita web y el origen de preview del renderer.
+
+El preview Remotion/HyperFrames conserva su protocolo existente de bootstrap sin datos, ticket de un uso comprobado por origen y cookie HttpOnly de instancia. No se intenta añadir Bearer a un iframe ni a cada petición multimedia del browser. Los recursos de preview siguen limitados al snapshot autorizado; el ticket no va en URL. Crear/retirar instancias exige sesión web y JWT de servicio. La capacidad ya emitida mantiene su TTL existente y se retira al cierre explícito del editor/sesión cuando esté montado; tras una pérdida de sesión no puede renovarse y expira según el TTL. Documentar esta excepción limitada de revocación, sin afirmar revocación instantánea entre orígenes.
+
+Para renders legacy, Remotion 4.0.405 descarga video y audio desde Node y no hereda los headers de Chromium. El backend envía referencias de recursos propios y el renderer abre los bytes del almacenamiento privado compartido, con hash comprobado. Un host efímero por job en `127.0.0.1` sirve solo los recursos autorizados durante selección/render; su URL no llega al navegador de la app, a estados públicos ni a logs, y se cierra en `finally`. También resolver logos propios en lugar de aceptar rutas/URLs privadas arbitrarias. Reutilizar el patrón `render-bundle-host`, sin fabricar snapshots o proyectos falsos para el flujo legacy.
+
+La versión fijada de Remotion no expone una opción para limitar su proxy interno de fotogramas a loopback: escucha en un puerto efímero abierto en todas las interfaces. Por eso el arranque local seguro usa el renderer contenido en Docker, publicando únicamente su puerto de preview/API en `127.0.0.1`, con el almacenamiento privado compartido de solo lectura. Actualizar su Dockerfile para incluir el worker HyperFrames y las dependencias de workspace ya existentes, además de FFmpeg/Chrome necesarios. No modificar el firewall del Mac ni parchear Node o las dependencias. Documentar la limitación de ejecución nativa sin aislamiento, sin presentar los JWT propios como protección de ese proxy ajeno.
+
+Companion local conserva sus vínculos/proveedores; futuras acciones HTTP deben entrar por las mismas APIs con credencial autorizada, sin claves en prompts o argv. No generar voz ni render de contenido nuevo para esta tarea; los renders mínimos de verificación usan fixtures técnicos.
+
+## Seed y operación
+
+Comando explícito `pnpm --filter web auth:seed`: correo configurable `SEED_USER_EMAIL` (default `demo@video-wizard.local`), nombre `SEED_USER_NAME` (default `Usuario de prueba`), contraseña `SEED_USER_PASSWORD`. Si no se proporciona contraseña para un usuario nuevo, generar una aleatoria y escribirla junto al correo en `.studio/bootstrap-user.json`, ignorado y modo 0600; imprimir solo la ubicación, nunca la contraseña. Si el usuario ya existe, conservar UUID, nombre y contraseña, sin generar credencial falsa ni sobrescribir el archivo. Proveer catálogo existente para ese UUID de forma idempotente, recuperable si la fase de archivos falla.
+
+No existe rol administrador: el usuario base es un propietario normal. El seed no se ejecuta en cada arranque ni crea credenciales conocidas universales. Arranque documentado: configurar secretos/orígenes → preflight/migraciones → seed explícito → web/worker/Python/renderer. Generar configuración local privada cuando falte; no guardar secretos en git. Una instalación existente se migra en lugar de resetearse.
+
+## Entrega y pruebas
+
+Documentar en `docs/authentication.md`: diagrama y fronteras, matriz completa de rutas públicas/protegidas, identidad/claims/TTL/revocación, variables y generación de secretos, seed y ubicación de credencial local, migración/backup/reversión limitada, política de registro, acceso multimedia y preview, comandos y troubleshooting. README, ejemplos de entorno y Compose deben coincidir con la implementación; retirar referencias activas a NextAuth.
+
+Pruebas necesarias: base nueva y actualización desde 0007; usuario bcrypt real con UUID/recursos preservados; Unicode/contraseña larga; seed dos veces sin rotación/duplicación; alta/login/logout y cookie flags; JWT válido, expirado, alterado, audiencia/perfil equivocados y sesión revocada; ninguna página/herramienta funcional accesible anónimamente; APIs 401 y propiedad cruzada 404; CAS409 intacto; Range privado; puertos internos sin JWT rechazados; usuarioJWT no válido como servicio y viceversa; job tras expirar sesión humana; flujo real de carga→transcripción→subtítulos/short→preview→descarga con sesiones de dos dueños; reautenticación conserva borrador y no duplica PUT. Verificar ambos motores mediante fixtures existentes y revisión de UI real. Tests aislados usan exclusivamente bases terminadas en `_test`; la base real solo recibe migración/seed autorizado, no fixtures ni limpieza destructiva.
+
+## Fuentes y evidencia
+
+- Auditorías de código: `.superpowers/brainstorming/2026-11-21-unified-auth/{route-audit,data-audit}.md`.
+- [Better Auth JWT](https://better-auth.com/docs/plugins/jwt), [Drizzle](https://better-auth.com/docs/adapters/drizzle), [Next.js](https://better-auth.com/docs/integrations/next), [correo y contraseña](https://better-auth.com/docs/authentication/email-password).
+- [Release estable 1.7.27](https://github.com/better-auth/better-auth/releases/tag/v1.7.27). Las APIs se comprueban también contra los tipos/código de esta versión al implementarlas.

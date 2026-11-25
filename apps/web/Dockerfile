@@ -1,29 +1,17 @@
-# Web app + worker share the same image — only the CMD differs in
-# docker-compose. Dev-mode by default to match the rest of the stack
-# (processing-engine, remotion-server) and give contributors hot reload
-# out of the box.
-FROM node:lts-bookworm
+# Web, worker and migrations use the lockfile and workspace links in this image.
+FROM node:24.22.3-bookworm-slim
 
-# pnpm via corepack (matches remotion-server)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 && rm -rf /var/lib/apt/lists/*
+ENV COREPACK_HOME=/opt/corepack
+RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
 WORKDIR /app
-
-# Workspace plumbing first so this layer caches when only app code changes.
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-
-# Workspace packages the web app depends on.
 COPY packages/ ./packages/
-
-# Web app source.
+COPY apps/web/package.json ./apps/web/
+RUN --mount=type=cache,id=video-wizard-web-pnpm10,target=/pnpm/store \
+    pnpm install --store-dir=/pnpm/store --frozen-lockfile --filter web...
 COPY apps/web/ ./apps/web/
-
-# Install everything in one go (workspace-aware).
-RUN pnpm install --frozen-lockfile
-
 WORKDIR /app/apps/web
-
 EXPOSE 3000
-
-# Default command — overridden by the worker service in docker-compose.
 CMD ["pnpm", "dev"]

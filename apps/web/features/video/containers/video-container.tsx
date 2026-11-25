@@ -1,5 +1,6 @@
 'use client';
 
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import type { GeneratedClip, SubtitleSegment, SubtitleTemplate } from '@/features/video';
 import {
   AspectRatioSelector,
@@ -15,6 +16,14 @@ import {
 } from '@/features/video';
 import { useBrandKit } from '@/features/video/hooks/use-brand-kit';
 import { pollJobUntilDone } from '@/features/video/lib/poll-job';
+import {
+  sliceCaptions,
+  editedClipCues,
+  toLegacySeconds,
+} from '@/features/studio-shorts/lib/timing';
+import { openClipJob } from '@/features/studio-shorts/lib/api';
+import { getDimensions } from '../lib/aspect-ratios';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -30,12 +39,14 @@ import { toast } from 'sonner';
  *    - Edit subtitles (updates preview instantly)
  * 5. When ready, click "Render Final" → sends to Remotion server for final render
  */
-export function VideoContainer() {
+export function VideoContainer({ ownerId }: { ownerId: string }) {
+  const router = useRouter();
+  const [openingJob, setOpeningJob] = useState<string>();
   const [generatedClips, setGeneratedClips] = useState<GeneratedClip[]>([]);
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipGenerationProgress, setClipGenerationProgress] = useState({ current: 0, total: 0 });
   const [editingClip, setEditingClip] = useState<GeneratedClip | null>(null);
-  const { brandKit, setBrandKit } = useBrandKit();
+  const { brandKit, previewBrandKit, setBrandKit, uploadLogo } = useBrandKit(ownerId);
 
   const {
     file,
@@ -48,7 +59,6 @@ export function VideoContainer() {
     language,
     error,
     progress,
-    uploadedPath,
     setFile,
     setYoutubeUrl,
     setInputMode,
@@ -56,9 +66,9 @@ export function VideoContainer() {
     processVideo,
     resetState,
   } = useVideoProcessing({
-    onComplete: (data, _uploadedPath, _transcription) => {
+    onComplete: (data, assetId, _transcription) => {
       console.log('Analysis completed:', data);
-      handleGenerateClips(data, _uploadedPath, _transcription);
+      handleGenerateClips(data, assetId, _transcription);
     },
     onError: (err) => {
       console.error('Processing error:', err);
@@ -71,24 +81,26 @@ export function VideoContainer() {
    */
   const handleGenerateClips = async (
     analysisData: typeof analysis,
-    videoPath: string,
+    sourceAssetId: string,
     transcriptionData: typeof transcription
   ) => {
     console.log('handleGenerateClips called', {
       analysisData,
-      videoPath,
+      sourceAssetId,
       transcriptionData,
     });
 
-    if (!analysisData || !videoPath || !transcriptionData) {
+    if (!analysisData || !sourceAssetId || !transcriptionData) {
       console.error('Missing required data for clip generation', {
         hasAnalysis: !!analysisData,
-        hasUploadedPath: !!videoPath,
+        hasUploadedPath: !!sourceAssetId,
         hasTranscription: !!transcriptionData,
       });
       return;
     }
 
+    const operation = workspaceIdentity();
+    if (operation.ownerId !== ownerId || operation.signal.aborted) return;
     setIsGeneratingClips(true);
 
     // Take top 5 clips by viral score
@@ -127,13 +139,15 @@ export function VideoContainer() {
 
       try {
         // Step 1: Enqueue the vertical clip (CROP ONLY) and poll for it.
-        const clipResponse = await fetch('/api/create-clip', {
+        operation.signal.throwIfAborted();
+        const clipResponse = await authenticatedFetch('/api/create-clip', {
+          signal: operation.signal,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            video_path: videoPath,
-            start_time: clip.start_time,
-            end_time: clip.end_time,
+            sourceAssetId,
+            startMs: Math.round(clip.start_time * 1000),
+            endMs: Math.round(clip.end_time * 1000),
             crop_mode: 'dynamic',
             aspect_ratio: aspectRatio,
           }),
@@ -149,14 +163,15 @@ export function VideoContainer() {
           throw new Error(clipQueued.message || 'Clip creation queue failed');
         }
 
-        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId);
+        const finishedClip = await pollJobUntilDone(clipQueued.data.jobId, operation);
+        operation.signal.throwIfAborted();
         if (finishedClip.status === 'failed') {
           throw new Error(finishedClip.errorMessage || 'Clip creation failed');
         }
 
         const clipData = finishedClip.resultData as {
           output_url?: string;
-          output_path?: string;
+          sourceDurationMs?: number | null;
         } | null;
 
         if (!clipData?.output_url) {
@@ -164,13 +179,11 @@ export function VideoContainer() {
         }
 
         // Step 2: Filter and adjust subtitles from original transcription
-        const clipSubtitles: SubtitleSegment[] = transcriptionData.segments
-          .filter((segment) => segment.start >= clip.start_time && segment.end <= clip.end_time)
-          .map((segment) => ({
-            start: segment.start - clip.start_time,
-            end: segment.end - clip.start_time,
-            text: segment.text,
-          }));
+        const clipCaptions = sliceCaptions(transcriptionData.cues, {
+          startMs: Math.round(clip.start_time * 1000),
+          endMs: Math.round(clip.end_time * 1000),
+        });
+        const clipSubtitles = toLegacySeconds(clipCaptions);
 
         console.log(`Clip ${i + 1} cropped successfully. Subtitles: ${clipSubtitles.length}`);
 
@@ -181,8 +194,10 @@ export function VideoContainer() {
             idx === i
               ? {
                   ...c,
+                  jobId: clipQueued.data.jobId,
+                  clipCaptions,
                   videoUrl: clipData.output_url, // Cropped video without subtitles
-                  clipPath: clipData.output_path,
+                  sourceDurationMs: clipData.sourceDurationMs ?? undefined,
                   subtitles: clipSubtitles,
                   language: detectedLanguage, // Ensure language is set
                   isLoading: false,
@@ -191,6 +206,17 @@ export function VideoContainer() {
           )
         );
       } catch (err) {
+        if (
+          operation.signal.aborted ||
+          (err instanceof DOMException && err.name === 'AbortError')
+        ) {
+          setGeneratedClips((prev) =>
+            prev.map((card) =>
+              card.isLoading ? { ...card, isLoading: false, error: 'Generación cancelada.' } : card
+            )
+          );
+          break;
+        }
         console.error(`Error generating clip ${i + 1}:`, err);
 
         // Mark this clip as error
@@ -242,6 +268,10 @@ export function VideoContainer() {
             ? {
                 ...c,
                 subtitles: editedSubtitles,
+                clipCaptions: editedClipCues(
+                  editedSubtitles,
+                  Math.round(c.endTime * 1000) - Math.round(c.startTime * 1000)
+                ),
                 template,
               }
             : c
@@ -264,7 +294,7 @@ export function VideoContainer() {
    * This is when we actually call the Remotion server to create the final MP4
    */
   const handleRenderFinal = async (clip: GeneratedClip) => {
-    if (!clip.clipPath || !clip.subtitles || clip.subtitles.length === 0) {
+    if (!clip.jobId || !clip.subtitles) {
       toast.error('Cannot render: missing clip or subtitles');
       return;
     }
@@ -277,21 +307,16 @@ export function VideoContainer() {
     try {
       console.log(`Rendering final video for clip ${clip.index + 1} with Remotion server...`);
 
-      // Remotion expects subtitles in SECONDS, not milliseconds
-      // Keep subtitles in seconds format (they're already in seconds from the processing engine)
-      const formattedSubtitles = clip.subtitles.map((sub) => ({
-        start: sub.start, // Keep in seconds
-        end: sub.end, // Keep in seconds
-        text: sub.text,
-      }));
-
       // Call Remotion server to render final video
-      const response = await fetch('/api/render-with-subtitles', {
+      const operation = workspaceIdentity();
+      const response = await authenticatedFetch('/api/render-with-subtitles', {
+        signal: operation.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clipPath: clip.clipPath,
-          subtitles: formattedSubtitles,
+          jobId: clip.jobId,
+          subtitles: clip.subtitles,
+          sourceDurationMs: clip.sourceDurationMs,
           template: clip.template || 'viral',
           language: clip.language || 'en',
           aspectRatio: clip.aspectRatio || aspectRatio,
@@ -309,7 +334,11 @@ export function VideoContainer() {
         throw new Error(result.message || 'Video render failed');
       }
 
-      console.log(`Clip ${clip.index + 1} rendered successfully!`);
+      const finished = await pollJobUntilDone(result.data.jobId, operation);
+      operation.signal.throwIfAborted();
+      const videoUrl = (finished.resultData as { videoUrl?: string } | null)?.videoUrl;
+      if (finished.status !== 'completed' || !videoUrl)
+        throw new Error(finished.errorMessage || 'No se pudo exportar el video.');
 
       // Update the clip with rendered video URL
       setGeneratedClips((prev) =>
@@ -317,7 +346,7 @@ export function VideoContainer() {
           c.index === clip.index
             ? {
                 ...c,
-                renderedVideoUrl: result.data.videoUrl,
+                renderedVideoUrl: videoUrl,
                 isRendering: false,
               }
             : c
@@ -365,7 +394,11 @@ export function VideoContainer() {
             <AspectRatioSelector selected={aspectRatio} onChange={setAspectRatio} />
           </div>
           <div className="rounded-lg border border-border bg-card p-6 shadow-lg">
-            <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+            <BrandKitSettings
+              brandKit={brandKit}
+              onBrandKitChange={setBrandKit}
+              onUploadLogo={uploadLogo}
+            />
           </div>
         </div>
       )}
@@ -436,15 +469,39 @@ export function VideoContainer() {
                 summary={clip.summary}
                 viralScore={clip.viralScore}
                 duration={clip.duration}
+                sourceDurationMs={clip.sourceDurationMs}
                 videoUrl={clip.videoUrl}
                 renderedVideoUrl={clip.renderedVideoUrl}
                 subtitles={clip.subtitles}
                 template={clip.template}
                 language={clip.language}
                 aspectRatio={clip.aspectRatio || aspectRatio}
-                brandKit={brandKit ?? undefined}
+                brandKit={previewBrandKit}
                 isLoading={clip.isLoading}
                 isRendering={clip.isRendering}
+                openingDesigner={!!openingJob}
+                onOpenDesigner={
+                  clip.jobId
+                    ? async () => {
+                        if (openingJob || !clip.jobId) return;
+                        setOpeningJob(clip.jobId);
+                        try {
+                          const project = await openClipJob(
+                            clip.jobId,
+                            { ...getDimensions(clip.aspectRatio ?? aspectRatio), fps: 30 },
+                            clip.clipCaptions ?? []
+                          );
+                          router.push('/designer/' + project.document.id);
+                        } catch (cause) {
+                          toast.error(
+                            cause instanceof Error ? cause.message : 'No se pudo abrir el clip.'
+                          );
+                        } finally {
+                          setOpeningJob(undefined);
+                        }
+                      }
+                    : undefined
+                }
                 onEdit={() => handleEditClip(clip)}
                 onTemplateChange={(template) => handleTemplateChange(clip.index, template)}
                 onRenderFinal={() => handleRenderFinal(clip)}
@@ -455,20 +512,23 @@ export function VideoContainer() {
       )}
 
       {/* Edit Modal */}
-      {editingClip && editingClip.videoUrl && editingClip.subtitles && (
-        <ClipEditModal
-          open={!!editingClip}
-          onClose={() => setEditingClip(null)}
-          clipIndex={editingClip.index}
-          clipSummary={editingClip.summary}
-          videoUrl={editingClip.videoUrl}
-          subtitles={editingClip.subtitles}
-          template={editingClip.template || 'viral'}
-          aspectRatio={editingClip.aspectRatio || aspectRatio}
-          brandKit={brandKit ?? undefined}
-          onSave={handleSaveEdit}
-        />
-      )}
+      {editingClip?.videoUrl &&
+        editingClip.subtitles &&
+        editingClip.sourceDurationMs !== undefined && (
+          <ClipEditModal
+            open={!!editingClip}
+            onClose={() => setEditingClip(null)}
+            clipIndex={editingClip.index}
+            clipSummary={editingClip.summary}
+            videoUrl={editingClip.videoUrl}
+            sourceDurationMs={editingClip.sourceDurationMs}
+            subtitles={editingClip.subtitles}
+            template={editingClip.template || 'viral'}
+            aspectRatio={editingClip.aspectRatio || aspectRatio}
+            brandKit={previewBrandKit}
+            onSave={handleSaveEdit}
+          />
+        )}
 
       {currentStep === 'idle' && <VideoHowItWorks />}
     </div>

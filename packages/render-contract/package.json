@@ -1,0 +1,30 @@
+{
+  "name": "@workspace/render-contract",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generated-assets": "./src/generated-assets.ts",
+    "./component-bundle": "./src/component-bundle.ts",
+    "./export": "./src/export.ts",
+    "./storage": "./src/storage.ts",
+    "./font": "./src/font.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/video-project": "workspace:*",
+    "zod": "^4.3.5",
+    "fontkit": "2.0.4"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.12",
+    "@workspace/style-packs": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}

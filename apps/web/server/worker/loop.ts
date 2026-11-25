@@ -1,3 +1,5 @@
+import { processStudioExport } from './studio-handlers';
+import { UnknownRenderAdmissionError } from '@/server/services/render-admission';
 import { logger } from '@/server/lib/utils';
 import { type ClaimedTask, queueService } from '@/server/services/queue-service';
 
@@ -28,6 +30,10 @@ async function processOne(
   handlers: Record<string, JobHandler>
 ): Promise<void> {
   const { task, job } = claimed;
+  if (job.type === 'studio_export') {
+    await processStudioExport(claimed);
+    return;
+  }
   const handler = handlers[job.type];
 
   if (!handler) {
@@ -50,7 +56,12 @@ async function processOne(
     logger.info('Worker completed task', { taskId: task.id, jobId: job.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown handler error';
-    const outcome = await queueService.fail(task.id, job.id, message);
+    const outcome = await queueService.fail(
+      task.id,
+      job.id,
+      message,
+      !(error instanceof UnknownRenderAdmissionError)
+    );
 
     logger.error('Worker handler failed', error, {
       taskId: task.id,
@@ -98,9 +109,11 @@ export function startWorker(options: WorkerOptions): WorkerHandle {
         continue;
       }
 
-      const task = processOne(claimed, handlers).finally(() => {
-        inflight.delete(task);
-      });
+      const task = processOne(claimed, handlers)
+        .catch((error) => logger.error('Worker task interrupted', error, { jobId: claimed.job.id }))
+        .finally(() => {
+          inflight.delete(task);
+        });
       inflight.add(task);
     }
 

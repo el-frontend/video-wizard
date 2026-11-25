@@ -22,8 +22,7 @@ class TestAPI:
     def test_root_endpoint(self):
         """Test root endpoint"""
         response = client.get("/")
-        assert response.status_code == 200
-        assert "service" in response.json()
+        assert response.status_code == 404
     
     def test_health_check(self):
         """Test health check endpoint"""

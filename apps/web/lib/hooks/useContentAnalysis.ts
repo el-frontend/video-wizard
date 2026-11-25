@@ -1,9 +1,10 @@
 'use client';
 
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import type {
   AnalyzeContentErrorResponse,
   AnalyzeContentResponse,
-  ContentAnalysis
+  ContentAnalysis,
 } from '@/lib/types/content-intelligence';
 import { useState } from 'react';
 
@@ -22,7 +23,7 @@ export function useContentAnalysis(options?: UseContentAnalysisOptions) {
     setError(null);
 
     try {
-      const response = await fetch('/api/analyze-content', {
+      const response = await authenticatedFetch('/api/analyze-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

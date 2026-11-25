@@ -1,0 +1,449 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { signServiceToken } from '@workspace/service-auth';
+import express from 'express';
+import { once } from 'node:events';
+import { createRequire } from 'node:module';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { it, expect } from 'vitest';
+import { cliPackage } from '@workspace/hyperframes-compositions';
+import { installStudioRoutes } from './studio-http';
+
+const evidence = resolve(
+  process.env.STUDIO_NATIVE_EVIDENCE_DIR ||
+    '../../.superpowers/sdd/2026-11-18-video-wizard-03-generacion/r2-evidence'
+);
+it
+  .skipIf(import.meta.env.MODE !== 'native')
+  .each([25, 30, 1, 'fractional', 'font-error', 'interframe'])(
+  'exercises the private native preview at %s',
+  async (scenario) => {
+    const pointer = scenario === 'interframe' ? 'interframe-workspace.txt' : 'workspace.txt';
+    const workspace = (await readFile(join(evidence, pointer), 'utf8')).trim();
+    const snapshot = JSON.parse(
+      await readFile(
+        join(
+          workspace,
+          scenario === 'interframe'
+            ? '.'
+            : scenario === 'fractional'
+              ? 'fractional'
+              : 'noticias-liquid-glass',
+          'fixture.json'
+        ),
+        'utf8'
+      )
+    );
+    const fps = typeof scenario === 'number' ? scenario : 30;
+    snapshot.document.canvas.fps = fps;
+    if (scenario === 1) {
+      const d = snapshot.document;
+      d.durationMs = d.scenes[0].durationMs = 1000;
+      d.scenes[0].layers = [];
+      Object.assign(d.globalAudio[0], { startMs: 0, endMs: 1000, sourceInMs: 500, volume: 1 });
+    }
+    if (fps === 25 || scenario === 30) {
+      const layer = snapshot.document.scenes[0].layers.find((l) => l.type === 'captions');
+      layer.startMs = 167;
+      layer.cues = [
+        { id: 'pre', startMs: 0, endMs: 33, text: 'Anterior' },
+        { id: 'edge', startMs: 33, endMs: 34, text: 'Preciso' },
+        { id: 'next', startMs: 34, endMs: 833, text: 'Primero' },
+        { id: 'last', startMs: 833, endMs: 1400, text: 'Segundo' },
+      ];
+      if (fps === 25) {
+        layer.startMs = 0;
+        layer.cues = [
+          { id: 'pre', startMs: 0, endMs: 40, text: 'Anterior' },
+          { id: 'edge', startMs: 40, endMs: 80, text: 'Preciso' },
+          { id: 'last', startMs: 80, endMs: 1500, text: 'Segundo' },
+        ];
+      }
+    }
+    const backend = express(),
+      editor = express();
+    const a = backend.listen(0, '127.0.0.1'),
+      b = editor.listen(0, '127.0.0.1');
+    await Promise.all([once(a, 'listening'), once(b, 'listening')]);
+    const origin = (s) => 'http://127.0.0.1:' + s.address().port;
+    const editorUrl = 'http://app.video-wizard.localhost:' + b.address().port;
+    const previewUrl = 'http://preview.video-wizard.localhost:' + a.address().port;
+    const secret = randomBytes(40).toString('hex'),
+      instance = randomUUID();
+    snapshot.document.id = randomUUID();
+    const api = installStudioRoutes(backend, {
+      secret,
+      editorOrigin: editorUrl,
+      previewOrigin: previewUrl,
+      dataDir: join(workspace, 'data'),
+    });
+    const req = createRequire(join(cliPackage, 'package.json'));
+    const { default: puppeteer } = await import(pathToFileURL(req.resolve('puppeteer-core')).href);
+    let browser;
+    try {
+      const response = await fetch(origin(a) + '/studio/previews', {
+        method: 'POST',
+        headers: {
+          authorization:
+            'Bearer ' +
+            (await signServiceToken(
+              {
+                audience: 'video-wizard-renderer',
+                scope: 'preview.create',
+                ownerId: snapshot.ownerId,
+                projectId: snapshot.document.id,
+                previewId: instance,
+              },
+              { secret }
+            )),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ snapshot, instance }),
+      });
+      expect(response.status).toBe(200);
+      const session = await response.json(),
+        path = '/studio/previews/' + session.instance;
+      expect((await fetch(origin(a) + path + '/native/index.html')).status).toBe(404);
+      editor.get('/', (_req, res) =>
+        res
+          .type('html')
+          .send(
+            '<style>*{margin:0}iframe{width:480px;height:380px;border:0}</style><iframe title="Studio" sandbox="allow-scripts allow-same-origin" allow="autoplay"></iframe><script>const s=' +
+              JSON.stringify(session) +
+              ';const f=document.querySelector("iframe");window.events=[];let nonce;window.msg=(type,extra={})=>f.contentWindow.postMessage({version:1,instance:s.instance,nonce,type,...extra},s.origin);onmessage=e=>{const m=e.data;if(e.source!==f.contentWindow||e.origin!==s.origin||m.version!==1||m.instance!==s.instance)return;if(m.type==="studio.connecting"){nonce=m.nonce;msg("studio.connect",{ticket:s.ticket});return;}if(m.nonce===nonce)events.push(m);};f.src=s.origin+"/studio/previews/"+s.instance+"/frame";</script>'
+          )
+      );
+      browser = await puppeteer.launch({
+        executablePath:
+          process.env.STUDIO_TEST_CHROME ||
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        headless: true,
+        args: ['--autoplay-policy=no-user-gesture-required'],
+      });
+      const page = await browser.newPage();
+      if (scenario === 1)
+        await page.evaluateOnNewDocument(() => {
+          // Observe the actual Web Audio signal already routed to the output in this fixture.
+          const connect = AudioNode.prototype.connect;
+          window.meters = [];
+          AudioNode.prototype.connect = function (target, ...args) {
+            if (target === this.context.destination) {
+              const analyser = this.context.createAnalyser();
+              connect.call(this, analyser);
+              window.meters.push(analyser);
+            }
+            return connect.call(this, target, ...args);
+          };
+        });
+
+      if (scenario === 'interframe') {
+        await page.evaluateOnNewDocument(() => {
+          const connect = AudioNode.prototype.connect;
+          let recorder;
+          window.pulseChunks = [];
+          AudioNode.prototype.connect = function (target, ...args) {
+            if (target === this.context.destination) {
+              if (!recorder) {
+                recorder = this.context.createScriptProcessor(512, 1, 1);
+                recorder.onaudioprocess = (event) =>
+                  window.pulseChunks.push(event.inputBuffer.getChannelData(0).slice());
+                window.pulseRate = this.context.sampleRate;
+                connect.call(recorder, target);
+              }
+              connect.call(this, recorder);
+            }
+            return connect.call(this, target, ...args);
+          };
+        });
+      }
+      if (scenario === 'font-error') {
+        await page.setRequestInterception(true);
+        page.on('request', (req) =>
+          req.url().endsWith('.woff2')
+            ? req.respond({
+                status: 200,
+                contentType: 'font/woff2',
+                body: Buffer.from('invalid font'),
+              })
+            : req.continue()
+        );
+      }
+      await page.goto(editorUrl);
+      await page.waitForFunction(
+        () => events.some((m) => ['studio.ready', 'studio.error'].includes(m.type)),
+        { timeout: 20000 }
+      );
+      if (scenario === 'font-error') {
+        expect(await page.evaluate(() => events.find((m) => m.type === 'studio.error')?.code)).toBe(
+          'native-font'
+        );
+        return;
+      }
+      expect(await page.evaluate(() => events.map((m) => m.type))).toContain('studio.ready');
+      const native = page.frames().find((f) => f.url().endsWith('/native/index.html'));
+      expect(native).toBeTruthy();
+      if (scenario === 'interframe') {
+        expect(
+          await native.evaluate(() =>
+            [...document.querySelectorAll('video')].map((v) => Number(v.dataset.start))
+          )
+        ).toEqual([0.3, 1.3]);
+        expect(
+          await native.evaluate(() =>
+            [...document.querySelectorAll('audio')].map((el) => [
+              Number(el.dataset.start),
+              Number(el.dataset.duration),
+            ])
+          )
+        ).toEqual([[0, 2.2]]);
+        const manifest = JSON.parse(
+          await readFile(join(workspace, 'native-manifest.json'), 'utf8')
+        );
+        const previewHash = await native.evaluate(async () => {
+          const response = await fetch(document.querySelector('audio').currentSrc);
+          const digest = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+          return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join(
+            ''
+          );
+        });
+        expect(previewHash).toBe(manifest.soundtrack.hash);
+        await page.evaluate(() => msg('studio.play'));
+        await native.waitForFunction(() => window.__player.getTime() > 2.17, { timeout: 4000 });
+        const readings = await native.evaluate(() => {
+          const chunks = window.pulseChunks;
+          if (!chunks.length) throw new Error('Falta señal del mezclador en la salida Web Audio.');
+          const rate = window.pulseRate;
+          const samples = new Float32Array(chunks.length * chunks[0].length);
+          chunks.forEach((chunk, index) => samples.set(chunk, index * chunk.length));
+          // Locate the 4ms spectral windows against a reference pulse in the same output.
+          const width = Math.round(rate * 0.004);
+          return [
+            [1000, 0, 0.18, 16],
+            [6000, 200, 0.125, 200],
+            [2000, 501, 0.27, 16],
+            [3000, 501, 0.18, 16],
+            [5000, 817, 0.27, 16],
+            [4000, 1600, 0.18, 16],
+          ].map(([hz, delay, amplitude, duration]) => {
+            const active = [],
+              levels = [];
+            let peak = 0;
+            for (let ms = 0; Math.round((ms * rate) / 1000) + width < samples.length; ms++) {
+              let re = 0,
+                im = 0;
+              const start = Math.round((ms * rate) / 1000);
+              for (let i = 0; i < width; i++) {
+                const phase = (2 * Math.PI * hz * i) / rate;
+                re += samples[start + i] * Math.cos(phase);
+                im += samples[start + i] * Math.sin(phase);
+              }
+              const level = (2 * Math.hypot(re, im)) / width;
+              peak = Math.max(peak, level);
+              levels.push(level);
+              if (level > 0.065) active.push(ms + 2);
+            }
+            return {
+              hz,
+              delay,
+              amplitude,
+              duration,
+              peak,
+              inside: levels[active[0] + 6],
+              first: active.at(0),
+              last: active.at(-1),
+            };
+          });
+        });
+        await writeFile(
+          join(evidence, 'interframe-preview.json'),
+          JSON.stringify(readings, null, 2)
+        );
+        for (const item of readings) {
+          expect(Math.abs(item.inside - item.amplitude)).toBeLessThan(0.035);
+          expect(item.last - item.first).toBeGreaterThanOrEqual(item.duration - 4);
+          expect(item.last - item.first).toBeLessThanOrEqual(item.duration + 4);
+        }
+        for (const tone of readings.slice(1))
+          expect(Math.abs(tone.first - readings[0].first - tone.delay)).toBeLessThanOrEqual(3);
+        return;
+      }
+      if (scenario === 1) {
+        for (let run = 0; run < 2; run++) {
+          await page.evaluate(() => msg('studio.play'));
+          await native.waitForFunction(
+            () => window.__player.isPlaying() && window.__player.getTime() > 0.35,
+            { timeout: 3000 }
+          );
+          const sample = await native.evaluate(async () => {
+            const audio = document.querySelector('audio');
+            if (!window.meters.length) {
+              const context = new AudioContext();
+              await context.resume();
+              const src = context.createMediaStreamSource(audio.captureStream());
+              const meter = context.createAnalyser();
+              src.connect(meter);
+              window.meters.push(meter);
+              await new Promise((resolve) => setTimeout(resolve, 70));
+            }
+            return Math.max(
+              ...window.meters.map((meter) => {
+                const signal = new Float32Array(meter.fftSize);
+                meter.getFloatTimeDomainData(signal);
+                return Math.max(...signal);
+              })
+            );
+          });
+          expect(sample).toBeGreaterThan(0.015);
+          await native.waitForFunction(() => !window.__player.isPlaying(), { timeout: 3000 });
+          expect(await native.evaluate(() => window.__player.getTime())).toBeGreaterThan(0.95);
+          await writeFile(
+            join(evidence, 'last-frame-' + run + '.json'),
+            JSON.stringify({ peak: sample })
+          );
+        }
+        return;
+      }
+      if (scenario === 'fractional') {
+        const results = [];
+        for (const [ms, index] of [
+          [967, 29],
+          [1000, 30],
+          [1034, 31],
+          [1000, 30],
+        ]) {
+          const before = await page.evaluate((ms) => {
+            const n = events.length;
+            msg('studio.seek', { timeMs: ms });
+            return n;
+          }, ms);
+          await page.waitForFunction(
+            (n) => events.slice(n).some((m) => m.type === 'studio.time'),
+            {},
+            before
+          );
+          const actual = await native.evaluate(() => {
+            const video = [...document.querySelectorAll('video')].find(
+              (el) =>
+                getComputedStyle(el).visibility !== 'hidden' &&
+                getComputedStyle(el).display !== 'none'
+            );
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 1;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, 1, 1);
+            return {
+              time: window.__player.getTime(),
+              pixel: [...ctx.getImageData(0, 0, 1, 1).data],
+              video: video.currentTime,
+            };
+          });
+          expect(actual.time).toBeCloseTo(index / 30, 5);
+          const [r, g, b] = actual.pixel;
+          if (index === 29) expect(g).toBeGreaterThan(b + 55);
+          else if (index === 30) expect(b).toBeGreaterThan(r + 100);
+          else expect(r).toBeGreaterThan(b + 100);
+          results.push({ index, ...actual });
+        }
+        await writeFile(join(evidence, 'cut-preview.json'), JSON.stringify(results, null, 2));
+        return;
+      }
+      const resource = await native.evaluate(async () => {
+        const r = await fetch(document.querySelector('video').src, {
+          headers: { Range: 'bytes=0-3' },
+        });
+        return [r.status, (await r.arrayBuffer()).byteLength];
+      });
+      expect(resource).toEqual([206, 4]);
+      expect(
+        (
+          await fetch(origin(a) + path + '/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: previewUrl },
+            body: JSON.stringify({ ticket: session.ticket }),
+          })
+        ).status
+      ).toBe(404);
+      const visible = () =>
+        native.evaluate(() =>
+          [...document.querySelectorAll('.clip span')]
+            .filter(
+              (e) =>
+                getComputedStyle(e.parentElement).visibility !== 'hidden' &&
+                getComputedStyle(e.parentElement).display !== 'none'
+            )
+            .map((e) => e.textContent)
+        );
+      const history = [];
+      for (const [ms, boundary, expected, caption] of fps === 25
+        ? [
+            [40, 'at-or-after', 40, 'Preciso'],
+            [1000, 'at-or-after', 1000, 'Segundo'],
+            [33, undefined, 0, 'Anterior'],
+            [39, 'at-or-after', 40, 'Preciso'],
+          ]
+        : [
+            [32, 'at-or-after', 33, null],
+            [1000, 'at-or-after', 1000, 'Segundo'],
+            [200, 'at-or-after', 200, 'Preciso'],
+            [199, undefined, 167, null],
+            [1000, undefined, 1000, 'Segundo'],
+            [200, 'at-or-after', 200, 'Preciso'],
+          ]) {
+        const count = await page.evaluate(
+          (ms, boundary) => {
+            const n = events.length;
+            msg('studio.seek', { timeMs: ms, boundary });
+            return n;
+          },
+          ms,
+          boundary
+        );
+        await page.waitForFunction(
+          (n) => events.slice(n).some((m) => m.type === 'studio.time'),
+          {},
+          count
+        );
+        const ack = await page.evaluate(
+          (n) => events.slice(n).find((m) => m.type === 'studio.time'),
+          count
+        );
+        expect(ack.timeMs).toBe(expected);
+        expect(ack.acknowledgedCueStartMs).toBe(boundary ? ms : undefined);
+        const captions = await visible();
+        const video = await native.evaluate(() => document.querySelector('video').currentTime);
+        const clock = await native.evaluate(() => window.__player.getTime());
+        expect(clock).toBeCloseTo(Math.round((expected * fps) / 1000) / fps, 6);
+        history.push({
+          clock,
+          ms,
+          boundary,
+          timeMs: ack.timeMs,
+          cue: ack.acknowledgedCueStartMs,
+          captions,
+          video,
+        });
+        await writeFile(
+          join(evidence, 'reverse-seek-' + fps + '.json'),
+          JSON.stringify(history, null, 2)
+        );
+        expect(captions).toEqual(caption ? [caption] : []);
+        expect(Math.abs(video - (0.25 + expected / 1000))).toBeLessThan(0.004);
+      }
+      await page.evaluate(() => msg('studio.play'));
+      await page.waitForFunction(
+        () => events.at(-1).type === 'studio.time' && events.at(-1).timeMs > 1050,
+        { timeout: 4000 }
+      );
+      await page.evaluate(() => msg('studio.pause'));
+    } finally {
+      await browser?.close();
+      await api.close();
+      a.closeAllConnections();
+      b.closeAllConnections();
+      a.close();
+      b.close();
+    }
+  },
+  60000
+);

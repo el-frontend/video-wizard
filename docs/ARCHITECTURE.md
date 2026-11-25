@@ -2,64 +2,9 @@
 
 ## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     User Interface                           │
-│                   (Next.js App Router)                       │
-│                                                              │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐   │
-│  │ Video Wizard │ │  Subtitle    │ │    Content        │   │
-│  │ /video-wizard│ │  Generator   │ │    Intelligence   │   │
-│  │              │ │ /subtitle-   │ │ /content-         │   │
-│  │              │ │  generator   │ │  intelligence     │   │
-│  └──────┬───────┘ └──────┬───────┘ └────────┬──────────┘   │
-│         │                │                    │              │
-│         ▼                ▼                    ▼              │
-│  ┌────────────────────────────────────────────────────┐     │
-│  │              Feature Modules (video/)               │     │
-│  │  Components │ Containers │ Hooks │ Types │ Utils    │     │
-│  └──────────────────────┬─────────────────────────────┘     │
-└─────────────────────────┼───────────────────────────────────┘
-                          │
-          ┌───────────────┼───────────────┐
-          │               │               │
-          ▼               ▼               ▼
-   ┌──────────────┐ ┌─────────────┐ ┌──────────────┐
-   │   API Routes │ │  Shared UI  │ │   Layout     │
-   │  (HTTP Only) │ │ Components  │ │  (Sidebar)   │
-   └──────┬───────┘ └─────────────┘ └──────────────┘
-          │
-          ▼
-   ┌────────────────┐
-   │    Server      │
-   │  (Business     │
-   │   Logic)       │
-   └────────┬───────┘
-            │
-   ┌────────┼────────────┐
-   │        │            │
-   ▼        ▼            ▼
-┌────────┬────────┬────────────┐
-│Services│ Types  │ Prompts    │
-│        │ (Zod)  │ (AI)       │
-└────────┴────────┴────────────┘
-            │
-   ┌────────┼────────────────────┐
-   │        │                    │
-   ▼        ▼                    ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ OpenAI GPT   │  │   Python     │  │  Remotion    │
-│ (Vercel AI   │  │   Engine     │  │  Server      │
-│  SDK)        │  │ (FastAPI)    │  │ (Express)    │
-└──────────────┘  └──────────────┘  └──────────────┘
-                         │                  │
-                         ▼                  ▼
-                  ┌──────────────┐  ┌──────────────┐
-                  │   FFmpeg     │  │  Remotion    │
-                  │   Whisper    │  │ Compositions │
-                  │   MediaPipe  │  │ (9 templates)│
-                  └──────────────┘  └──────────────┘
-```
+The browser talks to Next for identity, projects, owner-scoped media and processing jobs. A sandboxed iframe talks to the separate preview origin with its instance capability. PostgreSQL stores the identities, revisions and queue. Web and worker use owner-bound service JWTs for Python processing and the containerized renderer. The private asset store is writable by web/worker and read-only in the renderer.
+
+The route matrix, token profiles, iframe protocol and deployment boundaries are documented in the [authentication guide](./authentication.md).
 
 ## Feature Module Architecture (Screaming Architecture)
 
@@ -135,85 +80,13 @@ apps/web/
 └── lib/                          # Client utilities
 ```
 
-## Data Flow: Video Wizard
+## Video processing and subtitles
 
-```
-1. User Interaction
-   ┌──────────────────────────────────┐
-   │  VideoContainer                   │
-   │  (container component)            │
-   └───────────┬──────────────────────┘
-               │ useVideoProcessing()
-               ▼
-2. Feature Hook
-   ┌──────────────────────────────────┐
-   │  useVideoProcessing (hook)       │
-   │  - Manages state machine         │
-   │  - Orchestrates workflow          │
-   │  - Supports file + YouTube input  │
-   └───────────┬──────────────────────┘
-               │ processVideo()
-               ▼
-3. API Calls
-   ┌────────────────┬─────────────────┬──────────────────┐
-   │ Upload Video   │ Transcribe      │ Analyze Content  │
-   │ POST /upload   │ POST /transcribe│ POST /api/       │
-   │ (Python)       │ (Python)        │ analyze-content  │
-   └────────┬───────┴────────┬────────┴────────┬─────────┘
-            │                │                 │
-            ▼                ▼                 ▼
-   ┌──────────────┐ ┌──────────────┐ ┌─────────────────┐
-   │ Python       │ │ Whisper      │ │ Content         │
-   │ Engine       │ │ Transcription│ │ Analysis        │
-   │ (upload)     │ │              │ │ Service         │
-   └──────────────┘ └──────────────┘ └────────┬────────┘
-                                               │
-                                               ▼
-4. AI Processing                     ┌─────────────────────┐
-                                     │ OpenAI GPT           │
-                                     │ (Vercel AI SDK)      │
-                                     │ Viral scoring 0-100  │
-                                     └─────────────────────┘
-```
-
-## Data Flow: Subtitle Generator
-
-```
-1. User Interaction
-   ┌──────────────────────────────────────┐
-   │  SubtitleGeneratorContainer           │
-   │  - File upload OR YouTube URL         │
-   │  - Language selection                 │
-   │  - Aspect ratio selection             │
-   └───────────┬──────────────────────────┘
-               │ useSubtitleGeneration()
-               ▼
-2. Generate Subtitles
-   ┌──────────────────────────────────────┐
-   │  POST /api/generate-subtitles        │
-   │  → SubtitleGenerationService         │
-   │  → Python /transcribe (Whisper)      │
-   │  → Returns subtitles (milliseconds)   │
-   └───────────┬──────────────────────────┘
-               │
-               ▼
-3. User Editing
-   ┌──────────────────────────────────────┐
-   │  SubtitleEditor     TemplateSelector │
-   │  SilenceFillerPanel AspectRatio      │
-   │  BrandKitSettings                    │
-   └───────────┬──────────────────────────┘
-               │ renderVideo(brandKit)
-               ▼
-4. Render
-   ┌──────────────────────────────────────┐
-   │  POST /api/render-video-subtitles    │
-   │  → SubtitleGenerationService         │
-   │  → Remotion Server POST /renders     │
-   │  → Poll /renders/{jobId} (30min max) │
-   │  → Returns videoUrl                  │
-   └──────────────────────────────────────┘
-```
+1. The browser uploads bytes to the Studio asset API or asks Next to import a YouTube source. Next registers the measured media under the signed-in owner.
+2. Next resolves an owned source asset or a job with verified provenance. Python receives the source and an operation-scoped credential for transcription or cropping.
+3. The editor accepts manual caption edits and clip ranges. AI analysis uses the configured provider when requested.
+4. A legacy render enters the PostgreSQL queue. The worker signs each renderer request independently and ingests completed bytes as a private asset. Studio projects use revision-pinned snapshots for previews and renders.
+5. The browser reads job status and downloads through private web routes. Browser media elements can send the session cookie on same-origin range requests.
 
 ## Component Communication
 
@@ -310,19 +183,11 @@ export function useVideoProcessing() {
 
 ### Processing Engine (Python/FastAPI, port 8000)
 
-- Video upload and storage
-- Whisper transcription
-- FFmpeg rendering and smart cropping
-- Face detection (MediaPipe)
-- YouTube video download
+Accepts authenticated service operations for local Whisper, source import and crop. Output reads check the owner and operation.
 
-### Remotion Server (Express, port 3001)
+### Renderer (Express, port 3001)
 
-- Video rendering with subtitle templates
-- Job queue management
-- 9 caption templates (viral, minimal, modern, etc.)
-- Multi-aspect ratio support
-- Brand kit overlay (logo, colors)
+Renders Remotion and HyperFrames snapshots. The container publishes only its main port on loopback and reads the private Studio volume. The browser receives a single-use ticket for an isolated preview instance.
 
 ## Benefits of This Architecture
 

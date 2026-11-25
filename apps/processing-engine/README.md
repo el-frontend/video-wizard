@@ -23,11 +23,13 @@ This service analyzes long-form videos, detects faces using Google MediaPipe, an
 ### Installing FFmpeg
 
 **macOS:**
+
 ```bash
 brew install ffmpeg
 ```
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt update
 sudo apt install ffmpeg
@@ -42,8 +44,8 @@ Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
 ```bash
 cd apps/processing-engine
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 ### 2. Install Dependencies
@@ -52,318 +54,17 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure OpenAI API (Recommended for Spanish Videos)
+### 3. Configure the private service
 
-```bash
-# Copy the example environment file
-cp .env.example .env
+On the prepared Mac installation, run the following command from the monorepo root. The controller loads the shared `STUDIO_RENDER_SECRET` from the private renderer configuration, loads Python settings from `apps/processing-engine/.env.local`, and binds Uvicorn to `127.0.0.1:8000`. Set `USE_OPENAI_API=false` in the Python environment and install the Whisper base model for local transcription. [Local installation and prerequisites](../../docs/authentication.md#instalación-mac-existente)
 
-# Edit .env and add your OpenAI API key
-# Get your API key from: https://platform.openai.com/api-keys
-nano .env
+```sh
+node scripts/local-studio.mjs python
 ```
 
-**Why OpenAI API?**
-- ✅ Excellent Spanish transcription quality
-- ✅ Faster processing (no model download)
-- ✅ Lighter resource usage (~3GB less disk space)
-- ✅ Cost-effective: $0.006/minute of audio
-- ⚠️ Local Whisper "large" model is heavy and slow on CPU
+### HTTP interface
 
-**Alternative: Local Whisper (optional)**
-
-If you prefer local processing, set in `.env`:
-```bash
-USE_OPENAI_API=false
-WHISPER_MODEL=base  # or small, medium, large (large=~3GB)
-```
-
-### 4. Verify Installation
-
-```bash
-python -c "import cv2, mediapipe, fastapi; print('All dependencies installed!')"
-```
-
-## 🎬 Running the Service
-
-### Option 1: Local Development (Python)
-
-```bash
-# From apps/processing-engine directory
-python main.py
-
-# Or using uvicorn directly
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Option 2: Docker Container 🐳
-
-**Development Mode with Docker Compose (Recommended for Dev):**
-
-```bash
-# Build and start in development mode
-docker-compose -f docker-compose.dev.yml up -d
-
-# View logs
-docker-compose -f docker-compose.dev.yml logs -f
-
-# Stop the service
-docker-compose -f docker-compose.dev.yml down
-```
-
-**Installing new dependencies in running container:**
-
-```bash
-# After adding dependencies to requirements.txt
-docker exec video-processing-service pip install -r requirements.txt
-
-# The service will auto-reload thanks to --reload flag
-```
-
-**Production Mode with Docker Compose:**
-
-```bash
-# Build and start the service
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop the service
-docker-compose down
-```
-
-**Or using Docker directly:**
-
-```bash
-# Build the image
-docker build -t video-processing-service .
-
-# Run the container
-docker run -d \
-  --name video-processor \
-  -p 8000:8000 \
-  -v $(pwd)/uploads:/app/uploads \
-  -v $(pwd)/output:/app/output \
-  video-processing-service
-
-# View logs
-docker logs -f video-processor
-
-# Stop and remove
-docker stop video-processor
-docker rm video-processor
-```
-
-**Docker Benefits:**
-- ✅ No need to install Python, FFmpeg, or dependencies
-- ✅ Consistent environment across systems
-- ✅ Easy deployment and scaling
-- ✅ Isolated from host system
-- ✅ Auto-restart on failures
-
-**Development vs Production:**
-- **`docker-compose.dev.yml`**: Hot reload, code mounted, debug logging
-- **`docker-compose.yml`**: Production optimized, no hot reload
-
-**Environment Variables (optional):**
-
-```bash
-docker run -d \
-  -p 8000:8000 \
-  -e LOG_LEVEL=DEBUG \
-  -v $(pwd)/uploads:/app/uploads \
-  -v $(pwd)/output:/app/output \
-  video-processing-service
-```
-
-### Service Availability
-
-Regardless of the method, the service will be available at:
-- API: http://localhost:8000
-- Interactive docs: http://localhost:8000/docs
-- Alternative docs: http://localhost:8000/redoc
-- Health check: http://localhost:8000/health
-
-## 📡 API Endpoints
-
-### Health Check
-```bash
-GET /health
-```
-
-### Upload Video
-```bash
-POST /upload
-Content-Type: multipart/form-data
-
-# Upload a video file
-curl -X POST http://localhost:8000/upload \
-  -F "file=@your_video.mp4"
-```
-
-### Analyze Video
-```bash
-POST /analyze-video
-Content-Type: application/json
-
-{
-  "video_path": "/path/to/video.mp4"
-}
-```
-
-**Response:**
-```json
-{
-  "video_metadata": {
-    "width": 1920,
-    "height": 1080,
-    "fps": 30,
-    "total_frames": 900,
-    "duration": 30.0,
-    "crop_width": 607,
-    "crop_height": 1080
-  },
-  "crop_data": [
-    {
-      "frame": 0,
-      "x": 656,
-      "y": 0,
-      "width": 607,
-      "height": 1080,
-      "center_x": 960.0
-    }
-    // ... more frames
-  ],
-  "smoothed_centers": [960.0, 958.3, ...]
-}
-```
-
-### Render Cropped Video
-```bash
-POST /render-video
-Content-Type: application/json
-
-{
-  "video_path": "/path/to/video.mp4",
-  "crop_data": [...],  // From analyze-video response
-  "output_path": "/path/to/output.mp4"  // Optional
-}
-```
-
-### Complete Pipeline (Analyze + Render)
-```bash
-POST /process-video
-Content-Type: application/json
-
-{
-  "video_path": "/path/to/video.mp4"
-}
-```
-
-### Transcribe Video (Audio Extraction + Speech-to-Text)
-```bash
-POST /transcribe
-Content-Type: application/json
-
-{
-  "video_path": "/path/to/video.mp4",
-  "language": "en",  // Optional: "en", "es", "fr", etc. or null for auto-detect
-  "cleanup": true    // Optional: delete temporary audio file after transcription
-}
-```
-
-**Response:**
-```json
-{
-  "video_path": "/path/to/video.mp4",
-  "audio_path": null,
-  "segment_count": 15,
-  "full_text": "Welcome to this tutorial about NextJS...",
-  "segments": [
-    {
-      "id": 0,
-      "start": 0.0,
-      "end": 4.5,
-      "text": "Welcome to this tutorial about NextJS."
-    },
-    {
-      "id": 1,
-      "start": 4.5,
-      "end": 8.2,
-      "text": "In this video we'll build a simple application."
-    }
-    // ... more segments
-  ]
-}
-```
-
-**Features:**
-- 🎤 Extracts audio from video using FFmpeg
-- 🤖 Uses OpenAI Whisper for accurate speech recognition
-- ⏱️ Provides precise timestamps for each text segment
-- 🌍 Supports multiple languages (auto-detect or specify)
-- 📝 Returns structured JSON for easy integration with LLMs
-
-## 🧪 Testing Examples
-
-### Using cURL
-
-```bash
-# 1. Upload video
-curl -X POST http://localhost:8000/upload \
-  -F "file=@test_video.mp4"
-
-# 2. Analyze video
-curl -X POST http://localhost:8000/analyze-video \
-  -H "Content-Type: application/json" \
-  -d '{"video_path": "uploads/test_video.mp4"}' \
-  | jq . > analysis.json
-
-# 3. Render video
-curl -X POST http://localhost:8000/render-video \
-  -H "Content-Type: application/json" \
-  -d @analysis.json
-
-# Or use complete pipeline
-curl -X POST http://localhost:8000/process-video \
-  -H "Content-Type: application/json" \
-  -d '{"video_path": "uploads/test_video.mp4"}'
-```
-
-### Using Python
-
-```python
-import requests
-
-# Upload video
-with open("video.mp4", "rb") as f:
-    response = requests.post(
-        "http://localhost:8000/upload",
-        files={"file": f}
-    )
-    video_path = response.json()["path"]
-
-# Analyze
-analysis = requests.post(
-    "http://localhost:8000/analyze-video",
-    json={"video_path": video_path}
-).json()
-
-print(f"Video duration: {analysis['video_metadata']['duration']}s")
-print(f"Detected {len(analysis['crop_data'])} frames")
-
-# Render
-result = requests.post(
-    "http://localhost:8000/render-video",
-    json={
-        "video_path": video_path,
-        "crop_data": analysis["crop_data"]
-    }
-).json()
-
-print(f"Output: {result['output_path']}")
-```
+`GET /health` is public. Next or a background worker signs a fresh processing JWT before each operation. The private endpoints accept multipart sources for transcription and crop and a validated YouTube source for import. Results are read through owner- and job-scoped receipts. Uploads and downloads in the browser go through the web asset API. See the [route and service policy](../../docs/authentication.md).
 
 ## 🎨 How It Works
 
@@ -389,6 +90,7 @@ Alternative: **Kalman Filter** implementation included for more sophisticated tr
 ### 3. Crop Calculation
 
 For 16:9 → 9:16 conversion:
+
 - Input: 1920x1080 (16:9)
 - Output: 607x1080 (9:16)
 - Crop window follows face center
@@ -442,74 +144,22 @@ apps/processing-engine/
 
 ## 🐳 Docker Configuration
 
-### Dockerfile Details
+For the complete studio, follow the root Compose procedure. It passes the shared secret from the private `.env.docker` configuration to the services. Next and the worker reach Python at `http://processing-engine:8000`. [Docker installation](../../docs/DOCKER_SETUP.md)
 
-The service includes a production-ready Dockerfile with:
-- **Base Image**: Python 3.11-slim (optimized for size)
-- **FFmpeg**: Pre-installed for video processing
-- **Dependencies**: All Python packages included
-- **Health Check**: Automatic service monitoring
-- **Volumes**: Persistent storage for uploads/outputs
-- **Port**: Exposes 8000 for API access
+To run only the processor with its own Compose file, work in `apps/processing-engine`. Create or update a private regular `.env` file with mode 0600. Set `STUDIO_RENDER_SECRET` to the existing service secret used by Next and the worker and set `USE_OPENAI_API=false` for local Whisper. The service Compose file loads this environment, mounts private `uploads` and `output` directories and publishes port 8000 on host loopback.
 
-### docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  processing-engine:
-    build: .
-    container_name: video-processing-service
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./uploads:/app/uploads
-      - ./output:/app/output
-    environment:
-      - LOG_LEVEL=INFO
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+```sh
+docker compose up -d --wait --build processing-engine
+docker compose ps processing-engine
+curl --fail --silent --show-error http://127.0.0.1:8000/health
 ```
 
-### Docker Commands Reference
-
-```bash
-# Build
-docker-compose build
-
-# Start in background
-docker-compose up -d
-
-# Start with logs
-docker-compose up
-
-# Stop
-docker-compose down
-
-# Restart
-docker-compose restart
-
-# View logs
-docker-compose logs -f
-
-# Check status
-docker-compose ps
-
-# Execute command in container
-docker-compose exec processing-engine python -c "print('Hello')"
-
-# Remove all (including volumes)
-docker-compose down -v
-```
+The health response is `{"status":"healthy"}`. An authenticated operation from Next or the worker verifies the shared-secret configuration. Stop the standalone service with `docker compose stop processing-engine`.
 
 ## 🐛 Troubleshooting
 
 ### FFmpeg Not Found (Local Installation)
+
 ```bash
 # Verify FFmpeg installation
 ffmpeg -version
@@ -522,45 +172,12 @@ brew install ffmpeg  # macOS
 
 ### Docker Issues
 
-**Port Already in Use:**
-```bash
-# Check what's using port 8000
-lsof -i :8000
+Check which process owns the host port with `lsof -i :8000`. Use the processor already running for the installation or stop it before starting another. If you choose another host port, keep the binding on loopback (for example, `127.0.0.1:8001:8000`) and update `PYTHON_ENGINE_INTERNAL_URL` for host-side callers.
 
-# Use a different port
-docker run -p 8001:8000 video-processing-service
-```
-
-**Container Won't Start:**
-```bash
-# Check logs
-docker-compose logs
-
-# Rebuild without cache
-docker-compose build --no-cache
-
-# Remove old containers
-docker-compose down -v
-docker-compose up --build
-```
-
-**Permission Issues with Volumes:**
-```bash
-# Ensure directories exist and have correct permissions
-mkdir -p uploads output
-chmod 755 uploads output
-```
-
-**Out of Disk Space:**
-```bash
-# Clean up Docker resources
-docker system prune -a
-
-# Remove unused volumes
-docker volume prune
-```
+For standalone Compose, inspect `docker compose ps processing-engine` and the local service logs. A healthy processor returning 401 for a signed operation warrants checking that the shared service secret matches the web/worker configuration. For disk or permission errors, check free space and confirm the service user can write the private mounts.
 
 ### MediaPipe Installation Issues (Local)
+
 ```bash
 # Use specific version
 pip install mediapipe==0.10.9
@@ -570,6 +187,7 @@ pip install --no-cache-dir mediapipe
 ```
 
 ### OpenCV Display Issues (macOS, Local)
+
 ```bash
 # If GUI issues, install headless version
 pip uninstall opencv-python
@@ -577,6 +195,7 @@ pip install opencv-python-headless
 ```
 
 ### Memory Issues with Large Videos
+
 - Increase `sample_rate` in VideoAnalyzer (process fewer frames)
 - Process shorter video segments
 - Close other applications
@@ -596,11 +215,13 @@ pip install opencv-python-headless
 ### Speed vs Quality Tradeoffs
 
 **Faster Processing:**
+
 - Increase `sample_rate` (e.g., 10 = process every 10th frame)
 - Use lower resolution input
 - Reduce smoothing window size
 
 **Better Quality:**
+
 - Lower `sample_rate` (e.g., 3 = process every 3rd frame)
 - Increase smoothing window for smoother motion
 - Use AdvancedRenderer for frame-by-frame precision
@@ -608,16 +229,19 @@ pip install opencv-python-headless
 ### Docker Performance Tips
 
 **Enable BuildKit for faster builds:**
+
 ```bash
 export DOCKER_BUILDKIT=1
-docker-compose build
+docker compose build
 ```
 
 **Multi-stage builds (already implemented):**
+
 - Optimized image size (~800MB vs 2GB+)
 - Faster deployment and startup
 
 **Resource Limits:**
+
 ```yaml
 # In docker-compose.yml
 services:
@@ -633,6 +257,7 @@ services:
 ```
 
 **Use Docker volumes for better I/O:**
+
 ```bash
 # Already configured in docker-compose.yml
 volumes:
@@ -642,77 +267,7 @@ volumes:
 
 ## 🚢 Deployment
 
-### Production Deployment with Docker
-
-**1. Build optimized image:**
-```bash
-docker build -t video-processor:v1.0 .
-```
-
-**2. Push to registry:**
-```bash
-# Docker Hub
-docker tag video-processor:v1.0 yourusername/video-processor:v1.0
-docker push yourusername/video-processor:v1.0
-
-# AWS ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ECR_URL
-docker tag video-processor:v1.0 YOUR_ECR_URL/video-processor:v1.0
-docker push YOUR_ECR_URL/video-processor:v1.0
-```
-
-**3. Deploy to cloud:**
-
-**Docker Swarm:**
-```bash
-docker stack deploy -c docker-compose.yml video-processing
-```
-
-**Kubernetes:**
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: video-processor
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: video-processor
-  template:
-    metadata:
-      labels:
-        app: video-processor
-    spec:
-      containers:
-      - name: processor
-        image: yourusername/video-processor:v1.0
-        ports:
-        - containerPort: 8000
-        volumeMounts:
-        - name: storage
-          mountPath: /app/uploads
-        - name: output
-          mountPath: /app/output
-```
-
-**Cloud Platforms:**
-- **AWS ECS/Fargate**: Use the Docker image directly
-- **Google Cloud Run**: Fully managed container platform
-- **Azure Container Instances**: Quick deployment option
-- **DigitalOcean App Platform**: Simple PaaS deployment
-
-### Environment-Specific Configurations
-
-**Development:**
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
-
-**Production:**
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
+Use the root Compose configuration for a complete studio installation. When adapting it to another environment, keep the processor on a private service network reachable by Next and the worker, inject their shared `STUDIO_RENDER_SECRET` through the deployment’s secret store, and give the service persistent private storage for its results. Configure its callers with the internal service URL. [Docker installation](../../docs/DOCKER_SETUP.md)
 
 ## 🔮 Future Enhancements
 
@@ -736,7 +291,8 @@ This service is part of a larger Turborepo monorepo. Follow the main project's c
 ## 📞 Support
 
 For issues and questions:
-1. Check the interactive API docs: http://localhost:8000/docs
+
+1. Check the minimal health response with `curl --fail --silent --show-error http://127.0.0.1:8000/health`. For the supported operations and credentials, consult the [service policy](../../docs/authentication.md#procesador-python).
 2. Review logs for error messages
 3. Verify FFmpeg installation
 4. Ensure video file is accessible

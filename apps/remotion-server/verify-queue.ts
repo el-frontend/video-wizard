@@ -7,8 +7,10 @@
  */
 import { bundle } from '@remotion/bundler';
 import { ensureBrowser } from '@remotion/renderer';
-import { createReadStream, mkdirSync, rmSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { mkdtemp, copyFile, mkdir, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { assetPath, fileHash } from '@workspace/render-contract/storage';
+import { hostRenderBundle, bundlePublicPath } from './server/render-bundle-host.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -16,73 +18,47 @@ import { makeRenderQueue } from './server/render-queue.js';
 
 const EXPECTED_LIMIT = Number(process.env.MAX_CONCURRENT_RENDERS ?? 1);
 const JOB_COUNT = 3;
-const VIDEO_PORT = 4601;
+
 // Any local mp4 works. `apps/processing-engine/output/` is gitignored, so
 // point SAMPLE_VIDEO at a file you have.
 const SAMPLE = path.resolve(
   process.env.SAMPLE_VIDEO ?? '../processing-engine/output/A999_11151216_C035_clip_0s.mp4'
 );
-const OUT_DIR = path.join(os.tmpdir(), 'remotion-queue-verify');
-
-function startVideoServer() {
-  const size = statSync(SAMPLE).size;
-  const server = createServer((req, res) => {
-    const range = req.headers.range;
-    if (range) {
-      const [s, e] = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(s, 10);
-      const end = e ? parseInt(e, 10) : size - 1;
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${size}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': end - start + 1,
-        'Content-Type': 'video/mp4',
-      });
-      createReadStream(SAMPLE, { start, end }).pipe(res);
-    } else {
-      res.writeHead(200, { 'Content-Length': size, 'Content-Type': 'video/mp4' });
-      createReadStream(SAMPLE).pipe(res);
-    }
-  });
-  return new Promise<ReturnType<typeof createServer>>((resolve) =>
-    server.listen(VIDEO_PORT, () => resolve(server))
-  );
-}
-
 async function main() {
   console.log(`\n=== Phase 2 queue verification ===`);
   console.log(`MAX_CONCURRENT_RENDERS=${EXPECTED_LIMIT}, enqueuing ${JOB_COUNT} jobs\n`);
 
-  rmSync(OUT_DIR, { recursive: true, force: true });
-  mkdirSync(OUT_DIR, { recursive: true });
-
-  await ensureBrowser();
-  const videoServer = await startVideoServer();
-
-  const serveUrl = await bundle({
-    entryPoint: path.resolve('../../packages/remotion-compositions/src/index.ts'),
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'studio-queue-'));
+  process.env.STUDIO_DATA_DIR = directory;
+  const ownerId = randomUUID(),
+    hash = await fileHash(SAMPLE, new AbortController().signal);
+  await copyFile(SAMPLE, await assetPath(directory, ownerId, hash, true));
+  const rendersDir = path.join(directory, 'renders');
+  await mkdir(rendersDir);
+  await ensureBrowser({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE });
+  const bundleDir = await bundle({
+    entryPoint: path.resolve('../../packages/remotion-compositions/src/entry.ts'),
+    publicPath: bundlePublicPath,
   });
-
-  const queue = makeRenderQueue({
-    port: 3001,
-    serveUrl,
-    rendersDir: OUT_DIR,
-    publicUrl: 'http://localhost:3001',
-  });
-
-  // Short renders (60 frames = 2s) so the test finishes quickly.
-  const inputProps = {
-    videoUrl: `http://localhost:${VIDEO_PORT}/video.mp4`,
-    subtitles: [{ id: 1, start: 0, end: 2, text: 'queue verification' }],
-    template: 'viral',
-    language: 'en',
-    aspectRatio: '9:16',
-    backgroundColor: '#000000',
-    durationInFrames: 60,
-  };
-
+  const bundleHost = await hostRenderBundle(bundleDir);
+  const queue = makeRenderQueue({ serveUrl: bundleHost.url, rendersDir });
   const jobIds = Array.from({ length: JOB_COUNT }, () =>
-    queue.createJob({ compositionId: 'VideoWithSubtitles', inputProps })
+    queue.createJob({
+      ownerId,
+      admission: {
+        compositionId: 'VideoWithSubtitles',
+        webJobId: randomUUID(),
+        sourceAsset: { assetId: randomUUID(), hash, mediaType: 'video/mp4', durationMs: 2000 },
+        inputProps: {
+          subtitles: [],
+          template: 'viral',
+          language: 'es',
+          aspectRatio: '9:16',
+          backgroundColor: '#000000',
+          durationInFrames: 60,
+        },
+      },
+    })
   );
 
   // Sample the queue and record peak simultaneous in-progress renders.
@@ -121,7 +97,8 @@ async function main() {
   console.log(`respected limit:   ${bounded ? 'PASS' : 'FAIL'}`);
   console.log(`ran in parallel:   ${parallel ? 'PASS' : 'FAIL'}`);
 
-  videoServer.close();
+  bundleHost.close();
+  await rm(directory, { recursive: true, force: true });
   process.exit(drained && bounded && parallel ? 0 : 1);
 }
 

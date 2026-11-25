@@ -4,15 +4,18 @@ services:
       context: ../..
       dockerfile: apps/remotion-server/Dockerfile
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     environment:
+      - STUDIO_RENDER_SECRET
+      - STUDIO_EDITOR_ORIGIN
+      - STUDIO_PREVIEW_ORIGIN
       - NODE_ENV=development
       - PORT=3001
       - RENDERS_DIR=./renders
     volumes:
+      - ${STUDIO_DATA_DIR:-../../.studio-data}:/app/.studio-data:ro
       # Mount source code for hot reload in development
-      - ../../packages/remotion-compositions:/app/packages/remotion-compositions
       - ./server:/app/apps/remotion-server/server
       - ./renders:/app/apps/remotion-server/renders
     restart: unless-stopped
-    command: pnpm dev
+    command: pnpm exec tsx watch server/index.ts

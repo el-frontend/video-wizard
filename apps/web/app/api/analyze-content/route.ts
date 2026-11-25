@@ -1,3 +1,4 @@
+import { ConfigurationError } from '@/server/lib/utils';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
@@ -13,7 +14,7 @@ import type { AnalyzeContentRequest } from '@/server/types/content-analysis';
 export async function POST(request: NextRequest) {
   let user;
   try {
-    user = await requireAuth();
+    user = await requireAuth(request);
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
     throw error;
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     console.error('Content analysis error:', error);
 
-    if (error instanceof Error && error.message.includes('not configured')) {
+    if (error instanceof ConfigurationError) {
       return NextResponse.json(
         {
           success: false,

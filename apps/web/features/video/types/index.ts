@@ -4,8 +4,10 @@
  * Type definitions for the video processing feature
  */
 
+import type { CaptionCue } from '@workspace/video-project';
 import type { ContentAnalysis } from '@/server/types/content-analysis';
 import type { AspectRatio } from '../lib/aspect-ratios';
+import type { SubtitleSegmentSeconds } from '../lib/legacy-timing';
 
 export type { AspectRatio } from '../lib/aspect-ratios';
 
@@ -17,16 +19,12 @@ export type { BrandKit, LogoPosition } from './brand-kit';
 export { SilenceFillerConfigSchema } from './silence-filler';
 export type { DetectedIssue, DetectionResult, SilenceFillerConfig } from './silence-filler';
 
-export interface TranscriptSegment {
+export interface TranscriptSegment extends SubtitleSegmentSeconds {
   id: number;
-  start: number;
-  end: number;
-  text: string;
 }
 
 export interface TranscriptionResult {
-  video_path: string;
-  audio_path?: string;
+  cues: CaptionCue[];
   segments: TranscriptSegment[];
   full_text: string;
   segment_count: number;
@@ -51,7 +49,7 @@ export interface VideoProcessingState {
   inputMode: VideoInputMode;
   aspectRatio: AspectRatio;
   currentStep: ProcessingStep;
-  uploadedPath: string;
+  sourceAssetId: string;
   transcription: TranscriptionResult | null;
   analysis: ContentAnalysis | null;
   language: string; // Detected language code
@@ -71,11 +69,7 @@ export interface VideoProcessingState {
  * - Remotion Player and Remotion Server expectations
  * - Standard video timing conventions
  */
-export interface SubtitleSegment {
-  start: number; // Time in seconds
-  end: number; // Time in seconds
-  text: string;
-}
+export type SubtitleSegment = SubtitleSegmentSeconds;
 
 /**
  * Template style for subtitle rendering
@@ -95,14 +89,16 @@ export type SubtitleTemplate =
  * Generated video clip with loading state
  */
 export interface GeneratedClip {
+  jobId?: string;
+  clipCaptions?: CaptionCue[];
   index: number;
   summary: string;
   viralScore: number;
   startTime: number;
   endTime: number;
   duration: number;
+  sourceDurationMs?: number;
   videoUrl?: string; // Cropped video without subtitles (for preview)
-  clipPath?: string; // Path to cropped video
   renderedVideoUrl?: string; // Final rendered video with subtitles from Remotion server
   subtitles?: SubtitleSegment[];
   template?: SubtitleTemplate; // Current template selection

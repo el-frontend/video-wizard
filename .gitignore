@@ -44,3 +44,12 @@ next-env.d.ts
 
 # turbo
 .turbo
+
+# Local assistant sessions
+/.studio-data/
+
+/.studio/bootstrap-user.json
+/.studio/.bootstrap-*
+
+/.studio/backups/
+/.studio/companion/

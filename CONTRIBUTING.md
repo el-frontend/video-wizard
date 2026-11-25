@@ -4,55 +4,9 @@ Thanks for your interest in contributing! Video Wizard is a monorepo for
 AI-powered video analysis, viral clip extraction and subtitle generation.
 This guide gets you from clone to first PR.
 
-## Quick start (one command)
+## Development setup
 
-You need [Docker Desktop](https://docs.docker.com/get-docker/) (or any
-compose v2-compatible runtime). Then:
-
-```bash
-cp .env.docker.example .env.docker
-# Edit two values in .env.docker:
-#   AUTH_SECRET     — run: openssl rand -base64 32
-#   OPENAI_API_KEY  — get one at https://platform.openai.com/api-keys
-
-docker compose up
-```
-
-Open http://localhost:3000/signup, create an account, run the Subtitle
-Generator end-to-end.
-
-What's running:
-
-| Service             | URL                       | Purpose                              |
-|---------------------|---------------------------|--------------------------------------|
-| `web`               | http://localhost:3000     | Next.js app                          |
-| `worker`            | (no port)                 | Drains the render queue              |
-| `migrate`           | (one-shot)                | Applies Drizzle migrations and exits |
-| `postgres`          | localhost:5432            | PostgreSQL 17                        |
-| `processing-engine` | http://localhost:8000     | Python (Whisper, FFmpeg, MediaPipe)  |
-| `remotion-server`   | http://localhost:3001     | Remotion render server               |
-
-## Manual / hybrid setup
-
-If you'd rather run the Node side on your host (faster iteration on web /
-worker code):
-
-```bash
-# 1. Backing services in Docker
-docker compose up postgres processing-engine remotion-server
-
-# 2. Web env (one-time)
-cp apps/web/.env.example apps/web/.env.local
-# Edit AUTH_SECRET and OPENAI_API_KEY in apps/web/.env.local
-# DATABASE_URL there should point at localhost (it does by default)
-
-# 3. Migrate
-pnpm --filter web db:migrate
-
-# 4. Two terminals
-pnpm --filter web dev      # Next.js
-pnpm --filter web worker   # Queue drainer
-```
+For a new installation, follow the [Docker setup](./docs/DOCKER_SETUP.md). The [authentication guide](./docs/authentication.md) covers existing databases, host-side Next/Python development, explicit catalog seeding and isolated acceptance fixtures. Run the renderer in its Docker container.
 
 ## Project layout
 

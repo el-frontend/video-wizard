@@ -32,13 +32,14 @@ interface ActiveSubtitleResult {
  */
 export function useActiveSubtitle(
   subtitles: SubtitleSegment[],
-  currentTime: number
+  currentTime: number,
+  offsetSeconds = 0.2
 ): ActiveSubtitleResult {
   return useMemo(() => {
     // Subtitle timing offset (delay in seconds)
     // Positive value delays subtitles (appears later)
     // Negative value advances subtitles (appears earlier)
-    const SUBTITLE_OFFSET = 0.2; // 200ms delay to improve sync
+    const SUBTITLE_OFFSET = offsetSeconds;
 
     // Adjust current time with offset
     const adjustedTime = currentTime - SUBTITLE_OFFSET;
@@ -110,5 +111,5 @@ export function useActiveSubtitle(
       isActive: true,
       wordIndex: 0,
     };
-  }, [subtitles, currentTime]);
+  }, [subtitles, currentTime, offsetSeconds]);
 }

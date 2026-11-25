@@ -9,9 +9,12 @@ import { CaptionOverlay } from './CaptionOverlay';
  * 1. Video background layer (source video)
  * 2. Caption overlay layer (synchronized subtitles)
  */
-export const VideoComposition: React.FC<VideoCompositionProps> = ({
+export const VideoComposition: React.FC<
+  VideoCompositionProps & { captionOffsetSeconds?: number }
+> = ({
   videoUrl,
   subtitles,
+  captionOffsetSeconds,
   template,
   language = 'en',
   backgroundColor = '#000000',
@@ -56,6 +59,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
         <CaptionOverlay
           subtitles={subtitles}
           currentTime={currentTime}
+          captionOffsetSeconds={captionOffsetSeconds}
           template={template}
           language={language}
           brandKit={brandKit}

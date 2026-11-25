@@ -1,3 +1,4 @@
+import { workspacePage } from '@/server/auth/page-policy';
 import { SubtitleGeneratorContainer } from '@/features/video/containers/subtitle-generator-container';
 
 export const metadata = {
@@ -5,6 +6,6 @@ export const metadata = {
   description: 'Generate and render subtitles for your videos with customizable templates',
 };
 
-export default function SubtitleGeneratorPage() {
-  return <SubtitleGeneratorContainer />;
-}
+export default workspacePage('/subtitle-generator', (user) => {
+  return <SubtitleGeneratorContainer ownerId={user.id} />;
+});

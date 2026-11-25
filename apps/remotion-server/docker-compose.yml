@@ -4,17 +4,25 @@ services:
       context: ../..
       dockerfile: apps/remotion-server/Dockerfile
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     environment:
+      - STUDIO_RENDER_SECRET
+      - STUDIO_EDITOR_ORIGIN
+      - STUDIO_PREVIEW_ORIGIN
       - NODE_ENV=production
       - PORT=3001
       - RENDERS_DIR=./renders
     volumes:
+      - ${STUDIO_DATA_DIR:-../../.studio-data}:/app/.studio-data:ro
       # Mount renders directory for persistence
       - ./renders:/app/apps/remotion-server/renders
     restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
       interval: 30s
       timeout: 10s
       retries: 3

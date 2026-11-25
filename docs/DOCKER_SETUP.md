@@ -1,168 +1,55 @@
-# Docker Setup Guide
+# Instalación con Docker Compose
 
-This guide explains how to run the Video Wizard services using Docker.
+Ejecuta los comandos desde la raíz del monorepo con Docker Compose v2. En una instalación existente detén web y worker y respalda PostgreSQL y los volúmenes privados antes de aplicar las migraciones. Consulta la [guía de migración](./authentication.md).
 
-## Architecture
+1. Prepara el archivo privado. Este bloque crea `.env.docker` a partir del ejemplo cuando falta. Si ya existe como archivo regular, conserva todo su contenido y ajusta sus permisos a 0600.
 
-The Video Wizard application consists of three main services:
-
-1. **Web App** (`apps/web`) - Next.js frontend (runs on host)
-2. **Processing Engine** (`apps/processing-engine`) - Python service for video processing (Docker)
-3. **Remotion Server** (`apps/remotion-server`) - Node.js service for rendering videos with subtitles (Docker)
-
-## Network Configuration
-
-The Docker services run on a shared network called `video-wizard-network` to enable container-to-container communication.
-
-### Important URLs
-
-**For local development (all services on host):**
-- Processing Engine: `http://localhost:8000`
-- Remotion Server: `http://localhost:3001`
-- Web App: `http://localhost:3000`
-
-**For Docker container-to-container communication:**
-- Processing Engine: `http://processing-engine:8000` (used by Remotion server)
-- Remotion Server: `http://remotion-server:3001`
-
-## Running with Docker
-
-### Option 1: Run All Services with Docker Compose
-
-From the project root:
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-```
-
-### Option 2: Run Individual Services
-
-**Processing Engine only:**
-```bash
-cd apps/processing-engine
-docker-compose -f docker-compose.dev.yml up -d
-```
-
-**Remotion Server only:**
-```bash
-cd apps/remotion-server
-docker-compose -f docker-compose.dev.yml up -d
-```
-
-**Web App (on host):**
-```bash
-cd apps/web
-pnpm dev
-```
-
-## Environment Variables
-
-### Web App (.env.local)
-
-```env
-# Client-side access to processing engine
-NEXT_PUBLIC_PYTHON_ENGINE_URL=http://localhost:8000
-
-# Server-side access to Remotion
-REMOTION_SERVER_URL=http://localhost:3001
-
-# Container-to-container communication
-# Use 'processing-engine' when Remotion runs in Docker
-# Use 'localhost' when Remotion runs on host
-PYTHON_ENGINE_INTERNAL_URL=http://processing-engine:8000
-```
-
-### When to Use Each URL
-
-1. **NEXT_PUBLIC_PYTHON_ENGINE_URL**: 
-   - Used by browser (client-side)
-   - Always `http://localhost:8000`
-
-2. **PYTHON_ENGINE_INTERNAL_URL**:
-   - Used by Remotion server to access videos
-   - `http://processing-engine:8000` when in Docker
-   - `http://localhost:8000` when running locally
-
-## Shared Volumes
-
-The Remotion server needs access to video files from the processing engine:
-
-```yaml
-volumes:
-  # Share output directory with processing engine
-  - ./apps/processing-engine/output:/app/processing-engine/output
-```
-
-## Troubleshooting
-
-### Connection Refused Error
-
-**Error**: `ECONNREFUSED 127.0.0.1:8000`
-
-**Cause**: Remotion server trying to access `localhost:8000` from inside container
-
-**Solution**: 
-- Ensure `PYTHON_ENGINE_INTERNAL_URL=http://processing-engine:8000` is set
-- Both containers must be on the same Docker network
-- Use the root `docker-compose.yml` to start services together
-
-### Video File Not Found
-
-**Error**: Remotion can't find video file
-
-**Solution**:
-- Ensure shared volume is mounted: `./apps/processing-engine/output`
-- Check video path matches between services
-
-### Port Already in Use
-
-**Error**: Port 8000 or 3001 already in use
-
-**Solution**:
-```bash
-# Find and kill process using port
-lsof -ti:8000 | xargs kill -9
-lsof -ti:3001 | xargs kill -9
-```
-
-## Development Workflow
-
-1. **Start backend services in Docker:**
-   ```bash
-   docker-compose up -d
+   ```sh
+   (
+     set -eu
+     umask 077
+     test ! -L .env.docker
+     if [ ! -e .env.docker ]; then
+       set -C
+       cat .env.docker.example > .env.docker
+     fi
+     test -f .env.docker
+     chmod 600 .env.docker
+   )
    ```
 
-2. **Start web app on host (for hot reload):**
-   ```bash
-   cd apps/web
-   pnpm dev
+   Edita el archivo en privado. En instalaciones existentes conserva las credenciales de PostgreSQL, `DATABASE_URL` y los secretos en uso. Compara los **nombres** con `.env.docker.example` y añade solo los campos que falten. Configura `BETTER_AUTH_URL`, `STUDIO_EDITOR_ORIGIN` y `STUDIO_PREVIEW_ORIGIN` con los orígenes que verá el navegador. El editor y Better Auth comparten el host canónico `app.video-wizard.localhost`. Usa `preview.video-wizard.localhost` para el renderer. En una actualización cambia también los orígenes antiguos de un solo host. Comprueba las direcciones internas de Compose y el montaje de `STUDIO_DATA_DIR` contra el ejemplo.
+
+   En instalaciones nuevas configura la contraseña de PostgreSQL tanto en su campo como en la URL, con codificación de URL cuando corresponda. Para cada secreto ausente, genera un valor independiente de al menos 32 bytes con un gestor de contraseñas. `BETTER_AUTH_SECRET` es exclusivo de la autenticación web. En `STUDIO_RENDER_SECRET` usa el secreto compartido actual de los servicios si ya está configurado en la instalación.
+
+Web y worker leen código y dependencias de la imagen. Después de cambiar código reconstruye las imágenes. Los antiguos volúmenes de dependencias quedan sin montar; PostgreSQL y los recursos conservan sus volúmenes.
+
+2. Construye las imágenes y arranca PostgreSQL. El servicio de migración comprueba los conteos y las colisiones de correo y después aplica las migraciones.
+
+   ```sh
+   docker compose --env-file .env.docker build
+   docker compose --env-file .env.docker up -d --wait postgres
+   docker compose --env-file .env.docker run --rm migrate
    ```
 
-3. **View logs:**
-   ```bash
-   docker-compose logs -f processing-engine
-   docker-compose logs -f remotion-server
+3. Crea explícitamente el usuario base y su catálogo. El script ejecuta el seed con acceso al catálogo existente y entrega el archivo privado 0600 al UID/GID del operador. Ejecútalo con tu cuenta habitual desde la raíz del repositorio. Puedes repetirlo sin rotar la credencial.
+
+   ```sh
+   sh scripts/compose-seed.sh
+   docker compose --env-file .env.docker up -d
    ```
 
-4. **Restart a service:**
-   ```bash
-   docker-compose restart processing-engine
-   docker-compose restart remotion-server
-   ```
+Abre <http://localhost:3000/signin>. El usuario inicial es `demo@video-wizard.local`; el archivo privado `.studio/bootstrap-user.json` contiene la contraseña si el seed la generó. Las cuentas existentes conservan su credencial. El procesador usa Whisper local con `USE_OPENAI_API=false` y necesita disponer del modelo base.
 
-## Production Deployment
+Next y el worker acceden a Python y al renderer mediante los nombres internos de Compose. El iframe del navegador carga `http://preview.video-wizard.localhost:3001`. La entrada por localhost redirige al editor canónico. El contenedor del renderer tiene Chromium y FFmpeg y monta el almacén compartido de solo lectura. Los puertos publicados se enlazan a loopback. Para consultar el estado usa `docker compose --env-file .env.docker ps`. Para detener los servicios usa `docker compose --env-file .env.docker stop`.
 
-For production, update the URLs to use actual hostnames or load balancers:
+## Verificación aislada
 
-```env
-NEXT_PUBLIC_PYTHON_ENGINE_URL=https://api.yourdomain.com
-REMOTION_SERVER_URL=https://render.yourdomain.com
-PYTHON_ENGINE_INTERNAL_URL=http://processing-engine:8000  # Keep internal
+Desde la raíz, estas pruebas usan proyectos de Compose temporales y puertos internos. La prueba web crea una base terminada en `_test`, reabre el catálogo después de recrear web y worker con volúmenes de dependencias antiguos presentes, solicita la página de ingreso en ambas instalaciones y comprueba los permisos del operador en un volumen Linux. Conserva sus volúmenes de prueba con prefijo `studio-install-`. La prueba Python espera la salud efectiva declarada por la imagen.
+
+```sh
+docker build -f apps/web/Dockerfile -t video-wizard-web:local .
+docker build -t video-wizard-processing:local apps/processing-engine
+pnpm --filter web test --mode compose test/compose-install.test.mjs
+pnpm --filter web test --mode compose-python test/compose-install.test.mjs
 ```

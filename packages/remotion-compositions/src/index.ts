@@ -1,15 +1,3 @@
-import { registerRoot } from 'remotion';
-import { RemotionRoot } from './Root';
-
-/**
- * Remotion Entry Point
- *
- * This file is the entry point for Remotion CLI and bundler
- * Registers all available compositions
- */
-registerRoot(RemotionRoot);
-
-// Export compositions
 export { CaptionOverlay } from './compositions/CaptionOverlay';
 export { VideoComposition } from './compositions/VideoComposition';
 
@@ -25,3 +13,9 @@ export type {
 
 // Export hooks
 export { useActiveSubtitle } from './hooks/useActiveSubtitle';
+export * from './compositions/project-composition';
+export { MinimalTemplate } from './templates/MinimalTemplate';
+export { ModernTemplate } from './templates/ModernTemplate';
+export { ViralTemplate } from './templates/ViralTemplate';
+export { DefaultTemplate } from './templates/DefaultTemplate';
+export { projectAppearance } from './compositions/project-appearance';

@@ -10,32 +10,15 @@
 
 import type { SubtitleSegment } from '../types';
 
-/**
- * Formats seconds to SRT timestamp format: HH:MM:SS,mmm
- * @param seconds - Time in seconds (e.g., 1.5, 65.37)
- */
-function formatSrtTimestamp(seconds: number): string {
-  const totalSeconds = Math.floor(seconds);
+function formatTimestamp(seconds: number, separator: ',' | '.'): string {
+  const totalMilliseconds = Math.round(seconds * 1000);
+  const totalSeconds = Math.floor(totalMilliseconds / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
-  const milliseconds = Math.floor((seconds % 1) * 1000);
+  const milliseconds = totalMilliseconds % 1000;
 
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
-}
-
-/**
- * Formats seconds to VTT timestamp format: HH:MM:SS.mmm
- * @param seconds - Time in seconds (e.g., 1.5, 65.37)
- */
-function formatVttTimestamp(seconds: number): string {
-  const totalSeconds = Math.floor(seconds);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
-  const milliseconds = Math.floor((seconds % 1) * 1000);
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}${separator}${String(milliseconds).padStart(3, '0')}`;
 }
 
 /**
@@ -53,8 +36,8 @@ function formatVttTimestamp(seconds: number): string {
 export function subtitlesToSrt(subtitles: SubtitleSegment[]): string {
   return subtitles
     .map((segment, index) => {
-      const startTime = formatSrtTimestamp(segment.start);
-      const endTime = formatSrtTimestamp(segment.end);
+      const startTime = formatTimestamp(segment.start, ',');
+      const endTime = formatTimestamp(segment.end, ',');
       return `${index + 1}\n${startTime} --> ${endTime}\n${segment.text}`;
     })
     .join('\n\n');
@@ -77,8 +60,8 @@ export function subtitlesToSrt(subtitles: SubtitleSegment[]): string {
 export function subtitlesToVtt(subtitles: SubtitleSegment[]): string {
   const cues = subtitles
     .map((segment, index) => {
-      const startTime = formatVttTimestamp(segment.start);
-      const endTime = formatVttTimestamp(segment.end);
+      const startTime = formatTimestamp(segment.start, '.');
+      const endTime = formatTimestamp(segment.end, '.');
       return `${index + 1}\n${startTime} --> ${endTime}\n${segment.text}`;
     })
     .join('\n\n');

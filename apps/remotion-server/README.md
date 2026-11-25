@@ -1,113 +1,18 @@
-# Remotion Render Server
+# Renderer de Video Wizard
 
-Express.js server for rendering Remotion video compositions with a job queue system.
+Este servicio ejecuta Remotion y HyperFrames. Desde la raíz del monorepo se construye con el contexto completo para incluir las composiciones, el worker HyperFrames, FFmpeg y Chromium de Linux.
 
-## Features
-
-- 📹 Render videos with customizable templates
-- 📝 Dynamic subtitle generation
-- 🎨 Multiple caption templates (default, viral, minimal, modern)
-- 🔄 Job queue with progress tracking
-- ❌ Cancel running render jobs
-- 🐳 Docker support
-
-## API Endpoints
-
-### Create Render Job
-```bash
-POST /renders
-Content-Type: application/json
-
-{
-  "compositionId": "VideoWithSubtitles",
-  "inputProps": {
-    "videoUrl": "https://example.com/video.mp4",
-    "subtitles": [
-      {
-        "id": 1,
-        "start": 0,
-        "end": 2,
-        "text": "Hello World"
-      }
-    ],
-    "template": "viral",
-    "backgroundColor": "#000000"
-  }
-}
+```sh
+docker build -f apps/remotion-server/Dockerfile -t video-wizard-renderer:local .
 ```
 
-### Get Render Status
-```bash
-GET /renders/:jobId
-```
+El arranque con Compose monta Studio Data en modo lectura y publica 3001 en loopback. Remotion abre además un proxy efímero durante la codificación. El aislamiento de red del contenedor mantiene ese puerto fuera del host. Consulta los [pasos de instalación](../../docs/DOCKER_SETUP.md).
 
-### Cancel Render Job
-```bash
-DELETE /renders/:jobId
-```
+## Operaciones
 
-## Getting Started
+- `GET /health` informa de disponibilidad.
+- Next y el worker firman JWT de servicio para crear trabajos, leer su estado y leer el archivo exacto. Cada trabajo legacy recibe identificadores de propietario y trabajo, descriptores de recursos medidos y propiedades de composición. El renderer verifica los hashes de video y logo al prepararlos. Web registra el MP4 terminado en el almacén del propietario.
+- Next construye un snapshot del proyecto para los renders y previews de Studio. El iframe intercambia un ticket por una cookie HttpOnly limitada a la instancia.
+- Los trabajos legacy en curso dependen de asociaciones en memoria. Un reinicio puede requerir reconciliación desde el identificador durable de web.
 
-### Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Start the server in watch mode
-pnpm dev
-```
-
-### Production
-
-```bash
-# Build the server
-pnpm build
-
-# Start the server
-pnpm start
-```
-
-### Run Remotion Studio
-
-```bash
-pnpm remotion:studio
-```
-
-## Docker Support
-
-```bash
-# Build the Docker image
-docker build -t remotion-render-server .
-
-# Run the container
-docker run -d -p 3001:3001 remotion-render-server
-```
-
-## Environment Variables
-
-See `.env.example` for available configuration options.
-
-## Project Structure
-
-```
-apps/remotion-server/
-├── server/
-│   ├── index.ts          # Express server setup
-│   └── render-queue.ts   # Job queue management
-├── renders/              # Output directory for rendered videos
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-## Compositions
-
-Remotion compositions are stored in `packages/remotion-compositions` and include:
-
-- VideoWithSubtitles: Main composition with video + subtitle templates
-- Multiple caption templates: default, viral, minimal, modern
-
-## License
-
-See LICENSE in the root of the monorepo.
+El [contrato de autenticación](../../docs/authentication.md) describe los orígenes, ámbitos, tiempos de vida y acceso a medios.

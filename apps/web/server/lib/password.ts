@@ -1,17 +1,9 @@
-import { compare, hash } from 'bcryptjs';
+import { compare } from 'bcryptjs';
+import { hashPassword, verifyPassword as verifyScrypt } from 'better-auth/crypto';
 
-/**
- * bcrypt cost factor. 10 takes ~70ms on a modern laptop, slow enough to
- * make brute-forcing painful but fast enough that login feels instant.
- */
-const BCRYPT_COST = 10;
+export { hashPassword };
 
-export const MIN_PASSWORD_LENGTH = 8;
-
-export function hashPassword(plain: string): Promise<string> {
-  return hash(plain, BCRYPT_COST);
-}
-
-export function verifyPassword(plain: string, hashed: string): Promise<boolean> {
-  return compare(plain, hashed);
+export function verifyPassword({ password, hash }: { password: string; hash: string }) {
+  if (/^\$2[aby]\$/.test(hash)) return compare(password, hash);
+  return verifyScrypt({ password, hash });
 }

@@ -11,6 +11,7 @@ import {
 } from '@workspace/ui/components/dialog';
 import { Loader2, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { editSubtitleText } from '../lib/legacy-timing';
 import { getAspectClass } from '../lib/aspect-ratios';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
 import type { BrandKit } from '../types/brand-kit';
@@ -24,6 +25,7 @@ interface ClipEditModalProps {
   clipIndex: number;
   clipSummary: string;
   videoUrl: string;
+  sourceDurationMs: number;
   subtitles: SubtitleSegment[];
   template: SubtitleTemplate;
   aspectRatio?: AspectRatio;
@@ -46,6 +48,7 @@ export function ClipEditModal({
   clipIndex,
   clipSummary,
   videoUrl,
+  sourceDurationMs,
   subtitles,
   template: initialTemplate,
   aspectRatio = '9:16',
@@ -74,7 +77,7 @@ export function ClipEditModal({
   // Handle subtitle text edit
   const handleSubtitleEdit = (index: number, newText: string) => {
     const updated = [...editedSubtitles];
-    updated[index] = { ...updated[index], text: newText };
+    updated[index] = editSubtitleText(updated[index]!, newText);
     setEditedSubtitles(updated);
   };
 
@@ -107,6 +110,7 @@ export function ClipEditModal({
             >
               <RemotionPreview
                 videoUrl={videoUrl}
+                sourceDurationMs={sourceDurationMs}
                 subtitles={editedSubtitles}
                 template={selectedTemplate}
                 aspectRatio={aspectRatio}

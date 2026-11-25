@@ -1,0 +1,24 @@
+{
+  "name": "@workspace/hyperframes-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/adapter.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/render-contract": "workspace:*",
+    "@workspace/video-project": "workspace:*",
+    "@workspace/hyperframes-compositions": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.12",
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}

@@ -1,3 +1,4 @@
+import { publicJob } from '@/server/services/owned-media-service';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { UnauthorizedError, requireAuth, unauthorizedResponse } from '@/server/lib/auth';
@@ -15,10 +16,10 @@ interface RouteContext {
  *
  * Designed to be polled by clients while a queued job is processing.
  */
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   let user;
   try {
-    user = await requireAuth();
+    user = await requireAuth(request);
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
     throw error;
@@ -31,5 +32,5 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true, data: job });
+  return NextResponse.json({ success: true, data: publicJob(job) });
 }

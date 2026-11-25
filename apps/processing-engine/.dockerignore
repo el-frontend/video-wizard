@@ -1,0 +1,16 @@
+**/.git
+**/node_modules
+**/.next
+**/.turbo
+**/.env*
+**/.studio*
+**/.superpowers
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/uploads
+**/output
+temp
+temp_videos
+temp_crop_data
+**/*.tsbuildinfo

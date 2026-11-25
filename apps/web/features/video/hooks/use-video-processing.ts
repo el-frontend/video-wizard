@@ -1,8 +1,11 @@
 'use client';
 
+import { authenticatedFetch, workspaceIdentity } from '@/lib/authenticated-fetch';
 import type { ContentAnalysis } from '@/lib/types/content-intelligence';
 import { useState } from 'react';
-import { formatTranscriptForAI, getPythonEngineUrl, validateVideoFile } from '../lib/utils';
+import { formatTranscriptForAI, validateVideoFile } from '../lib/utils';
+import { registerSource, transcribeSource } from '@/features/studio-shorts/lib/api';
+import { toLegacySeconds } from '@/features/studio-shorts/lib/timing';
 import { isYouTubeUrl } from '../lib/youtube';
 import type {
   AspectRatio,
@@ -14,7 +17,7 @@ import type {
 interface UseVideoProcessingOptions {
   onComplete?: (
     analysis: ContentAnalysis,
-    uploadedPath: string,
+    sourceAssetId: string,
     transcription: TranscriptionResult
   ) => void;
   onError?: (error: string) => void;
@@ -32,15 +35,13 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
     inputMode: 'file',
     aspectRatio: '9:16' as AspectRatio,
     currentStep: 'idle',
-    uploadedPath: '',
+    sourceAssetId: '',
     transcription: null,
     analysis: null,
     language: 'en',
     error: '',
     progress: '',
   });
-
-  const PYTHON_ENGINE_URL = getPythonEngineUrl();
 
   const setFile = (file: File | null) => {
     if (!file) {
@@ -80,7 +81,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       inputMode: 'file',
       aspectRatio: '9:16' as AspectRatio,
       currentStep: 'idle',
-      uploadedPath: '',
+      sourceAssetId: '',
       transcription: null,
       analysis: null,
       language: 'en',
@@ -95,7 +96,9 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
     if (!isYouTube && !state.file) return;
     if (isYouTube && !isYouTubeUrl(state.youtubeUrl)) return;
 
+    const operation = workspaceIdentity();
     try {
+      operation.signal.throwIfAborted();
       // Step 1: Get video to server (upload or YouTube download)
       updateState({
         currentStep: 'uploading',
@@ -103,65 +106,25 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
         error: '',
       });
 
-      let uploadData: { path: string; filename: string };
-
-      if (isYouTube) {
-        const downloadResponse = await fetch(`${PYTHON_ENGINE_URL}/download-youtube`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: state.youtubeUrl }),
-        });
-
-        if (!downloadResponse.ok) {
-          const errorData = await downloadResponse.json().catch(() => null);
-          throw new Error(errorData?.detail || 'Error downloading YouTube video');
-        }
-
-        uploadData = await downloadResponse.json();
-      } else {
-        const formData = new FormData();
-        formData.append('file', state.file!);
-
-        const uploadResponse = await fetch(`${PYTHON_ENGINE_URL}/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error('Error uploading video');
-        }
-
-        uploadData = await uploadResponse.json();
-      }
-
+      const asset = await registerSource(
+        isYouTube ? state.youtubeUrl : state.file!,
+        operation.signal
+      );
+      operation.signal.throwIfAborted();
       updateState({
-        uploadedPath: uploadData.path,
-        progress: `Video ready: ${uploadData.filename}`,
-      });
-
-      // Step 2: Transcribe video
-      updateState({
+        sourceAssetId: asset.id,
         currentStep: 'transcribing',
         progress: 'Extracting audio and generating subtitles...',
       });
-
-      const transcribeResponse = await fetch(`${PYTHON_ENGINE_URL}/transcribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          video_path: uploadData.path,
-          language: null, // Auto-detect
-          cleanup: true,
-        }),
-      });
-
-      if (!transcribeResponse.ok) {
-        throw new Error('Error transcribing video');
-      }
-
-      const transcriptionData: TranscriptionResult = await transcribeResponse.json();
+      const { cues, language } = await transcribeSource(asset.id, operation.signal);
+      operation.signal.throwIfAborted();
+      const transcriptionData: TranscriptionResult = {
+        cues,
+        language: language ?? 'en',
+        segments: toLegacySeconds(cues),
+        full_text: cues.map((c) => c.text).join(' '),
+        segment_count: cues.length,
+      };
       const detectedLanguage = transcriptionData.language || 'en';
       updateState({
         transcription: transcriptionData,
@@ -177,7 +140,8 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
 
       const formattedTranscript = formatTranscriptForAI(transcriptionData.segments);
 
-      const analysisResponse = await fetch('/api/analyze-content', {
+      const analysisResponse = await authenticatedFetch('/api/analyze-content', {
+        signal: operation.signal,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,6 +157,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
       }
 
       const analysisData = await analysisResponse.json();
+      operation.signal.throwIfAborted();
 
       if (!analysisData.success || !analysisData.data) {
         throw new Error(analysisData.error || 'Analysis error');
@@ -204,7 +169,7 @@ export function useVideoProcessing(options?: UseVideoProcessingOptions) {
         progress: 'Process completed! Viral clips found.',
       });
 
-      options?.onComplete?.(analysisData.data, uploadData.path, transcriptionData);
+      options?.onComplete?.(analysisData.data, asset.id, transcriptionData);
     } catch (err) {
       console.error('Processing error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

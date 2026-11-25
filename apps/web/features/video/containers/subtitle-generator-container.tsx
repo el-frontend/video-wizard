@@ -14,14 +14,19 @@ import {
 } from '@workspace/ui/components/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
 import { AlertCircle, CheckCircle2, Download, FileText, Link, Upload, Video } from 'lucide-react';
+import { useMemo } from 'react';
 import { AspectRatioSelector } from '../components/aspect-ratio-selector';
 import { BrandKitSettings } from '../components/brand-kit-settings';
+import { RemotionPreview } from '../components/remotion-preview';
 import { SubtitleEditor } from '../components/subtitle-editor';
 import { TemplateSelector } from '../components/template-selector';
 import { useBrandKit } from '../hooks/use-brand-kit';
 import type { VideoInputMode } from '../hooks/use-subtitle-generation';
 import { useSubtitleGeneration } from '../hooks/use-subtitle-generation';
+import { getAspectClass } from '../lib/aspect-ratios';
+import { legacyMsToSeconds, secondsToLegacyMs } from '../lib/legacy-timing';
 import { downloadSrt, downloadVtt } from '../lib/subtitle-export';
+
 import { isYouTubeUrl } from '../lib/youtube';
 
 const LANGUAGE_OPTIONS = [
@@ -37,13 +42,15 @@ const LANGUAGE_OPTIONS = [
   { value: 'ko', label: 'Korean' },
 ];
 
-export function SubtitleGeneratorContainer() {
+export function SubtitleGeneratorContainer({ ownerId }: { ownerId: string }) {
   const {
     file,
     youtubeUrl,
     inputMode,
     aspectRatio,
     currentStep,
+    sourceAssetId,
+    sourceDurationMs,
     subtitles,
     language,
     selectedTemplate,
@@ -61,8 +68,9 @@ export function SubtitleGeneratorContainer() {
     renderVideo,
     resetState,
   } = useSubtitleGeneration();
+  const subtitlesSeconds = useMemo(() => legacyMsToSeconds(subtitles), [subtitles]);
 
-  const { brandKit, setBrandKit } = useBrandKit();
+  const { brandKit, previewBrandKit, setBrandKit, uploadLogo } = useBrandKit(ownerId);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -77,7 +85,7 @@ export function SubtitleGeneratorContainer() {
   const isYouTubeValid = youtubeUrl.trim() !== '' && isYouTubeUrl(youtubeUrl);
   const canGenerate =
     inputMode === 'file' ? file && !isProcessing : isYouTubeValid && !isProcessing;
-  const canRender = currentStep === 'editing' && subtitles.length > 0;
+  const canRender = currentStep === 'editing' && sourceDurationMs !== null;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -248,7 +256,12 @@ export function SubtitleGeneratorContainer() {
                   <p className="text-muted-foreground">Review and edit the generated subtitles</p>
                 </div>
 
-                <SubtitleEditor subtitles={subtitles} onSubtitlesChange={updateSubtitles} />
+                <SubtitleEditor
+                  subtitles={subtitlesSeconds}
+                  onSubtitlesChange={(editedSubtitles) =>
+                    updateSubtitles(secondsToLegacyMs(editedSubtitles))
+                  }
+                />
               </div>
             </Card>
 
@@ -272,7 +285,30 @@ export function SubtitleGeneratorContainer() {
                   />
                 </div>
 
-                <BrandKitSettings brandKit={brandKit} onBrandKitChange={setBrandKit} />
+                <BrandKitSettings
+                  brandKit={brandKit}
+                  onBrandKitChange={setBrandKit}
+                  onUploadLogo={uploadLogo}
+                />
+
+                {sourceDurationMs !== null && (
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Vista previa</h3>
+                    <div
+                      className={`${getAspectClass(aspectRatio)} mx-auto w-full max-w-sm overflow-hidden rounded-lg bg-black`}
+                    >
+                      <RemotionPreview
+                        videoUrl={'/api/studio/assets/' + sourceAssetId}
+                        sourceDurationMs={sourceDurationMs}
+                        subtitles={subtitlesSeconds}
+                        template={selectedTemplate}
+                        language={language}
+                        aspectRatio={aspectRatio}
+                        brandKit={previewBrandKit}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-4">
                   <Button
@@ -323,11 +359,19 @@ export function SubtitleGeneratorContainer() {
 
                   {subtitles.length > 0 && (
                     <div className="flex gap-3">
-                      <Button size="sm" variant="secondary" onClick={() => downloadSrt(subtitles)}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => downloadSrt(subtitlesSeconds)}
+                      >
                         <Download className="w-3.5 h-3.5 mr-1.5" />
                         Export SRT
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={() => downloadVtt(subtitles)}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => downloadVtt(subtitlesSeconds)}
+                      >
                         <FileText className="w-3.5 h-3.5 mr-1.5" />
                         Export VTT
                       </Button>

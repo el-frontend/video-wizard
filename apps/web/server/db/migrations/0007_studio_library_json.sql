@@ -1,0 +1,1 @@
+ALTER TABLE "studio_libraries" ALTER COLUMN "entry" SET DATA TYPE json;

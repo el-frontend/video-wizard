@@ -1,3 +1,4 @@
+import { workspacePage } from '@/server/auth/page-policy';
 import Link from 'next/link';
 import { Video, Sparkles, Film, ArrowRight, Subtitles } from 'lucide-react';
 
@@ -5,7 +6,7 @@ import { Video, Sparkles, Film, ArrowRight, Subtitles } from 'lucide-react';
  * Dashboard Home Page
  * Welcome screen with quick access to main features
  */
-export default function HomePage() {
+export default workspacePage('/', () => {
   return (
     <div className="space-y-8">
       {/* Hero Section */}
@@ -68,7 +69,8 @@ export default function HomePage() {
               <h2 className="text-xl font-semibold text-foreground">Subtitle Generator</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Generate and render beautiful subtitles with AI transcription and customizable templates.
+              Generate and render beautiful subtitles with AI transcription and customizable
+              templates.
             </p>
             <div className="flex items-center text-sm font-medium text-primary group-hover:gap-2 transition-all">
               <span>Create subtitles</span>
@@ -114,4 +116,4 @@ export default function HomePage() {
       </div>
     </div>
   );
-}
+});

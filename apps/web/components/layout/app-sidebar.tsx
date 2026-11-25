@@ -1,7 +1,16 @@
 'use client';
 
 import {
+  CircleUserRound,
   Film,
+  Scissors,
+  Layers3,
+  LayoutTemplate,
+  LogOut,
+  Palette,
+  Stamp,
+  FolderOpen,
+  PanelsTopLeft,
   HelpCircle,
   History,
   LayoutDashboard,
@@ -25,6 +34,17 @@ const navItems: NavItem[] = [
     href: '/',
     icon: LayoutDashboard,
   },
+  {
+    title: 'Proyectos',
+    href: '/projects',
+    icon: PanelsTopLeft,
+  },
+  { title: 'Shorts', href: '/shorts', icon: Scissors },
+  { title: 'Plantillas', href: '/templates', icon: LayoutTemplate },
+  { title: 'Estilos', href: '/styles', icon: Palette },
+  { title: 'Marcas', href: '/brands', icon: Stamp },
+  { title: 'Componentes', href: '/components', icon: Layers3 },
+  { title: 'Recursos', href: '/assets', icon: FolderOpen },
   {
     title: 'Video Wizard',
     href: '/video-wizard',
@@ -69,10 +89,21 @@ const bottomNavItems: NavItem[] = [
  * Application Sidebar Component
  * Professional dark theme navigation with icons
  */
-export function AppSidebar() {
+export function AppSidebar({
+  userLabel,
+  onSignOut,
+  busy,
+  error,
+}: {
+  userLabel: string;
+  onSignOut: () => void;
+  busy: boolean;
+  error: string;
+}) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
+    if (href === '/projects' && pathname.startsWith('/designer/')) return true;
     if (href === '/') {
       return pathname === '/';
     }
@@ -93,7 +124,7 @@ export function AppSidebar() {
         </div>
 
         {/* Main Navigation */}
-        <nav className="flex-1 space-y-1 p-4">
+        <nav className="flex-1 overflow-y-auto space-y-1 p-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -102,6 +133,8 @@ export function AppSidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
+                title={item.title}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
                   ${
                     active
@@ -118,6 +151,29 @@ export function AppSidebar() {
 
         {/* Bottom Navigation */}
         <div className="border-t border-border p-4 space-y-1">
+          <p
+            className="studio-account-control flex min-w-0 items-center gap-3 px-3 py-2 text-sm"
+            title={userLabel}
+          >
+            <CircleUserRound aria-hidden="true" className="h-5 w-5 shrink-0" />
+            <span className="truncate">{userLabel}</span>
+          </p>
+          <button
+            type="button"
+            className="studio-account-control flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
+            onClick={onSignOut}
+            disabled={busy}
+          >
+            <LogOut aria-hidden="true" className="h-5 w-5 shrink-0" />
+            <span>Cerrar sesión</span>
+          </button>
+          {error && (
+            <p role="alert" className="text-sm">
+              {error}
+            </p>
+          )}
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -126,6 +182,8 @@ export function AppSidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
+                title={item.title}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
                   ${
                     active

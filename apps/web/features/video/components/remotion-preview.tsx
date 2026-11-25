@@ -6,9 +6,13 @@ import { useMemo } from 'react';
 import type { AspectRatio, SubtitleSegment, SubtitleTemplate } from '../types';
 import type { BrandKit } from '../types/brand-kit';
 import { getDimensions } from '../lib/aspect-ratios';
+import { durationFrames } from '../lib/legacy-timing';
+
+const FPS = 30;
 
 interface RemotionPreviewProps {
   videoUrl: string;
+  sourceDurationMs: number;
   subtitles: SubtitleSegment[];
   template: SubtitleTemplate;
   language?: string;
@@ -26,6 +30,7 @@ interface RemotionPreviewProps {
  */
 export function RemotionPreview({
   videoUrl,
+  sourceDurationMs,
   subtitles,
   template,
   language = 'en',
@@ -36,24 +41,9 @@ export function RemotionPreview({
   const { width: compositionWidth, height: compositionHeight } = getDimensions(aspectRatio);
   // Convert subtitles to Remotion format (timestamps in seconds)
   const remotionSubtitles = useMemo(
-    () =>
-      subtitles.map((sub, index) => ({
-        id: index + 1,
-        start: sub.start, // Keep in seconds - Remotion expects seconds
-        end: sub.end,
-        text: sub.text,
-      })),
+    () => subtitles.map((subtitle, index) => ({ ...subtitle, id: index + 1 })),
     [subtitles]
   );
-
-  // Calculate duration from last subtitle
-  const durationInFrames = useMemo(() => {
-    if (remotionSubtitles.length === 0) return 300; // 10 seconds default
-    const lastSubtitle = remotionSubtitles[remotionSubtitles.length - 1];
-    const fps = 30;
-    // end is already in seconds
-    return Math.ceil(lastSubtitle.end * fps);
-  }, [remotionSubtitles]);
 
   // Input props for the composition
   const inputProps = useMemo(
@@ -76,10 +66,10 @@ export function RemotionPreview({
       <Player
         component={VideoComposition}
         inputProps={inputProps}
-        durationInFrames={durationInFrames}
+        durationInFrames={durationFrames(sourceDurationMs, FPS)}
         compositionWidth={compositionWidth}
         compositionHeight={compositionHeight}
-        fps={30}
+        fps={FPS}
         style={{
           width: '100%',
           height: '100%',

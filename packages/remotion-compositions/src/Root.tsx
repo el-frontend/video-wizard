@@ -1,3 +1,10 @@
+import {
+  ProjectComposition,
+  projectMetadata,
+  type ProjectRegistry,
+} from './compositions/project-composition';
+import type { ProjectDraft } from '@workspace/video-project';
+import type { ResolvedDependencies } from '@workspace/render-contract';
 import { Composition } from 'remotion';
 import { VideoComposition } from './compositions/VideoComposition';
 import type { VideoCompositionProps } from './types';
@@ -18,9 +25,36 @@ const ASPECT_DIMENSIONS: Record<string, { width: number; height: number }> = {
  * Registers all video compositions available for rendering
  * Each composition defines a timeline with video + subtitles
  */
+const emptyProject: ProjectDraft = {
+  schemaVersion: 1,
+  id: 'preview',
+  title: 'Studio',
+  engine: 'remotion',
+  canvas: { width: 1080, height: 1920, fps: 30 },
+  durationMs: 1000,
+  scenes: [],
+  globalAudio: [],
+  assetIds: [],
+  styleRef: null,
+  brandSnapshot: null,
+};
+export function createStudioRoot(
+  document: ProjectDraft,
+  dependencies: ResolvedDependencies,
+  registry: ProjectRegistry
+) {
+  const Studio = () => (
+    <ProjectComposition document={document} dependencies={dependencies} registry={registry} />
+  );
+  return function StudioRoot() {
+    return <Composition id="StudioProject" component={Studio} {...projectMetadata(document)} />;
+  };
+}
+const DefaultStudioRoot = createStudioRoot(emptyProject, { assets: {}, libraries: {} }, {});
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      <DefaultStudioRoot />
       <Composition
         id="VideoWithSubtitles"
         component={VideoComposition as unknown as React.ComponentType<Record<string, unknown>>}

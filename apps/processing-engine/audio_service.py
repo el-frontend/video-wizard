@@ -68,7 +68,9 @@ class AudioService:
         video_path: str, 
         output_format: str = "wav",
         sample_rate: int = 16000,
-        audio_bitrate: str = "128k"
+        audio_bitrate: str = "128k",
+        *,
+        work_dir: Optional[Path] = None
     ) -> str:
         """
         Extract audio track from video file using FFmpeg
@@ -93,7 +95,7 @@ class AudioService:
         # Generate output path
         video_name = Path(video_path).stem
         audio_filename = f"{video_name}_audio.{output_format}"
-        audio_path = self.temp_dir / audio_filename
+        audio_path = (work_dir or self.temp_dir) / audio_filename
         
         logger.info(f"Extracting audio from {video_path} to {audio_path}")
         
@@ -241,7 +243,8 @@ class AudioService:
             audio_path,
             language=language,
             task=task,
-            verbose=False
+            verbose=False,
+            word_timestamps=True
         )
 
         # Get detected language
@@ -250,12 +253,18 @@ class AudioService:
         # Format output as structured JSON
         segments = []
         for idx, segment in enumerate(result["segments"]):
-            segments.append({
+            item = {
                 "id": idx,
-                "start": round(segment["start"], 2),
-                "end": round(segment["end"], 2),
+                "start": segment["start"],
+                "end": segment["end"],
                 "text": segment["text"].strip()
-            })
+            }
+            if segment.get("words"):
+                item["words"] = [
+                    {"word": word["word"], "start": word["start"], "end": word["end"]}
+                    for word in segment["words"]
+                ]
+            segments.append(item)
 
         logger.info(f"Local transcription complete. Generated {len(segments)} segments. Language: {detected_language}")
         return segments, detected_language
@@ -264,7 +273,9 @@ class AudioService:
         self,
         video_path: str,
         language: Optional[str] = None,
-        cleanup: bool = True
+        cleanup: bool = True,
+        *,
+        work_dir: Optional[Path] = None
     ) -> Dict:
         """
         Complete pipeline: Extract audio from video and transcribe
@@ -289,7 +300,7 @@ class AudioService:
 
         try:
             # Step 1: Extract audio
-            audio_path = self.extract_audio(video_path)
+            audio_path = self.extract_audio(video_path, work_dir=work_dir)
 
             # Step 2: Transcribe audio (returns segments and detected language)
             segments, detected_language = self.transcribe_audio(audio_path, language=language)

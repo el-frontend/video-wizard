@@ -1,3 +1,9 @@
+import { sessionEvents } from '@/features/auth/lib/session-events';
+import {
+  authenticatedFetch,
+  workspaceIdentity,
+  type WorkspaceJob,
+} from '@/lib/authenticated-fetch';
 /**
  * Subset of the `jobs` row that the client cares about. Mirrors the
  * server-side Job type without coupling the client bundle to drizzle.
@@ -23,43 +29,68 @@ interface PollOptions {
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+function waitForRead(signal: AbortSignal, intervalMs?: number) {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function finish() {
+      clearTimeout(timer);
+      window.removeEventListener(sessionEvents.restored, finish);
+      signal.removeEventListener('abort', finish);
+      if (signal.aborted) reject(signal.reason);
+      else resolve();
+    }
+    window.addEventListener(sessionEvents.restored, finish);
+    signal.addEventListener('abort', finish);
+    if (intervalMs !== undefined) timer = setTimeout(finish, intervalMs);
+  });
+}
 
-/**
- * Poll `GET /api/jobs/:id` until the job reaches a terminal status
- * (completed, failed, cancelled). `onTick` fires after every fetch so
- * callers can update progress UI between checks.
- */
+/** Follow an accepted job using only status GETs, including after same-owner sign-in. */
 export async function pollJobUntilDone(
   jobId: string,
+  operation: WorkspaceJob,
   onTick?: (job: PolledJob) => void,
   options: PollOptions = {}
 ): Promise<PolledJob> {
   const { intervalMs = 2000, timeoutMs = 30 * 60 * 1000 } = options;
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const res = await fetch(`/api/jobs/${jobId}`);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch job status (${res.status})`);
+  const url = '/api/jobs/' + encodeURIComponent(jobId);
+  const controller = new AbortController();
+  // The submitting caller captured the account lifetime before sending its POST.
+  // It may already be aborted when a late 202 body supplies the job ID.
+  const signal = AbortSignal.any([operation.signal, controller.signal]);
+  const deadline = setTimeout(
+    () => controller.abort(new Error('Se agotó el tiempo de espera del trabajo.')),
+    timeoutMs
+  );
+  function checkOwner() {
+    const current = workspaceIdentity();
+    if (!operation.ownerId || operation.ownerId !== current.ownerId) {
+      throw new DOMException('El trabajo pertenece a otra cuenta.', 'AbortError');
     }
-
-    const body = (await res.json()) as
-      | { success: true; data: PolledJob }
-      | { success: false; error: string };
-
-    if (!body.success) {
-      throw new Error(body.error);
-    }
-
-    onTick?.(body.data);
-
-    if (TERMINAL_STATUSES.has(body.data.status)) {
-      return body.data;
-    }
-
-    await sleep(intervalMs);
+    signal.throwIfAborted();
+    return current.active;
   }
 
-  throw new Error('Job polling timed out');
+  try {
+    for (;;) {
+      if (!checkOwner()) {
+        await waitForRead(signal);
+        continue;
+      }
+      const res = await authenticatedFetch(url, { signal });
+      if (res.status === 401) continue; // Transport suspends this session before returning 401.
+      if (!res.ok) throw new Error('No se pudo consultar el trabajo (' + res.status + ').');
+      const body = (await res.json()) as
+        | { success: true; data: PolledJob }
+        | { success: false; error: string };
+      if (!checkOwner()) continue;
+      if (!body.success) throw new Error(body.error);
+      onTick?.(body.data);
+      if (TERMINAL_STATUSES.has(body.data.status)) return body.data;
+      await waitForRead(signal, intervalMs);
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
 }

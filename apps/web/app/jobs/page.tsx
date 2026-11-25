@@ -1,12 +1,11 @@
+import { publicJob } from '@/server/services/owned-media-service';
 import { History } from 'lucide-react';
-import { redirect } from 'next/navigation';
 
 import { Badge } from '@workspace/ui/components/badge';
 import { Card } from '@workspace/ui/components/card';
 
-import { auth } from '@/auth';
+import { workspacePage } from '@/server/auth/page-policy';
 import {
-  type Job,
   type JobStatus,
   type JobType,
   jobHistoryService,
@@ -23,6 +22,7 @@ const TYPE_LABELS: Record<JobType, string> = {
   render: 'Render',
   clip_creation: 'Clip',
   analysis: 'Analysis',
+  studio_export: 'Exportación de Studio',
 };
 
 const STATUS_VARIANTS: Record<JobStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -32,21 +32,13 @@ const STATUS_VARIANTS: Record<JobStatus, 'default' | 'secondary' | 'destructive'
   completed: 'default',
   failed: 'destructive',
   cancelled: 'outline',
+  cancelling: 'secondary',
 };
 
-interface JobsPageProps {
-  searchParams: Promise<{ type?: string; status?: string }>;
-}
-
-export default async function JobsPage({ searchParams }: JobsPageProps) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect('/signin?callbackUrl=/jobs');
-  }
-
+export default workspacePage('/jobs', async (user, { searchParams }) => {
   const { type, status } = await searchParams;
 
-  const items = await jobHistoryService.listByUser(session.user.id, {
+  const items = await jobHistoryService.listByUser(user.id, {
     type: isJobType(type) ? type : undefined,
     status: isJobStatus(status) ? status : undefined,
     limit: 100,
@@ -87,7 +79,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((job) => (
+                {items.map(publicJob).map((job) => (
                   <JobRow key={job.id} job={job} />
                 ))}
               </tbody>
@@ -97,9 +89,9 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
       )}
     </div>
   );
-}
+});
 
-function JobRow({ job }: { job: Job }) {
+function JobRow({ job }: { job: ReturnType<typeof publicJob> }) {
   return (
     <tr className="border-b last:border-b-0">
       <td className="px-4 py-3">
@@ -116,7 +108,7 @@ function JobRow({ job }: { job: Job }) {
         <ProgressCell progress={job.progress} status={job.status} />
       </td>
       <td className="text-muted-foreground max-w-md px-4 py-3">
-        {job.status === 'failed' && job.errorMessage ? (
+        {job.errorMessage ? (
           <span className="text-destructive line-clamp-2 text-xs">{job.errorMessage}</span>
         ) : (
           <span className="line-clamp-1 text-xs">{summarizeInput(job.inputData)}</span>
@@ -166,34 +158,33 @@ function summarizeInput(input: unknown): string {
   if (!input || typeof input !== 'object') return '—';
   const obj = input as Record<string, unknown>;
   const parts: string[] = [];
+  if (typeof obj.revision === 'string') parts.push('Revisión ' + obj.revision.slice(0, 8));
   if (typeof obj.template === 'string') parts.push(`template: ${obj.template}`);
   if (typeof obj.aspectRatio === 'string') parts.push(`ratio: ${obj.aspectRatio}`);
   if (typeof obj.language === 'string') parts.push(`lang: ${obj.language}`);
   if (typeof obj.subtitleCount === 'number') parts.push(`${obj.subtitleCount} segs`);
   if (typeof obj.transcriptLength === 'number') parts.push(`${obj.transcriptLength} chars`);
-  if (typeof obj.videoPath === 'string') {
-    const filename = obj.videoPath.split(/[\\/]/).pop();
-    if (filename) parts.push(filename);
-  }
   return parts.join(' · ') || '—';
 }
 
-function isJobType(value: string | undefined): value is JobType {
+function isJobType(value: unknown): value is JobType {
   return (
     value === 'transcription' ||
     value === 'render' ||
     value === 'clip_creation' ||
+    value === 'studio_export' ||
     value === 'analysis'
   );
 }
 
-function isJobStatus(value: string | undefined): value is JobStatus {
+function isJobStatus(value: unknown): value is JobStatus {
   return (
     value === 'pending' ||
     value === 'queued' ||
     value === 'processing' ||
     value === 'completed' ||
     value === 'failed' ||
+    value === 'cancelling' ||
     value === 'cancelled'
   );
 }

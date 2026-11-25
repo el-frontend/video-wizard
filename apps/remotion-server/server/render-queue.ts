@@ -1,6 +1,9 @@
-import { makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer';
+import { runLegacyEncoder } from './legacy-encoder.js';
 import { randomUUID } from 'node:crypto';
+import type { LegacyRenderAdmission } from '@workspace/render-contract';
+import { hostOwnedMedia } from './render-bundle-host.js';
 import path from 'node:path';
+import { rm } from 'node:fs/promises';
 
 /**
  * Reads a positive-integer env var. An invalid value warns loudly and falls
@@ -60,56 +63,30 @@ const MAX_CONCURRENT_RENDERS = positiveIntEnv('MAX_CONCURRENT_RENDERS', 1);
  * Generic to support any composition with any input props
  */
 interface JobData {
-  compositionId: string;
-  inputProps: Record<string, unknown>;
+  ownerId: string;
+  admission: LegacyRenderAdmission;
+}
+interface JobState {
+  status: 'queued' | 'in-progress' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  data: JobData;
+  cancel: () => void;
 }
 
-/**
- * Job state types
- */
-type JobState =
-  | {
-      status: 'queued';
-      data: JobData;
-      cancel: () => void;
-    }
-  | {
-      status: 'in-progress';
-      progress: number;
-      data: JobData;
-      cancel: () => void;
-    }
-  | {
-      status: 'completed';
-      videoUrl: string;
-      data: JobData;
-    }
-  | {
-      status: 'failed';
-      error: Error;
-      data: JobData;
-    };
-
-/**
- * Creates and manages a render job queue
- * Runs up to MAX_CONCURRENT_RENDERS video compositions in parallel
- */
 export const makeRenderQueue = ({
-  port,
   serveUrl,
   rendersDir,
-  publicUrl,
+  encode = runLegacyEncoder,
 }: {
-  port: number;
   serveUrl: string;
   rendersDir: string;
-  publicUrl: string;
+  encode?: typeof runLegacyEncoder;
 }) => {
   const jobs = new Map<string, JobState>();
-
+  const associations = new Map<string, string>();
   // Bounded concurrent scheduler: up to MAX_CONCURRENT_RENDERS jobs run at
   // once; the rest wait in `pending` until a slot frees up.
-  const pending: string[] = [];
+  const pending: { id: string; run: () => Promise<void> }[] = [];
   let active = 0;
 
   /**
@@ -118,14 +95,15 @@ export const makeRenderQueue = ({
    */
   const pump = () => {
     while (active < MAX_CONCURRENT_RENDERS && pending.length > 0) {
-      const jobId = pending.shift() as string;
+      const task = pending.shift()!;
       active++;
       // processRender records its own failures on the job; the catch is a
       // safety net (e.g. a job cancelled out from under us). Either way, free
       // the slot and pump the next job.
-      void processRender(jobId)
-        .catch((error) => {
-          console.error(`[${jobId}] Unexpected render error:`, error);
+      void task
+        .run()
+        .catch(() => {
+          console.error('Unexpected render error.');
         })
         .finally(() => {
           active--;
@@ -134,123 +112,69 @@ export const makeRenderQueue = ({
     }
   };
 
-  /**
-   * Processes a render job
-   * Handles composition selection, rendering, and error management
-   */
-  const processRender = async (jobId: string) => {
-    const job = jobs.get(jobId);
-    if (!job) {
-      throw new Error(`Render job ${jobId} not found`);
-    }
-
-    const { cancel, cancelSignal } = makeCancelSignal();
-    let lastLoggedPercent = -1;
-
-    jobs.set(jobId, {
-      progress: 0,
-      status: 'in-progress',
-      cancel: cancel,
-      data: job.data,
-    });
-
-    try {
-      const { compositionId, inputProps } = job.data;
-
-      console.info(`[${jobId}] Selecting composition: ${compositionId}`);
-
-      // Select the composition with input props
-      const composition = await selectComposition({
-        serveUrl,
-        id: compositionId,
-        inputProps,
-      });
-
-      console.info(`[${jobId}] Starting render...`);
-
-      // Render the video
-      await renderMedia({
-        cancelSignal,
-        serveUrl,
-        composition,
-        inputProps,
-        codec: 'h264',
-        x264Preset: 'veryfast',
-        offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
-        timeoutInMilliseconds: RENDER_TIMEOUT_MS,
-        ...(RENDER_CONCURRENCY ? { concurrency: RENDER_CONCURRENCY } : {}),
-        onProgress: (progress) => {
-          // Job state updates on every tick (the client polls it), but only log
-          // when the whole percent changes — onProgress fires far more often
-          // than that, and concurrent renders interleave their output.
-          const percent = Math.round(progress.progress * 100);
-          if (percent !== lastLoggedPercent) {
-            lastLoggedPercent = percent;
-            console.info(`[${jobId}] Render progress: ${percent}%`);
-          }
-
-          jobs.set(jobId, {
-            progress: progress.progress,
-            status: 'in-progress',
-            cancel: cancel,
-            data: job.data,
-          });
-        },
-        outputLocation: path.join(rendersDir, `${jobId}.mp4`),
-      });
-
-      console.info(`[${jobId}] Render completed successfully`);
-
-      jobs.set(jobId, {
-        status: 'completed',
-        videoUrl: `${publicUrl}/renders/${jobId}.mp4`,
-        data: job.data,
-      });
-    } catch (error) {
-      console.error(`[${jobId}] Render failed:`, error);
-      jobs.set(jobId, {
-        status: 'failed',
-        error: error as Error,
-        data: job.data,
-      });
-    }
-  };
-
-  /**
-   * Adds a job to the render queue. Runs immediately if a slot is free,
-   * otherwise waits its turn in `pending`.
-   */
-  const queueRender = async ({ jobId, data }: { jobId: string; data: JobData }) => {
-    jobs.set(jobId, {
+  function createJob(data: JobData) {
+    const key = JSON.stringify([data.ownerId, data.admission.webJobId]);
+    const existing = associations.get(key);
+    if (existing) return existing;
+    const id = randomUUID();
+    const abort = new AbortController();
+    const job: JobState = {
       status: 'queued',
+      progress: 0,
       data,
       cancel: () => {
-        // Drop it from the waiting list so pump() never picks up a cancelled job.
-        const index = pending.indexOf(jobId);
-        if (index !== -1) {
-          pending.splice(index, 1);
-        }
-        jobs.delete(jobId);
+        if (job.status !== 'queued' && job.status !== 'in-progress') return;
+        job.status = 'cancelled';
+        abort.abort();
       },
+    };
+    jobs.set(id, job);
+    associations.set(key, id);
+    schedule(id, async () => {
+      if (abort.signal.aborted) return;
+      job.status = 'in-progress';
+      const outputLocation = path.join(rendersDir, id + '.mp4');
+      let media: Awaited<ReturnType<typeof hostOwnedMedia>> | undefined;
+      try {
+        media = await hostOwnedMedia(data.ownerId, data.admission, abort.signal);
+        abort.signal.throwIfAborted();
+        await encode(
+          {
+            serveUrl,
+            inputProps: media.inputProps,
+            offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
+            timeoutInMilliseconds: RENDER_TIMEOUT_MS,
+            concurrency: RENDER_CONCURRENCY,
+            outputLocation,
+          },
+          abort.signal,
+          (progress) => {
+            job.progress = progress;
+          }
+        );
+        abort.signal.throwIfAborted();
+        job.status = 'completed';
+      } catch {
+        job.status = abort.signal.aborted ? 'cancelled' : 'failed';
+        await rm(outputLocation, { force: true });
+      } finally {
+        await media?.close();
+      }
     });
-
-    pending.push(jobId);
+    return id;
+  }
+  function schedule(id: string, run: () => Promise<void>) {
+    const task = { id, run };
+    pending.push(task);
     pump();
-  };
-
-  /**
-   * Creates a new render job
-   * Returns the job ID for tracking
-   */
-  function createJob(data: JobData) {
-    const jobId = randomUUID();
-
-    queueRender({ jobId, data });
-
-    return jobId;
+    return () => {
+      const index = pending.indexOf(task);
+      if (index >= 0) pending.splice(index, 1);
+    };
   }
 
   return {
+    schedule,
     createJob,
     jobs,
   };

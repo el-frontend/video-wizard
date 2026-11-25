@@ -17,6 +17,7 @@ interface ClipCardProps {
   summary: string;
   viralScore: number;
   duration: number;
+  sourceDurationMs?: number;
   videoUrl?: string; // Cropped video (without subtitles)
   renderedVideoUrl?: string; // Final rendered video from Remotion server
   subtitles?: SubtitleSegment[];
@@ -26,6 +27,8 @@ interface ClipCardProps {
   brandKit?: BrandKit;
   isLoading: boolean;
   isRendering?: boolean;
+  onOpenDesigner?: () => void;
+  openingDesigner?: boolean;
   onEdit: () => void;
   onTemplateChange: (template: SubtitleTemplate) => void;
   onRenderFinal: () => void;
@@ -45,6 +48,7 @@ export function ClipCard({
   summary,
   viralScore,
   duration,
+  sourceDurationMs,
   videoUrl,
   renderedVideoUrl,
   subtitles,
@@ -54,6 +58,8 @@ export function ClipCard({
   brandKit,
   isLoading,
   isRendering,
+  onOpenDesigner,
+  openingDesigner,
   onEdit,
   onTemplateChange,
   onRenderFinal,
@@ -114,10 +120,11 @@ export function ClipCard({
                 Cropping video with face tracking
               </p>
             </div>
-          ) : videoUrl && hasSubtitles ? (
+          ) : videoUrl && subtitles && sourceDurationMs !== undefined ? (
             /* Show Remotion Player for real-time preview */
             <RemotionPreview
               videoUrl={videoUrl}
+              sourceDurationMs={sourceDurationMs}
               subtitles={subtitles}
               template={template}
               language={language}
@@ -189,7 +196,7 @@ export function ClipCard({
         <div className="flex gap-2 w-full">
           <Button
             onClick={onEdit}
-            disabled={isLoading || !videoUrl || isRendering}
+            disabled={isLoading || !videoUrl || sourceDurationMs === undefined || isRendering}
             className="flex-1"
             variant="outline"
           >
@@ -199,7 +206,7 @@ export function ClipCard({
 
           <Button
             onClick={onRenderFinal}
-            disabled={isLoading || !videoUrl || !hasSubtitles || isRendering}
+            disabled={isLoading || !videoUrl || isRendering}
             className="flex-1"
             variant="default"
           >
@@ -221,6 +228,18 @@ export function ClipCard({
             )}
           </Button>
         </div>
+
+        {onOpenDesigner && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={openingDesigner}
+            onClick={onOpenDesigner}
+          >
+            Abrir en diseñador
+          </Button>
+        )}
 
         {/* Download Button (if rendered) */}
         {renderedVideoUrl && !isRendering && (

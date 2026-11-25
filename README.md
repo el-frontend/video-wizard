@@ -14,22 +14,19 @@ Video Wizard is a self-hosted alternative to tools like Opus Clip and Submagic. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/el-frontend/video-wizard?style=social)](https://github.com/el-frontend/video-wizard/stargazers)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#quick-start-one-command)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#quick-start)
 
-> **Status (May 2026):** Subtitle Generator is the most polished flow.
-> Renders run on a real PostgreSQL-backed task queue with retry/backoff,
-> so the UI stays responsive while a worker drains long jobs. Auth is
-> email + bcrypt password against the local database.
+The studio uses a single Better Auth account for projects, media, tools and jobs.
 
 ## What you get
 
-| Feature                            | Route                       | What it does                                                                                                  |
-|------------------------------------|-----------------------------|---------------------------------------------------------------------------------------------------------------|
-| **Subtitle Generator**             | `/subtitle-generator`       | Upload or paste YouTube → transcribe (Whisper) → edit subtitles → pick from 9 templates → render via Remotion |
-| **Video Wizard**                   | `/video-wizard`             | Full pipeline: transcribe → GPT-4o scores 30-90s viral clips → render the winners                             |
-| **Content Intelligence**           | `/content-intelligence`     | Paste a transcript → viral-clip analysis without uploading video                                              |
-| **Job History**                    | `/jobs`                     | Per-user list of every transcription / render / clip / analysis with status, progress and error messages     |
-| **Remotion Studio**                | `/remotion`                 | Low-level template authoring                                                                                  |
+| Feature                  | Route                   | What it does                                                                                                  |
+| ------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Subtitle Generator**   | `/subtitle-generator`   | Upload or paste YouTube → transcribe (Whisper) → edit subtitles → pick from 9 templates → render via Remotion |
+| **Video Wizard**         | `/video-wizard`         | Full pipeline: transcribe → GPT-4o scores 30-90s viral clips → render the winners                             |
+| **Content Intelligence** | `/content-intelligence` | Paste a transcript → viral-clip analysis without uploading video                                              |
+| **Job History**          | `/jobs`                 | Per-user list of every transcription / render / clip / analysis with status, progress and error messages      |
+| **Remotion Studio**      | `/remotion`             | Reserved endpoint (501 after authentication)                                                                  |
 
 **Caption templates included:** viral, minimal, modern, default, highlight,
 colorshift, hormozi, mrbeast, mrbeastemoji.
@@ -38,26 +35,19 @@ colorshift, hormozi, mrbeast, mrbeastemoji.
 portrait 4:5, landscape 16:9. Brand-kit overrides for logo, colors and
 fonts apply to every template.
 
-## Quick start (one command)
+## Application theme
 
-You need [Docker Desktop](https://docs.docker.com/get-docker/) (or any
-compose-v2 runtime).
+The [shared UI stylesheet](./packages/ui/src/styles/globals.css) defines the Video Wizard
+application theme. The Dashboard, sidebar, Studio and existing tools use the same semantic
+color tokens and Geist typography. Selectable video style packs and brand kits define the
+colors and typography inside the video preview and exported media.
 
-```bash
-cp .env.docker.example .env.docker
-# Edit two values:
-#   AUTH_SECRET     — openssl rand -base64 32
-#   OPENAI_API_KEY  — https://platform.openai.com/api-keys
+## Quick start
 
-docker compose up
-```
+Configure PostgreSQL and two independent private secrets, run the migration and seed the workspace explicitly. Open <http://localhost:3000/signin>. New accounts can also register at `/signup`. Local Whisper and manual clips work without provider keys.
 
-Then open <http://localhost:3000/signup>, create an account, and run a
-video through the Subtitle Generator. The `/jobs` page will show the
-render progress in real time as the worker drains the queue.
-
-For a manual / hybrid setup (Node on host, Python and Postgres in
-Docker — faster iteration), see [CONTRIBUTING.md](./CONTRIBUTING.md).
+- [Install, migrate and sign in](./docs/authentication.md)
+- [Docker Compose setup](./docs/DOCKER_SETUP.md)
 
 ## Architecture
 
@@ -80,9 +70,7 @@ Three highlights worth knowing:
   atomically via `SELECT ... FOR UPDATE SKIP LOCKED`, retries with
   exponential backoff, and forwards Remotion's per-frame progress to the
   user-facing job row so `/jobs` stays live.
-- **Auth.js v5 + Drizzle** — email + bcrypt password stored in PostgreSQL.
-  Auth.js OAuth tables are already in the schema for when you want to
-  add Google / GitHub / etc.
+- **Better Auth + Drizzle** — email/password accounts, database sessions and scoped service credentials. Media downloads and preview snapshots are owner-scoped.
 
 Full details: [AGENTS.md](./AGENTS.md) (architecture & conventions),
 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) (system overview).
@@ -91,7 +79,7 @@ Full details: [AGENTS.md](./AGENTS.md) (architecture & conventions),
 
 - **Frontend:** Next.js 16 (App Router, Turbopack), TypeScript strict,
   Tailwind v4, shadcn-style components, Vercel AI SDK + GPT-4o,
-  Auth.js v5 (Credentials provider).
+  Better Auth 1.7.27.
 - **Database:** PostgreSQL 17 + Drizzle ORM (`pnpm db:generate` /
   `db:migrate` / `db:studio`).
 - **Queue / worker:** Postgres-backed (no Redis), drained by a
@@ -106,8 +94,8 @@ Full details: [AGENTS.md](./AGENTS.md) (architecture & conventions),
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). The TL;DR:
 
-1. `cp .env.docker.example .env.docker` (set `AUTH_SECRET` + `OPENAI_API_KEY`).
-2. `docker compose up`.
+1. Follow the [local setup](./docs/DOCKER_SETUP.md).
+2. Sign in and open a project.
 3. Pick something from the
    [`good first issue`](https://github.com/<owner>/<repo>/labels/good%20first%20issue)
    label or one of the suggested high-leverage areas in CONTRIBUTING.md.
