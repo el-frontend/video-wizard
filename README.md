@@ -35,6 +35,13 @@ colorshift, hormozi, mrbeast, mrbeastemoji.
 portrait 4:5, landscape 16:9. Brand-kit overrides for logo, colors and
 fonts apply to every template.
 
+## Application theme
+
+The [shared UI stylesheet](./packages/ui/src/styles/globals.css) defines the Video Wizard
+application theme. The Dashboard, sidebar, Studio and existing tools use the same semantic
+color tokens and Geist typography. Selectable video style packs and brand kits define the
+colors and typography inside the video preview and exported media.
+
 ## Quick start
 
 Configure PostgreSQL and two independent private secrets, run the migration and seed the workspace explicitly. Open <http://localhost:3000/signin>. New accounts can also register at `/signup`. Local Whisper and manual clips work without provider keys.

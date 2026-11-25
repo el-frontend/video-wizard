@@ -17,13 +17,6 @@ const mono = localFont({
   weight: '100 900',
   display: 'swap',
 });
-const headings = localFont({
-  src: '../../../packages/style-packs/packs/fonts/Bricolage-800.woff2',
-  variable: '--font-studio-heading',
-  weight: '200 800',
-  display: 'swap',
-  preload: false,
-});
 
 export const metadata: Metadata = {
   title: 'Video Wizard - AI-Powered Video Analysis',
@@ -36,11 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="es"
-      className={`${geist.variable} ${mono.variable} ${headings.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="es" className={`${geist.variable} ${mono.variable}`} suppressHydrationWarning>
       <body className="antialiased dark">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           {children}
