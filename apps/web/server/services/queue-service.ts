@@ -26,6 +26,7 @@ interface EnqueueInput {
 
 export interface ClaimedTask {
   previousAttemptId?: string;
+  cancelLeaseId?: string;
   task: QueueTask;
   job: Job;
 }
@@ -171,12 +172,23 @@ class QueueService {
       if (!candidate) return null;
 
       const studio = candidate.type === 'studio_export';
-      if (
-        studio &&
-        (candidate.task.status === 'cancelling' ||
-          candidate.task.attempts >= candidate.task.maxRetries)
-      ) {
-        const status = candidate.task.status === 'cancelling' ? 'cancelled' : 'failed';
+      if (studio && candidate.task.status === 'cancelling') {
+        // The remote render UUID stays fixed. Fence successive cleanup workers separately.
+        const cancelLeaseId = randomUUID();
+        const [task] = await tx
+          .update(queueTasks)
+          .set({ leaseUntil: leaseDeadline })
+          .where(eq(queueTasks.id, candidate.task.id))
+          .returning();
+        const [job] = await tx
+          .update(jobs)
+          .set({ resultData: { remoteAttemptId: candidate.task.attemptId, cancelLeaseId } })
+          .where(eq(jobs.id, candidate.task.jobId))
+          .returning();
+        return { task: task!, job: job!, cancelLeaseId };
+      }
+      if (studio && candidate.task.attempts >= candidate.task.maxRetries) {
+        const status = 'failed';
         await tx
           .update(queueTasks)
           .set({ status, leaseUntil: null })
@@ -187,7 +199,7 @@ class QueueService {
             status,
             completedAt: sql`clock_timestamp()`,
             resultData: null,
-            errorMessage: status === 'failed' ? 'Se agotaron los intentos de exportación.' : null,
+            errorMessage: 'Se agotaron los intentos de exportación.',
           })
           .where(eq(jobs.id, candidate.task.jobId));
         return null;

@@ -27,22 +27,28 @@ export function ExportPanel({
     [items, setItems] = useState<ExportJob[]>([]),
     [version, refresh] = useState(0),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [readError, setReadError] = useState('');
   const admission = useRef<{ revision: string; key: string } | null>(null);
   const url = projectsUrl + '/' + encodeURIComponent(projectId) + '/exports';
   useEffect(() => {
     if (!open) return;
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let retryDelay = 1000;
     async function load() {
       try {
         const jobs = await projectRequest<ExportJob[]>(url, { signal: abort.signal });
         if (abort.signal.aborted) return;
         setItems(jobs);
+        setReadError('');
+        retryDelay = 1000;
         if (jobs.some(active)) timer = setTimeout(() => void load(), 1000);
       } catch (e) {
-        if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : 'No se pudieron cargar las exportaciones.');
+        if (abort.signal.aborted) return;
+        setReadError(e instanceof Error ? e.message : 'No se pudieron cargar las exportaciones.');
+        timer = setTimeout(() => void load(), retryDelay);
+        retryDelay = Math.min(8000, retryDelay * 2);
       }
     }
     void load();
@@ -95,7 +101,7 @@ export function ExportPanel({
         </button>
         <span className="edit-note">Revisión {revision.slice(0, 8)}</span>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {(error || readError) && <p role="alert">{error || readError}</p>}
       <ol>
         {items.map((job) => (
           <li key={job.id} className="edit-section">

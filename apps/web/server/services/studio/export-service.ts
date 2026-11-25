@@ -116,19 +116,21 @@ async function fenced(tx: Tx, claim: ClaimedTask) {
     .where(eq(queueTasks.id, task.id))
     .for('update');
   const [row] = await tx
-    .select()
+    .select({ task: queueTasks })
     .from(queueTasks)
+    .innerJoin(jobs, eq(jobs.id, queueTasks.jobId))
     .where(
       and(
         eq(queueTasks.id, task.id),
         eq(queueTasks.jobId, job.id),
         eq(queueTasks.attemptId, task.attemptId),
+        sql`${jobs.resultData}->>'cancelLeaseId' is not distinct from ${claim.cancelLeaseId ?? null}::text`,
         gt(queueTasks.leaseUntil, sql`clock_timestamp()`),
         sql`${queueTasks.status} in ('processing','cancelling')`
       )
     );
   if (!row) throw new LostExportAttempt();
-  return row;
+  return row.task;
 }
 
 export class ExportService {
@@ -214,19 +216,21 @@ export class ExportService {
       if (!row) throw missing();
       const [fresh] = await query(tx).where(eq(jobs.id, id));
       const prev = project(fresh!);
-      if (!['queued', 'running', 'cancelling'].includes(prev.status)) return prev;
-      const [active] = await tx
-        .select({ id: queueTasks.id })
-        .from(queueTasks)
-        .where(and(eq(queueTasks.jobId, id), gt(queueTasks.leaseUntil, sql`clock_timestamp()`)));
-      const status = active ? 'cancelling' : 'cancelled';
+      if (!['queued', 'running'].includes(prev.status)) return prev;
+      // Even without a POST acknowledgement or valid lease, the renderer may be executing this UUID.
+      const status = prev.attemptId ? 'cancelling' : 'cancelled';
       await tx
         .update(queueTasks)
-        .set({ status, leaseUntil: active ? undefined : null })
+        .set({
+          status,
+          leaseUntil: prev.attemptId
+            ? sql`coalesce(${queueTasks.leaseUntil}, clock_timestamp())`
+            : null,
+        })
         .where(eq(queueTasks.jobId, id));
       await tx
         .update(jobs)
-        .set({ status, resultData: null, completedAt: active ? undefined : sql`clock_timestamp()` })
+        .set({ status, completedAt: prev.attemptId ? null : sql`clock_timestamp()` })
         .where(eq(jobs.id, id));
       return { ...prev, status };
     });
@@ -278,11 +282,19 @@ export class ExportService {
         .where(eq(jobs.id, row.jobId));
     });
   }
-  async finishAttempt(claim: ClaimedTask, cause: unknown) {
+  async finishAttempt(claim: ClaimedTask, cause: unknown, remoteStopped = false) {
     await db
       .transaction(async (tx) => {
         const row = await fenced(tx, claim);
         const cancelled = row.status === 'cancelling';
+        if (cancelled && !remoteStopped) {
+          // The renderer may be unavailable. Let another worker repeat only the authenticated DELETE.
+          await tx
+            .update(queueTasks)
+            .set({ leaseUntil: sql`clock_timestamp()+interval '2 seconds'` })
+            .where(eq(queueTasks.id, row.id));
+          return;
+        }
         const retry =
           !cancelled && !(cause instanceof InvalidExport) && row.attempts < row.maxRetries;
         const status = cancelled ? 'cancelled' : retry ? 'queued' : 'failed';

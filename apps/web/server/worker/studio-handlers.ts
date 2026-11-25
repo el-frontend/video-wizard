@@ -77,6 +77,23 @@ export async function runStudioExport(
 }
 
 export async function processStudioExport(claim: ClaimedTask) {
+  const { job, task } = claim;
+  const stopRemote = async (attemptId = task.attemptId!) => {
+    await (
+      await remote(claim, 'export.cancel', AbortSignal.timeout(10000), attemptId)
+    ).body?.cancel();
+  };
+  if (claim.cancelLeaseId) {
+    let stopped = false;
+    try {
+      await stopRemote();
+      stopped = true;
+    } finally {
+      await exportsService.finishAttempt(claim, undefined, stopped);
+      if (stopped) await removeStoppedWorkspace(job.id, task.attemptId!);
+    }
+    return;
+  }
   const controller = new AbortController();
   const watcher = new AbortController();
   let progress = 0;
@@ -89,15 +106,12 @@ export async function processStudioExport(claim: ClaimedTask) {
     if (!watcher.signal.aborted) controller.abort(e);
   });
   let ready: Awaited<ReturnType<typeof preparePublication>> | undefined;
-  const { job, task } = claim;
   let stopped = false;
   try {
     // A crashed worker may have left its previous renderer running in a scheduler slot.
     if (claim.previousAttemptId) {
       try {
-        await (
-          await remote(claim, 'export.cancel', AbortSignal.timeout(5000), claim.previousAttemptId)
-        ).body?.cancel();
+        await stopRemote(claim.previousAttemptId);
         await removeStoppedWorkspace(job.id, claim.previousAttemptId);
       } catch {
         /* An unreachable renderer retires itself; leave its private files for reconciliation. */
@@ -124,12 +138,12 @@ export async function processStudioExport(claim: ClaimedTask) {
     await exportsService.promote(claim, ready.published, ready.rename);
   } catch (e) {
     try {
-      await (await remote(claim, 'export.cancel', AbortSignal.timeout(10000))).body?.cancel();
+      await stopRemote();
       stopped = true;
     } catch {
       /* Renderer watchdog retires disconnected executions. Do not delete a live workspace. */
     }
-    await exportsService.finishAttempt(claim, e);
+    await exportsService.finishAttempt(claim, e, stopped);
   } finally {
     watcher.abort();
     await monitor;

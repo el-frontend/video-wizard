@@ -61,7 +61,17 @@ it('seals one snapshot for concurrent admission and replays it after a head chan
     snapshot: { revision: project.revision, document: { title: 'Primera' } },
   });
   expect((await service.cancel(owner, a.id)).status).toBe('cancelling');
-  await service.finishAttempt(claim, new Error('cancelled'));
+  await service.finishAttempt(claim, new Error('ack lost'));
+  expect((await service.get(owner, a.id)).status).toBe('cancelling');
+  await fixture.pool.query('UPDATE queue_tasks SET lease_until=clock_timestamp() WHERE job_id=$1', [
+    a.id,
+  ]);
+  const cleanup = (await queue.claimNext('default'))!;
+  expect(cleanup.task.attemptId).toBe(claim.task.attemptId);
+  expect(cleanup.cancelLeaseId).toBeTruthy();
+  await service.finishAttempt(claim, undefined, true);
+  expect((await service.get(owner, a.id)).status).toBe('cancelling');
+  await service.finishAttempt(cleanup, undefined, true);
   expect((await service.get(owner, a.id)).status).toBe('cancelled');
 });
 
@@ -87,7 +97,7 @@ it('fences an expired worker, progress, receipt and publication; cancellation wi
   await service.cancel(owner, job.id);
   await expect(service.promote(second, {} as never, rename)).rejects.toThrow();
   expect(rename).not.toHaveBeenCalled();
-  await service.finishAttempt(second, new Error('cancel'));
+  await service.finishAttempt(second, undefined, true);
   expect((await service.cancel(owner, job.id)).status).toBe('cancelled');
 });
 

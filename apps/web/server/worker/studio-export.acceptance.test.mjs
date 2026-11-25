@@ -375,6 +375,83 @@ describe.skipIf(import.meta.env.MODE !== 'exports')(
         await writeFile(join(runtime, 'evidence.json'), JSON.stringify(evidence, null, 2));
       }
     }, 180000);
+    it.each(['before', 'after'])(
+      'stops the original attempt when a killed worker is cancelled %s lease expiry',
+      async (when) => {
+        const { admit, startWorker, owner, exportsService, projectState, processes, internal } =
+          context;
+        const { job } = await admit('hyperframes', 20000);
+        worker = startWorker();
+        let attempt;
+        try {
+          attempt = await until(async function capturing() {
+            const { rows } = await fixture.pool.query('SELECT result_data FROM jobs WHERE id=$1', [
+              job.id,
+            ]);
+            const id = rows[0].result_data?.remoteAttemptId;
+            return id && nativeBytes(join(stage, job.id, id), 'capture') > 0 && id;
+          });
+          const exit = once(worker, 'exit');
+          worker.kill('SIGKILL');
+          await exit;
+          worker = undefined;
+          const before = processes();
+          expect(before).toMatch(/chromium|chrome|headless/);
+          const expire = () =>
+            fixture.pool.query(
+              "UPDATE queue_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+              [job.id]
+            );
+          if (when === 'after') await expire();
+          expect((await exportsService.cancel(owner, job.id)).status).toBe('cancelling');
+          if (when === 'before') await expire();
+          worker = startWorker();
+          const terminal = await until(async function cancelled() {
+            const state = await projectState(job.id);
+            return state.status === 'cancelled' && state;
+          }, 25000);
+          expect(terminal.attemptId).toBe(attempt);
+          expect(processes()).toBe('');
+          expect(terminal.artifacts).toHaveLength(0);
+          expect(
+            existsSync(join(files, 'published', owner, job.projectId, job.revision, job.id))
+          ).toBe(false);
+          expect(readdirSync(join(stage, job.id)).filter((f) => f.endsWith('.admitted'))).toEqual([
+            attempt + '.admitted',
+          ]);
+          evidence.cancellations.push({
+            killedWorker: when,
+            job: job.id,
+            attempt,
+            processesBefore: before.split('\n').length,
+            processesAtTerminal: 0,
+            publications: 0,
+          });
+          await writeFile(join(runtime, 'evidence.json'), JSON.stringify(evidence, null, 2));
+        } finally {
+          if (attempt)
+            await internal(
+              owner,
+              {
+                scope: 'export.cancel',
+                projectId: job.projectId,
+                jobId: job.id,
+                attemptId: attempt,
+              },
+              '/studio/export-attempts/' + attempt,
+              undefined,
+              { release: true }
+            );
+          if (worker) {
+            const exit = once(worker, 'exit');
+            worker.kill('SIGKILL');
+            await exit;
+            worker = undefined;
+          }
+        }
+      },
+      100000
+    );
     it('runs two attempts concurrently on private writable paths with read-only source media', async () => {
       const { admit, owner, queueService, processStudioExport, projectState } = context;
       const [a, b] = await Promise.all([
