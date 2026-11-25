@@ -556,6 +556,8 @@ async function browserAction(f, action, argv) {
           )
         )
       );
+      await page.getByRole('button', { name: 'Reproducir', exact: true }).click({ timeout: 30000 });
+      await page.getByRole('button', { name: 'Pausar', exact: true }).click();
       await page.screenshot({ path: join(f.space, 'reutilizacion-' + proposalId + '.png') });
       console.log(
         JSON.stringify({
@@ -579,8 +581,10 @@ async function browserAction(f, action, argv) {
       await panel.getByRole('button', { name: 'Previsualizar propuesta' }).click();
       await panel.getByRole('button', { name: 'Reproducir propuesta' }).click({ timeout: 30000 });
       await panel.getByRole('button', { name: 'Pausar propuesta' }).click();
-      await page.screenshot({ path: join(f.space, 'propuesta-' + id + '.png') });
-      await panel.getByRole('button', { name: /Aplicar/ }).click();
+      const preview = panel.locator('iframe').first();
+      await preview.screenshot({ path: join(f.space, 'propuesta-' + id + '.png') });
+      if (!(await api(path + '/proposals/' + id)).appliedRevision)
+        await panel.getByRole('button', { name: /Aplicar/ }).click();
       await panel.getByRole('button', { name: /Guardar.*biblioteca/ }).click();
       await panel.getByText('Versión guardada en biblioteca.', { exact: true }).waitFor();
       console.log('Aplicada y guardada en biblioteca.');

@@ -64,7 +64,7 @@ async function main() {
                   endMs: 1500,
                   endAnchor: 'fixed',
                   zIndex: 3,
-                  box: { x: 20, y: 20, width: 400, height: 160 },
+                  box: { x: 30, y: 180, width: 400, height: 90 },
                   props: example.manifest.initialProps,
                   componentRef: { id: '$candidate', version: 1 },
                 },
